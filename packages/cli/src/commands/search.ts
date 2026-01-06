@@ -9,7 +9,7 @@ import fuzzysort from "fuzzysort"
 import kleur from "kleur"
 import { fetchRegistryIndex } from "../registry/fetcher.js"
 import { readOcxConfig, readOcxLock } from "../schemas/config.js"
-import { createSpinner, handleError, logger, outputJson } from "../utils/index.js"
+import { createSpinner, handleError, logger, outputJson, ValidationError } from "../utils/index.js"
 
 interface SearchOptions {
 	cwd: string
@@ -35,6 +35,9 @@ export function registerSearchCommand(program: Command): void {
 		.action(async (query: string | undefined, options: SearchOptions) => {
 			try {
 				const limit = parseInt(String(options.limit), 10)
+				if (Number.isNaN(limit)) {
+					throw new ValidationError("--limit must be a valid number");
+				}
 
 				// List installed only
 				if (options.installed) {
