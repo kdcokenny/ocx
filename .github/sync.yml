@@ -11,8 +11,12 @@ kdcokenny/opencode-background-agents:
     dest: README.md
 
 kdcokenny/opencode-worktree:
-  - source: workers/kdco-registry/files/plugin/worktree-plugin.ts
-    dest: src/plugin/worktree-plugin.ts
+  - source: workers/kdco-registry/files/plugin/worktree.ts
+    dest: src/plugin/worktree.ts
+  - source: workers/kdco-registry/files/plugin/worktree/state.ts
+    dest: src/plugin/worktree/state.ts
+  - source: workers/kdco-registry/files/plugin/worktree/terminal.ts
+    dest: src/plugin/worktree/terminal.ts
   - source: facades/opencode-worktree/README.md
     dest: README.md
 
