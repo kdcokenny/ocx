@@ -14,6 +14,7 @@ import { ProfileManager } from "../../profile/manager.js"
 import { needsMigration } from "../../profile/migrate.js"
 import { getProfileAgents, getProfileDir, getProfileOpencodeConfig } from "../../profile/paths.js"
 import { ProfilesNotInitializedError } from "../../utils/errors.js"
+import { getGitInfo } from "../../utils/git-context.js"
 import { detectGitRepo, handleError, logger } from "../../utils/index.js"
 import { discoverProjectFiles } from "../../utils/opencode-discovery.js"
 import { filterExcludedPaths } from "../../utils/pattern-filter.js"
@@ -25,6 +26,7 @@ import {
 	injectGhostFiles,
 	REMOVING_SUFFIX,
 } from "../../utils/symlink-farm.js"
+import { formatTerminalName, setTerminalName } from "../../utils/terminal-title.js"
 
 interface GhostOpenCodeOptions {
 	json?: boolean
@@ -150,6 +152,10 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 
 	process.on("SIGINT", sigintHandler)
 	process.on("SIGTERM", sigtermHandler)
+
+	// Set terminal name for easy identification in tmux/terminal tabs
+	const gitInfo = await getGitInfo(cwd)
+	setTerminalName(formatTerminalName(cwd, profileName, gitInfo))
 
 	// Spawn opencode from the temp directory with config passed via environment
 	// Only set GIT_DIR/GIT_WORK_TREE when actually in a git repository

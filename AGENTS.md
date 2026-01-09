@@ -280,8 +280,9 @@ Ghost mode enables working in repositories without modifying them:
 3. Applies `include`/`exclude` patterns from profile's ghost.jsonc to customize visibility
 4. Creates temp directory with symlinks to project (excluding filtered files)
 5. Sets `GIT_WORK_TREE` and `GIT_DIR` so Git sees real project
-6. Spawns OpenCode from temp dir with `OCX_PROFILE` env var set
-7. Cleans up temp dir on exit
+6. Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification
+7. Spawns OpenCode from temp dir with `OCX_PROFILE` env var set
+8. Cleans up temp dir on exit
 
 **Customization:** The `include`/`exclude` fields in `ghost.jsonc` control which OpenCode files
 are visible. Follows TypeScript-style semantics—`include` selects, `exclude` filters.
