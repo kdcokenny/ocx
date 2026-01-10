@@ -218,7 +218,7 @@ Isolation. You can close the worktree session without affecting your main workfl
 
 ## Manual Installation
 
-Copy [`src/`](./src) to `.opencode/plugins/`. You lose OCX's dependency management and automatic updates.
+Copy [`src/`](./src) to `.opencode/plugin/`. You lose OCX's dependency management and automatic updates.
 
 **Requirements:**
 - Manually install `jsonc-parser`
