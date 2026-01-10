@@ -17,7 +17,7 @@ import { ProfilesNotInitializedError } from "../../utils/errors.js"
 import { getGitInfo } from "../../utils/git-context.js"
 import { detectGitRepo, handleError, logger } from "../../utils/index.js"
 import { discoverProjectFiles } from "../../utils/opencode-discovery.js"
-import { filterExcludedPaths } from "../../utils/pattern-filter.js"
+
 import { sharedOptions } from "../../utils/shared-options.js"
 import {
 	cleanupOrphanedGhostDirs,
@@ -98,15 +98,13 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	const gitRoot = gitContext?.workTree ?? cwd
 	const discoveredPaths = await discoverProjectFiles(cwd, gitRoot)
 
-	// Apply user's include/exclude patterns from ghost config
+	// Create symlink farm with pattern-based filtering
+	// Pattern matching is handled internally by computeSymlinkPlan
 	const ghostConfig = profile.ghost
-	const excludePaths = filterExcludedPaths(
-		discoveredPaths,
-		ghostConfig.include,
-		ghostConfig.exclude,
-	)
-
-	const tempDir = await createSymlinkFarm(cwd, excludePaths)
+	const tempDir = await createSymlinkFarm(cwd, discoveredPaths, {
+		includePatterns: ghostConfig.include,
+		excludePatterns: ghostConfig.exclude,
+	})
 
 	// Inject ghost OpenCode files from profile directory into the temp directory
 	const ghostFiles = await discoverProjectFiles(profileDir, profileDir)

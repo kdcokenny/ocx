@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { filterExcludedPaths } from "../src/utils/pattern-filter.js"
+import { createPathMatcher, filterExcludedPaths } from "../src/utils/pattern-filter.js"
 
 describe("filterExcludedPaths", () => {
 	// Test: No patterns returns original set unchanged
@@ -75,5 +75,102 @@ describe("filterExcludedPaths", () => {
 		const result = filterExcludedPaths(excluded, ["AGENTS.md"], undefined)
 		expect(excluded).toEqual(original) // Original unchanged
 		expect(result).not.toBe(excluded) // Different reference
+	})
+})
+
+describe("PathMatcher", () => {
+	describe("getDisposition", () => {
+		it("should return 'included' when path matches include pattern", () => {
+			const matcher = createPathMatcher([".opencode/skill/**"], [])
+			const result = matcher.getDisposition(".opencode/skill/foo.md")
+			expect(result.type).toBe("included")
+		})
+
+		it("should return 'excluded' when path matches exclude pattern", () => {
+			const matcher = createPathMatcher([], [".opencode/skill/**"])
+			const result = matcher.getDisposition(".opencode/skill/foo.md")
+			expect(result.type).toBe("excluded")
+		})
+
+		it("should prioritize exclude over include", () => {
+			const matcher = createPathMatcher([".opencode/**"], [".opencode/skill/**"])
+			const result = matcher.getDisposition(".opencode/skill/foo.md")
+			expect(result.type).toBe("excluded")
+		})
+
+		it("should return 'partial' when patterns target inside directory", () => {
+			const matcher = createPathMatcher([".opencode/skill/foo/**"], [])
+			const result = matcher.getDisposition(".opencode/skill")
+			expect(result.type).toBe("partial")
+		})
+
+		it("should return 'included' when no include patterns configured", () => {
+			const matcher = createPathMatcher([], [])
+			const result = matcher.getDisposition("any/path.ts")
+			expect(result.type).toBe("included")
+		})
+
+		it("should return 'excluded' when include patterns exist but none match", () => {
+			const matcher = createPathMatcher(["src/**"], [])
+			const result = matcher.getDisposition("lib/file.ts")
+			expect(result.type).toBe("excluded")
+		})
+	})
+
+	describe("targetsInside", () => {
+		it("should return true when pattern targets inside directory", () => {
+			const matcher = createPathMatcher([".opencode/skill/**"], [])
+			expect(matcher.targetsInside(".opencode")).toBe(true)
+		})
+
+		it("should return false when no pattern targets inside", () => {
+			const matcher = createPathMatcher(["src/**"], [])
+			expect(matcher.targetsInside(".opencode")).toBe(false)
+		})
+
+		it("should handle directory with trailing slash", () => {
+			const matcher = createPathMatcher([".opencode/skill/**"], [])
+			expect(matcher.targetsInside(".opencode/")).toBe(true)
+		})
+	})
+
+	describe("getInnerPatterns", () => {
+		it("should return patterns targeting inside directory", () => {
+			const matcher = createPathMatcher(
+				[".opencode/skill/**", ".opencode/command/**", "src/**"],
+				[],
+			)
+			const inner = matcher.getInnerPatterns(".opencode")
+			expect(inner).toEqual([".opencode/skill/**", ".opencode/command/**"])
+		})
+
+		it("should return empty array when no patterns target inside", () => {
+			const matcher = createPathMatcher(["src/**", "lib/**"], [])
+			const inner = matcher.getInnerPatterns(".opencode")
+			expect(inner).toEqual([])
+		})
+
+		it("should handle directory with trailing slash", () => {
+			const matcher = createPathMatcher([".opencode/skill/**"], [])
+			const inner = matcher.getInnerPatterns(".opencode/")
+			expect(inner).toEqual([".opencode/skill/**"])
+		})
+	})
+
+	describe("hasIncludePatterns", () => {
+		it("should return true when include patterns exist", () => {
+			const matcher = createPathMatcher(["**"], [])
+			expect(matcher.hasIncludePatterns()).toBe(true)
+		})
+
+		it("should return false when no include patterns", () => {
+			const matcher = createPathMatcher([], ["**"])
+			expect(matcher.hasIncludePatterns()).toBe(false)
+		})
+
+		it("should return false for empty matcher", () => {
+			const matcher = createPathMatcher([], [])
+			expect(matcher.hasIncludePatterns()).toBe(false)
+		})
 	})
 })

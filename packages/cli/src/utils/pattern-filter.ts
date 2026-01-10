@@ -5,7 +5,17 @@
  * for ghost mode symlink farm customization.
  */
 
+import path from "node:path"
 import { Glob } from "bun"
+
+/**
+ * Discriminated union for path disposition.
+ * Determines how a path should be handled based on include/exclude patterns.
+ */
+export type PathDisposition =
+	| { type: "excluded" }
+	| { type: "included" }
+	| { type: "partial"; patterns: string[] }
 
 /**
  * Check if a path matches any of the pre-compiled glob patterns.
@@ -25,6 +35,10 @@ function matchesAnyGlob(filePath: string, globs: Glob[]): boolean {
  * 1. Start with all excluded paths
  * 2. Include patterns specify which to bring back (remove from exclusions)
  * 3. Exclude patterns filter out exceptions from include results
+ *
+ * NOTE: This function recompiles globs on each call. For repeated filtering
+ * of many paths, prefer `createPathMatcher()` which pre-compiles patterns once.
+ * This function is preserved for backward compatibility with existing callers.
  *
  * @param excludedPaths - Set of paths currently excluded from symlink farm
  * @param includePatterns - Globs for files to include (remove from exclusions)
@@ -73,4 +87,224 @@ export function filterExcludedPaths(
 	}
 
 	return filteredExclusions
+}
+
+/**
+ * Normalize a path for pattern matching.
+ * - Strips project root to get relative path
+ * - Converts to POSIX separators (forward slashes)
+ * - Removes leading ./
+ *
+ * @param absolutePath - The absolute path to normalize
+ * @param projectRoot - The project root directory
+ * @returns Normalized relative path for pattern matching
+ *
+ * @example
+ * ```ts
+ * normalizeForMatching("/home/user/project/.opencode/config.json", "/home/user/project")
+ * // Returns: ".opencode/config.json"
+ *
+ * normalizeForMatching("/home/user/project/src/index.ts", "/home/user/project")
+ * // Returns: "src/index.ts"
+ * ```
+ */
+export function normalizeForMatching(absolutePath: string, projectRoot: string): string {
+	// Law 2: Parse at boundary - convert to relative POSIX path immediately
+	const relativePath = path.relative(projectRoot, absolutePath)
+
+	// Convert Windows separators to POSIX and strip leading ./
+	return relativePath.split(path.sep).join("/").replace(/^\.\//, "")
+}
+
+/**
+ * Determine how to handle a path based on include/exclude patterns.
+ * Follows Vite/Rollup algorithm: exclude first → include second → fallback.
+ *
+ * Algorithm:
+ * 1. If ANY exclude pattern matches → return "excluded"
+ * 2. If ANY include pattern matches → return "included"
+ * 3. If patterns target inside this dir → return "partial" with those patterns
+ * 4. If include patterns exist but none matched → return "excluded"
+ * 5. If NO include patterns → return "included" (include all by default)
+ *
+ * @param relativePath - The relative path to check (POSIX format)
+ * @param includePatterns - Patterns for files to include
+ * @param excludePatterns - Patterns for files to exclude (takes precedence)
+ * @returns PathDisposition indicating how to handle this path
+ *
+ * @example
+ * ```ts
+ * // File explicitly excluded
+ * getPathDisposition("AGENTS.md", ["**\/*.md"], ["AGENTS.md"])
+ * // Returns: { type: "excluded" }
+ *
+ * // File explicitly included
+ * getPathDisposition(".opencode/skills/foo.md", ["**\/*.md"], [])
+ * // Returns: { type: "included" }
+ *
+ * // Directory needs partial expansion
+ * getPathDisposition(".opencode", [".opencode/skills/**"], [])
+ * // Returns: { type: "partial", patterns: [".opencode/skills/**"] }
+ *
+ * // No patterns = include all
+ * getPathDisposition("src/index.ts", [], [])
+ * // Returns: { type: "included" }
+ * ```
+ */
+export function getPathDisposition(
+	relativePath: string,
+	includePatterns: string[],
+	excludePatterns: string[],
+): PathDisposition {
+	// Pre-compile globs once
+	const excludeGlobs = excludePatterns.map((p) => new Glob(p))
+	const includeGlobs = includePatterns.map((p) => new Glob(p))
+
+	// Step 1: Exclude takes precedence
+	if (matchesAnyGlob(relativePath, excludeGlobs)) {
+		return { type: "excluded" }
+	}
+
+	// Step 2: Direct include match
+	if (matchesAnyGlob(relativePath, includeGlobs)) {
+		return { type: "included" }
+	}
+
+	// Step 3: Check if patterns target inside this directory (for partial expansion)
+	// This applies when the path is a directory that might contain matching files
+	const patternsInsideDir = includePatterns.filter((pattern) => {
+		// Pattern starts with this path → targets inside
+		if (pattern.startsWith(`${relativePath}/`)) return true
+		// Pattern with ** could match inside
+		if (pattern.startsWith("**/")) return true
+		return false
+	})
+
+	if (patternsInsideDir.length > 0) {
+		return { type: "partial", patterns: patternsInsideDir }
+	}
+
+	// Step 4: Include patterns exist but none matched → excluded
+	if (includePatterns.length > 0) {
+		return { type: "excluded" }
+	}
+
+	// Step 5: No include patterns → include everything by default
+	return { type: "included" }
+}
+
+/**
+ * Pre-compiled pattern matcher for efficient path filtering.
+ * Compiles glob patterns once at construction, reuses for all matches.
+ * Follows Vite/Rollup createFilter pattern.
+ *
+ * @example
+ * ```ts
+ * const matcher = createPathMatcher([".opencode/skills/**"], ["AGENTS.md"])
+ *
+ * // Reuse the same matcher for many paths (patterns compiled once)
+ * matcher.getDisposition("AGENTS.md")         // { type: "excluded" }
+ * matcher.getDisposition(".opencode/skills/foo.md")  // { type: "included" }
+ * matcher.getDisposition(".opencode")         // { type: "partial", patterns: [...] }
+ * ```
+ */
+export class PathMatcher {
+	private readonly includeGlobs: { pattern: string; glob: Glob }[]
+	private readonly excludeGlobs: { pattern: string; glob: Glob }[]
+	private readonly includePatterns: string[]
+
+	constructor(includePatterns: string[] = [], excludePatterns: string[] = []) {
+		this.includePatterns = includePatterns
+		// Compile patterns ONCE at construction (Law 2: Parse at boundary)
+		this.includeGlobs = includePatterns.map((p) => ({ pattern: p, glob: new Glob(p) }))
+		this.excludeGlobs = excludePatterns.map((p) => ({ pattern: p, glob: new Glob(p) }))
+	}
+
+	/**
+	 * Get disposition for a path using pre-compiled globs.
+	 * Algorithm: exclude first → include second → fallback.
+	 *
+	 * @param relativePath - The relative path to check (POSIX format)
+	 * @returns PathDisposition indicating how to handle this path
+	 */
+	getDisposition(relativePath: string): PathDisposition {
+		// Step 1: Exclude takes precedence (using pre-compiled globs)
+		if (this.excludeGlobs.some((g) => g.glob.match(relativePath))) {
+			return { type: "excluded" }
+		}
+
+		// Step 2: Direct include match
+		if (this.includeGlobs.some((g) => g.glob.match(relativePath))) {
+			return { type: "included" }
+		}
+
+		// Step 3: Check if patterns target inside this directory (for partial expansion)
+		const patternsInsideDir = this.includePatterns.filter((pattern) => {
+			if (pattern.startsWith(`${relativePath}/`)) return true
+			if (pattern.startsWith("**/")) return true
+			return false
+		})
+
+		if (patternsInsideDir.length > 0) {
+			return { type: "partial", patterns: patternsInsideDir }
+		}
+
+		// Step 4: Include patterns exist but none matched → excluded
+		if (this.includePatterns.length > 0) {
+			return { type: "excluded" }
+		}
+
+		// Step 5: No include patterns → include everything by default
+		return { type: "included" }
+	}
+
+	/**
+	 * Check if any include pattern targets inside a directory.
+	 * Uses string prefix matching (no glob needed).
+	 *
+	 * @param dirPath - Directory path to check
+	 * @returns true if any include pattern starts with this directory
+	 */
+	targetsInside(dirPath: string): boolean {
+		const normalizedDir = dirPath.endsWith("/") ? dirPath : `${dirPath}/`
+		return this.includePatterns.some((p) => p.startsWith(normalizedDir))
+	}
+
+	/**
+	 * Get include patterns that target inside a specific directory.
+	 *
+	 * @param dirPath - Directory path to check
+	 * @returns Array of patterns that start with this directory path
+	 */
+	getInnerPatterns(dirPath: string): string[] {
+		const normalizedDir = dirPath.endsWith("/") ? dirPath : `${dirPath}/`
+		return this.includePatterns.filter((p) => p.startsWith(normalizedDir))
+	}
+
+	/**
+	 * Check if this matcher has any include patterns configured.
+	 */
+	hasIncludePatterns(): boolean {
+		return this.includePatterns.length > 0
+	}
+}
+
+/**
+ * Create a PathMatcher instance.
+ * Factory function matching Vite's createFilter API style.
+ *
+ * @param includePatterns - Glob patterns for files to include
+ * @param excludePatterns - Glob patterns for files to exclude (takes precedence)
+ * @returns PathMatcher instance with pre-compiled globs
+ *
+ * @example
+ * ```ts
+ * const matcher = createPathMatcher([".opencode/**\/*.md"], ["AGENTS.md"])
+ * ```
+ */
+export function createPathMatcher(
+	includePatterns: string[] = [],
+	excludePatterns: string[] = [],
+): PathMatcher {
+	return new PathMatcher(includePatterns, excludePatterns)
 }
