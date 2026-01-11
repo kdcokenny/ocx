@@ -2,7 +2,7 @@
 	"$id": "https://ocx.kdco.dev/registry.schema.json",
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"title": "OCX Registry Schema",
-	"description": "Schema for registry.json files that define OCX component registries",
+	"description": "Schema for registry.jsonc files that define OCX component registries",
 	"type": "object",
 	"required": ["name", "namespace", "version", "author", "components"],
 	"additionalProperties": false,

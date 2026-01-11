@@ -107,7 +107,7 @@ const skip = o.f === true
 
 ```
 my-registry/
-├── registry.json          # Registry manifest (required)
+├── registry.jsonc         # Registry manifest (required)
 ├── files/                  # Component source files
 │   ├── skill/
 │   │   └── my-skill/
@@ -124,7 +124,7 @@ my-registry/
 └── wrangler.jsonc          # Cloudflare config
 ```
 
-### registry.json
+### registry.jsonc
 
 The registry manifest defines your components:
 
@@ -570,7 +570,7 @@ touch files/plugin/my-plugin.ts
 touch files/agent/my-agent.md
 ```
 
-### 2. Update registry.json
+### 2. Update registry.jsonc
 
 ```json
 {
@@ -605,7 +605,7 @@ bun run deploy
 
 ### Build Fails
 
-1. Check `registry.json` syntax (must be valid JSON)
+1. Check `registry.jsonc` syntax (must be valid JSONC)
 2. Verify all files in `files` arrays exist
 3. Run `bunx ocx build . --out dist --verbose` for details
 

@@ -1,0 +1,33 @@
+{
+	// OCX Registry Starter Template
+	// Use this as a starting point for creating your own component registry
+	//
+	// Schema reference: https://ocx.kdco.dev/schema.json
+	// Documentation: https://github.com/kdcokenny/ocx
+
+	"$schema": "https://ocx.kdco.dev/schemas/registry.json",
+	"name": "My Registry",
+	"namespace": "my-registry",
+	"version": "0.0.1",
+	"author": "Your Name",
+
+	// Compatibility versions
+	"opencode": "1.0.0", // Minimum OpenCode version required
+	"ocx": "1.0.16", // Minimum OCX CLI version required
+
+	"components": [
+		// Add your components here
+		// Supported types:
+		//   - ocx:skill     - Knowledge modules (markdown files)
+		//   - ocx:agent     - AI personas with custom prompts
+		//   - ocx:plugin    - TypeScript plugins that extend functionality
+		//   - ocx:command   - User-invokable commands
+		//   - ocx:bundle    - Collections of related components
+		{
+			"name": "hello-world",
+			"type": "ocx:skill",
+			"description": "An example skill to get you started",
+			"files": ["skill/hello-world/SKILL.md"]
+		}
+	]
+}

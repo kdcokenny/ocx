@@ -1,0 +1,12 @@
+{
+	"name": "my-registry",
+	"private": true,
+	"scripts": {
+		"build": "bunx ocx build . --out dist",
+		"deploy": "bun run build && wrangler deploy",
+		"dev": "bun run build && wrangler dev"
+	},
+	"devDependencies": {
+		"wrangler": "^4.14.0"
+	}
+}

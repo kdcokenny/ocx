@@ -165,7 +165,7 @@ async function runInitRegistry(directory: string | undefined, options: InitOptio
 			logger.info("")
 			logger.info("Next steps:")
 			logger.info("  1. bun install")
-			logger.info("  2. Edit registry.json with your components")
+			logger.info("  2. Edit registry.jsonc with your components")
 			logger.info("  3. bun run build")
 			logger.info("")
 			logger.info("Deploy to:")
@@ -250,7 +250,7 @@ async function replacePlaceholders(
 	values: { namespace: string; author: string },
 ): Promise<void> {
 	const filesToProcess = [
-		"registry.json",
+		"registry.jsonc",
 		"package.json",
 		"wrangler.jsonc",
 		"README.md",

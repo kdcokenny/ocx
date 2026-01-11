@@ -17,7 +17,7 @@ bun run deploy
 ```
 
 The build step runs `ocx build . --out dist` which:
-1. Validates `registry.json` against the schema
+1. Validates `registry.jsonc` against the schema
 2. Generates `index.json` and component packuments
 3. Copies component files to `dist/components/`
 4. Generates `.well-known/ocx.json` for discovery
@@ -37,7 +37,7 @@ A registry source directory should look like this:
 
 ```
 my-registry/
-├── registry.json     # Registry manifest
+├── registry.jsonc    # Registry manifest
 └── files/            # Component source files
     ├── agent/
     ├── plugin/
@@ -45,7 +45,7 @@ my-registry/
     └── command/
 ```
 
-### registry.json
+### registry.jsonc
 
 OCX uses **Cargo-style union types** for a clean developer experience: use strings for simple cases, objects when you need more control.
 
@@ -177,7 +177,7 @@ ocx build ./my-registry --out dist
 ```
 
 This command will:
-1. Validate your `registry.json` against the Zod schema.
+1. Validate your `registry.jsonc` against the Zod schema.
 2. Verify that all listed dependencies exist (same-namespace) or are properly qualified (cross-namespace).
 3. Generate an `index.json` and individual packument files (e.g., `cool-plugin.json`) in the output directory.
 

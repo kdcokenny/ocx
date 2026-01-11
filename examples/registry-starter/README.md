@@ -57,7 +57,7 @@ ocx add hello-world --registry https://your-registry.workers.dev
 ## Project Structure
 
 ```
-├── registry.json          # Registry manifest
+├── registry.jsonc         # Registry manifest
 ├── files/                  # Component source files
 │   └── skill/
 │       └── hello-world/
@@ -85,7 +85,7 @@ touch files/plugin/my-plugin.ts
 touch files/agent/my-agent.md
 ```
 
-### 2. Register it in `registry.json`
+### 2. Register it in `registry.jsonc`
 
 ```json
 {

@@ -688,11 +688,11 @@ $ ocx build --json
 
 ### Source Structure
 
-The build command expects a `registry.json` file in the source directory:
+The build command expects a `registry.jsonc` file in the source directory:
 
 ```
 my-registry/
-  registry.json         # Registry manifest
+  registry.jsonc        # Registry manifest
   files/
     agent/
       my-agent.md       # Agent definition
@@ -707,7 +707,7 @@ my-registry/
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| Build errors | Invalid registry.json or missing files | Check error messages for details |
+| Build errors | Invalid registry.jsonc or missing files | Check error messages for details |
 
 ---
 

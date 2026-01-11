@@ -12,16 +12,16 @@ Create a directory for your registry source:
 
 ```
 my-registry/
-├── registry.json       # Required: metadata and component definitions
+├── registry.jsonc      # Required: metadata and component definitions
 └── files/              # Component source files
     ├── agent/          # .md files
     ├── skill/          # Directories with SKILL.md
     └── plugin/         # .ts files (can have sub-directories)
 ```
 
-### 2. Registry Manifest (registry.json)
+### 2. Registry Manifest (registry.jsonc)
 
-Your `registry.json` defines a namespace for all components:
+Your `registry.jsonc` defines a namespace for all components:
 
 ```json
 {
@@ -119,7 +119,7 @@ Key test scenarios:
 Before pushing changes, test the full CLI flow using local registry sources.
 
 **Important notes:**
-- The registry must be **built** before testing (source `registry.json` → built `index.json`)
+- The registry must be **built** before testing (source `registry.jsonc` → built `index.json`)
 - Use **absolute paths** with `file://` URLs (use `$(pwd)` to expand)
 
 ```bash
