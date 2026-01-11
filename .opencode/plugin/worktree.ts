@@ -100,17 +100,6 @@ const branchNameSchema = z
 	.refine((name) => !name.startsWith(".") && !name.endsWith("."), "Cannot start or end with dot")
 	.refine((name) => !name.endsWith(".lock"), "Cannot end with .lock")
 
-const configSchema = z
-	.object({
-		postWorktree: z
-			.object({
-				cmd: z.string(),
-				args: z.array(z.string()).optional(),
-			})
-			.optional(),
-	})
-	.passthrough()
-
 /**
  * Worktree plugin configuration schema.
  * Config file: .opencode/worktree.jsonc
@@ -137,7 +126,6 @@ const worktreeConfigSchema = z.object({
 })
 
 type WorktreeConfig = z.infer<typeof worktreeConfigSchema>
-type Config = z.infer<typeof configSchema>
 
 // =============================================================================
 // MODULE-LEVEL STATE
@@ -480,95 +468,6 @@ async function loadWorktreeConfig(directory: string): Promise<WorktreeConfig> {
 }
 
 // =============================================================================
-// POST-HOOK MODULE
-// =============================================================================
-
-/**
- * Run post-worktree hook commands.
- *
- * SECURITY NOTE: Commands are user-provided from their own config file.
- * This is intentional and follows industry norms:
- * - npm scripts execute arbitrary commands from package.json
- * - git hooks execute arbitrary scripts from .git/hooks/
- * - Makefiles execute arbitrary shell commands
- *
- * Users control their own config; we trust it like any build tool does.
- */
-async function runPostHook(config: Config, worktreePath: string): Promise<void> {
-	const hook = config.postWorktree
-	if (!hook?.cmd) return
-
-	const args = hook.args ?? [worktreePath]
-
-	try {
-		Bun.spawn([hook.cmd, ...args], {
-			cwd: worktreePath,
-			stdio: ["ignore", "ignore", "ignore"],
-		})
-	} catch (error) {
-		console.warn(`[worktree] Post-hook failed: ${error}`)
-	}
-}
-
-async function loadConfig(directory: string): Promise<Config> {
-	const configPath = path.join(directory, ".opencode", "opencode-worktree-config.json")
-	const file = Bun.file(configPath)
-
-	if (!(await file.exists())) {
-		return {}
-	}
-
-	try {
-		const raw = await file.json()
-		const result = configSchema.safeParse(raw)
-		if (!result.success) {
-			const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ")
-			console.warn(`[worktree] Config validation issues: ${issues}`)
-			return {}
-		}
-		return result.data
-	} catch {
-		return {}
-	}
-}
-
-// =============================================================================
-// MIGRATION SUPPORT
-// =============================================================================
-
-/**
- * Migrate from old JSON state file to SQLite (one-time).
- * Called during plugin initialization.
- */
-async function migrateFromJsonState(database: Database, projectRoot: string): Promise<void> {
-	const jsonStatePath = path.join(projectRoot, ".opencode", "worktree-state.json")
-
-	try {
-		const file = Bun.file(jsonStatePath)
-		if (!(await file.exists())) return
-
-		const content = await file.text()
-		const oldState = JSON.parse(content)
-
-		// Migrate sessions
-		for (const session of oldState.sessions || []) {
-			addSession(database, session)
-		}
-
-		// Migrate pending delete if any (pendingSpawn no longer used - terminals spawn immediately)
-		if (oldState.pendingDelete) {
-			setPendingDelete(database, oldState.pendingDelete)
-		}
-
-		// Rename old file to mark as migrated
-		await fs.rename(jsonStatePath, `${jsonStatePath}.migrated`)
-		console.log(`[worktree] Migrated state from JSON to SQLite`)
-	} catch {
-		// Ignore migration errors - fresh start is fine
-	}
-}
-
-// =============================================================================
 // PLUGIN ENTRY
 // =============================================================================
 
@@ -577,9 +476,6 @@ export const WorktreePlugin: Plugin = async (ctx) => {
 
 	// Initialize SQLite database
 	const database = await initDb(directory)
-
-	// Run one-time migration from JSON state
-	await migrateFromJsonState(database, directory)
 
 	return {
 		tool: {
@@ -618,13 +514,7 @@ export const WorktreePlugin: Plugin = async (ctx) => {
 
 					const worktreePath = result.value
 
-					// Load config for post-hook (legacy)
-					const config = await loadConfig(directory)
-
-					// Run post-hook if configured (legacy)
-					await runPostHook(config, worktreePath)
-
-					// Sync files from main worktree (new config)
+					// Sync files from main worktree
 					const worktreeConfig = await loadWorktreeConfig(directory)
 					const mainWorktreePath = directory // The repo root is the main worktree
 
