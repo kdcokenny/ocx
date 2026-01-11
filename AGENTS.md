@@ -281,12 +281,23 @@ Ghost mode enables working in repositories without modifying them:
 3. Injects profile overlay (everything in profile dir except `ghost.jsonc`) into temp dir
    - If user's `include` pattern matches a file, project version is used (not profile overlay)
 4. Sets `GIT_WORK_TREE` and `GIT_DIR` so Git sees real project
-5. Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification
+5. Starts real-time file sync that watches the temp directory
+   - New files created by OpenCode are automatically synced to the real project
+   - Deletions are also synced (only for files that were created during the session)
+   - Files appear in the real project immediately (~200ms delay for write completion)
+   - On exit, reports number of synced files
+6. Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification
    - Disabled with `--no-rename` flag or `renameWindow: false` in ghost config
-6. Spawns OpenCode from temp dir with `OCX_PROFILE` env var set
-7. Cleans up temp dir on exit
+7. Spawns OpenCode from temp dir with `OCX_PROFILE` env var set
+8. Cleans up temp dir on exit
 
 **Customization:** Use `include` to keep specific project files visible (e.g., `["AGENTS.md"]` keeps root AGENTS.md from project instead of profile overlay).
+
+**Real-time Sync Limitations:**
+- Sync timing: Files appear after ~200ms write completion delay
+- Crash recovery: On hard crash (SIGKILL), unsynced files remain in temp dir
+- Directory deletion: Only deletes empty directories
+- Rapid create+delete: Files created and deleted within 200ms may not sync
 
 ### GhostConfigProvider vs ProfileManager
 

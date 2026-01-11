@@ -48,6 +48,7 @@
 		"test": "bun test"
 	},
 	"dependencies": {
+		"chokidar": "^5.0.0",
 		"commander": "^14.0.0",
 		"diff": "^8.0.0",
 		"fuzzysort": "^3.1.0",

@@ -14,6 +14,7 @@ import type { Command } from "commander"
 import { ProfileManager } from "../../profile/manager.js"
 import { getProfileDir, getProfileOpencodeConfig } from "../../profile/paths.js"
 import { ProfilesNotInitializedError } from "../../utils/errors.js"
+import { createFileSync, type FileSyncHandle } from "../../utils/file-sync.js"
 import { getGitInfo } from "../../utils/git-context.js"
 import { detectGitRepo, handleError, logger } from "../../utils/index.js"
 import { sharedOptions } from "../../utils/shared-options.js"
@@ -104,17 +105,22 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	// This includes opencode.jsonc, AGENTS.md, .opencode/, etc.
 	await injectProfileOverlay(tempDir, profileDir, ghostConfig.include)
 
-	// Determine if terminal should be renamed (Law 1: compute once, use in closure)
-	// Precedence: CLI flag > config > default(true)
-	const shouldRename = options.rename !== false && ghostConfig.renameWindow !== false
-
 	// Track cleanup state to prevent double cleanup
 	let cleanupDone = false
+	let fileSync: FileSyncHandle | undefined
+
+	// Start real-time file sync - syncs new files from temp dir to project
+	fileSync = createFileSync(tempDir, cwd)
+
 	const performCleanup = async () => {
 		if (cleanupDone) return
 		cleanupDone = true
 		await cleanupSymlinkFarm(tempDir)
 	}
+
+	// Determine if terminal should be renamed (Law 1: compute once, use in closure)
+	// Precedence: CLI flag > config > default(true)
+	const shouldRename = options.rename !== false && ghostConfig.renameWindow !== false
 
 	// Safety net: sync cleanup on exit using rename-to-removing pattern
 	// This ensures SIGKILL resilience: if rename succeeds but rm is interrupted,
@@ -123,6 +129,13 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 		// Only restore if we renamed (Law 3: Atomic Predictability)
 		if (shouldRename) {
 			restoreTerminalTitle()
+		}
+
+		// Best-effort file sync close (sync, may not complete all async work)
+		if (fileSync) {
+			// Note: close() is async but we're in sync exit handler
+			// The watcher will be GC'd, pending syncs may be lost
+			// This is acceptable - we document this as a crash limitation
 		}
 
 		if (!cleanupDone && tempDir) {
@@ -178,14 +191,41 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	try {
 		// Wait for child to exit
 		const exitCode = await proc.exited
-		process.exit(exitCode)
-	} finally {
-		// ALWAYS runs - success, error, or throw
-		// Cleanup signal handlers to prevent memory leaks
+
+		// Cleanup BEFORE process.exit (fixes race condition)
 		process.off("SIGINT", sigintHandler)
 		process.off("SIGTERM", sigtermHandler)
 		process.off("exit", exitHandler)
+
+		// Close file sync and report status
+		if (fileSync) {
+			await fileSync.close()
+			const syncCount = fileSync.getSyncCount()
+			const failures = fileSync.getFailures()
+			if (syncCount > 0 && !options.quiet) {
+				logger.info(`Synced ${syncCount} new files to project`)
+			}
+			if (failures.length > 0) {
+				logger.warn(`${failures.length} files failed to sync`)
+				for (const f of failures) {
+					logger.debug(`  ${f.path}: ${f.error.message}`)
+				}
+			}
+		}
+
 		await performCleanup()
+		process.exit(exitCode)
+	} catch (error) {
+		// Error during spawn/wait - still cleanup
+		process.off("SIGINT", sigintHandler)
+		process.off("SIGTERM", sigtermHandler)
+		process.off("exit", exitHandler)
+
+		if (fileSync) {
+			await fileSync.close()
+		}
+		await performCleanup()
+		throw error
 	}
 }
 
