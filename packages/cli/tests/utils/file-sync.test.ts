@@ -113,13 +113,16 @@ describe("file-sync", () => {
 		})
 
 		it("does NOT sync excluded patterns", async () => {
+			// Create .gitignore in project dir (destDir) with patterns to exclude
+			await Bun.write(join(destDir, ".gitignore"), "*.tmp\n*.swp\n")
+
 			fileSync = createFileSync(tempDir, destDir)
 			await delay(DELAY)
 
 			// Create files matching exclude patterns
 			await Bun.write(join(tempDir, "temp.tmp"), "temp content")
 			await Bun.write(join(tempDir, "swap.swp"), "swap content")
-			await Bun.write(join(tempDir, ".DS_Store"), "ds store")
+			await Bun.write(join(tempDir, ".DS_Store"), "ds store") // OS junk, always excluded
 			await Bun.write(join(tempDir, "normal.ts"), "normal content")
 
 			// Wait for sync
@@ -130,9 +133,34 @@ describe("file-sync", () => {
 			verifyFiles(
 				{
 					"normal.ts": "normal content",
-					"temp.tmp": null,
-					"swap.swp": null,
-					".DS_Store": null,
+					"temp.tmp": null, // gitignored
+					"swap.swp": null, // gitignored
+					".DS_Store": null, // OS junk
+				},
+				destDir,
+			)
+		})
+
+		it("syncs files when no .gitignore exists (only OS junk excluded)", async () => {
+			// No .gitignore in destDir - only OS junk should be excluded
+			fileSync = createFileSync(tempDir, destDir)
+			await delay(DELAY)
+
+			// Create files that would be gitignored in a typical project
+			await Bun.write(join(tempDir, "temp.tmp"), "temp content")
+			await Bun.write(join(tempDir, ".DS_Store"), "ds store")
+			await Bun.write(join(tempDir, "normal.ts"), "normal content")
+
+			// Wait for sync
+			await waitFor(() => existsSync(join(destDir, "normal.ts")))
+			await delay(100)
+
+			// Verify: .tmp IS synced (no gitignore), .DS_Store NOT synced (OS junk)
+			verifyFiles(
+				{
+					"normal.ts": "normal content",
+					"temp.tmp": "temp content", // No gitignore, so it syncs!
+					".DS_Store": null, // OS junk, always excluded
 				},
 				destDir,
 			)

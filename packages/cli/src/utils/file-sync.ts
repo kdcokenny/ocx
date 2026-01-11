@@ -2,35 +2,43 @@
 // Real-time file sync for Ghost Mode
 // Based on patterns from chokidar, VSCode, and watchpack research
 
-import { lstatSync, mkdirSync, rmdirSync, unlinkSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
 import chokidar from "chokidar"
+import ignore, { type Ignore } from "ignore"
 
-// Exclude patterns based on research - covers common temp/swap files
-// Patterns: .tmp, .swp, .swo, ~, .bak, .orig suffixes; .#, #, ._ prefixes
-const EXCLUDE_PATTERNS = [
-	// Temp/swap file extensions
-	/\.tmp$/,
-	/\.swp$/,
-	/\.swo$/,
-	/~$/,
-	/\.bak$/,
-	/\.orig$/,
-	/\.log$/,
-	// Editor-specific patterns (Emacs, macOS)
-	/^\.#/,
-	/^#.*#$/,
-	/^\._/,
-	// OS files
-	/\.DS_Store$/,
-	/Thumbs\.db$/,
-	// Directories (match at any level)
-	/(^|\/)\.git\//,
-	/(^|\/)node_modules\//,
-	/(^|\/)\.claude\//,
-	/(^|\/)\.cursor\//,
-	/(^|\/)\.aider\//,
-]
+// Minimal OS junk - always excluded (can appear when browsing temp dir in Finder/Explorer)
+const OS_JUNK = [/\.DS_Store$/, /Thumbs\.db$/]
+
+/**
+ * Load .gitignore patterns from the PROJECT directory (not temp dir).
+ * The temp dir is a symlink farm - the real .gitignore lives in the project.
+ *
+ * Handles negation patterns (!pattern) correctly via the `ignore` package.
+ *
+ * @param projectDir - The real project directory containing .gitignore
+ * @returns Ignore instance for checking paths
+ */
+function loadGitignore(projectDir: string): Ignore {
+	const ig = ignore()
+	const gitignorePath = join(projectDir, ".gitignore")
+
+	try {
+		if (existsSync(gitignorePath)) {
+			ig.add(readFileSync(gitignorePath, "utf8"))
+		}
+		// No .gitignore file is fine - just use empty ignore (only OS_JUNK will be excluded)
+	} catch (err) {
+		const code = (err as NodeJS.ErrnoException).code
+		// Permission errors should be warned about (Law 4: Fail Loud)
+		if (code !== "ENOENT") {
+			console.warn(`Warning: Could not read .gitignore: ${(err as Error).message}`)
+		}
+		// Return empty ignore - still works, just no gitignore patterns
+	}
+
+	return ig
+}
 
 /**
  * Normalize path for consistent Set operations.
@@ -57,9 +65,19 @@ function isSymlink(filePath: string): boolean {
 
 /**
  * Check if a path should be excluded from syncing.
+ *
+ * Exclusion sources:
+ * 1. OS junk files (.DS_Store, Thumbs.db) - always excluded
+ * 2. .gitignore patterns from project - respects negation (!pattern)
  */
-function isExcluded(relativePath: string): boolean {
-	return EXCLUDE_PATTERNS.some((p) => p.test(relativePath))
+function isExcluded(relativePath: string, gitignore: Ignore): boolean {
+	// Empty path = root dir - DON'T exclude or chokidar won't watch contents
+	if (!relativePath) return false
+	// OS junk - always excluded (fast regex check first)
+	if (OS_JUNK.some((p) => p.test(relativePath))) return true
+	// Gitignore patterns (handles negation correctly)
+	if (gitignore.ignores(relativePath)) return true
+	return false
 }
 
 /**
@@ -110,6 +128,9 @@ export function createFileSync(tempDir: string, projectDir: string): FileSyncHan
 	const failures: Array<{ path: string; error: Error }> = []
 	const syncedFiles = new Set<string>() // Track normalized paths of files WE created
 
+	// Load gitignore from PROJECT dir (not temp dir - temp is symlink farm)
+	const gitignore = loadGitignore(projectDir)
+
 	// Chokidar config based on research
 	// followSymlinks: false is CRITICAL - don't follow symlinks
 	// awaitWriteFinish with 200ms stabilityThreshold (per watchpack pattern)
@@ -120,7 +141,7 @@ export function createFileSync(tempDir: string, projectDir: string): FileSyncHan
 			stabilityThreshold: 200,
 			pollInterval: 50,
 		},
-		ignored: (filePath) => isExcluded(relative(tempDir, filePath)),
+		ignored: (filePath) => isExcluded(relative(tempDir, filePath), gitignore),
 	})
 
 	// Watcher error handler - captures EMFILE, permission errors, etc.
