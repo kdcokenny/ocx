@@ -11,6 +11,25 @@ import type { GitInfo } from "./git-context.js"
 
 const MAX_BRANCH_LENGTH = 20
 
+// ============================================================================
+// Terminal Title Stack (Save/Restore)
+// ============================================================================
+// REQUIREMENT: Ghost mode must restore the original terminal title on exit.
+//
+// APPROACH: Uses XTerm's title stack (CSI 22;2t push, CSI 23;2t pop).
+// This follows the pattern used by Vim and Neovim for reliable restoration.
+//
+// COMPATIBILITY: Supported by xterm, iTerm2, Alacritty, VTE/GNOME.
+// Unsupported terminals (kitty, Windows Terminal) safely ignore the sequences
+// per ECMA-48 specification.
+//
+// LIMITATION: SIGKILL cannot be caught, so title won't restore if the process
+// is killed with `kill -9`. This is an industry-accepted limitation.
+// ============================================================================
+
+/** Tracks whether we've pushed to the terminal title stack */
+let titleSaved = false
+
 /**
  * Checks if the current process is running inside a tmux session.
  *
@@ -96,6 +115,66 @@ export function setTerminalTitle(title: string): void {
 export function setTerminalName(name: string): void {
 	setTmuxWindowName(name)
 	setTerminalTitle(name)
+}
+
+/**
+ * Saves the current terminal title to the terminal's title stack.
+ * Uses XTerm CSI 22;2t (push window title only).
+ *
+ * Safe to call on unsupported terminals - the sequence is ignored per ECMA-48.
+ * Uses Neovim's pattern of tracking state to prevent double-push.
+ *
+ * @example
+ * ```ts
+ * saveTerminalTitle()  // Push current title
+ * setTerminalName("ghost[default]:repo/main")
+ * // ... later on exit ...
+ * restoreTerminalTitle()  // Pop to restore original
+ * ```
+ */
+export function saveTerminalTitle(): void {
+	// Guard: Already saved or not a TTY
+	if (titleSaved || !isTTY) {
+		return
+	}
+
+	// CSI 22;2t - Push window title to stack (;2 = title only, not icon name)
+	process.stdout.write("\x1b[22;2t")
+	titleSaved = true
+}
+
+/**
+ * Restores the previous terminal title from the stack.
+ * Uses XTerm CSI 23;2t (pop window title).
+ * For tmux: re-enables automatic-rename to restore dynamic window naming.
+ *
+ * Safe to call even if save wasn't called - pop from empty stack is a no-op.
+ * Must be called synchronously in exit handlers for guaranteed execution.
+ *
+ * @example
+ * ```ts
+ * process.on('exit', () => {
+ *   restoreTerminalTitle()  // Restore original title
+ * })
+ * ```
+ */
+export function restoreTerminalTitle(): void {
+	// Guard: Nothing to restore
+	if (!titleSaved) {
+		return
+	}
+
+	// Restore tmux automatic window naming
+	if (isInsideTmux()) {
+		Bun.spawnSync(["tmux", "set-window-option", "automatic-rename", "on"])
+	}
+
+	// CSI 23;2t - Pop window title from stack
+	if (isTTY) {
+		process.stdout.write("\x1b[23;2t")
+	}
+
+	titleSaved = false
 }
 
 /**

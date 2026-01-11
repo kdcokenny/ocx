@@ -26,7 +26,12 @@ import {
 	injectGhostFiles,
 	REMOVING_SUFFIX,
 } from "../../utils/symlink-farm.js"
-import { formatTerminalName, setTerminalName } from "../../utils/terminal-title.js"
+import {
+	formatTerminalName,
+	restoreTerminalTitle,
+	saveTerminalTitle,
+	setTerminalName,
+} from "../../utils/terminal-title.js"
 
 interface GhostOpenCodeOptions {
 	json?: boolean
@@ -129,6 +134,11 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	// This ensures SIGKILL resilience: if rename succeeds but rm is interrupted,
 	// the -removing directory will be cleaned up on next startup
 	const exitHandler = () => {
+		// REQUIREMENT: Restore terminal title FIRST in exit handler.
+		// Must run before any other cleanup while stdout is still valid.
+		// This pops the saved title from the terminal's title stack.
+		restoreTerminalTitle()
+
 		if (!cleanupDone && tempDir) {
 			try {
 				const removingPath = `${tempDir}${REMOVING_SUFFIX}`
@@ -150,6 +160,11 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 
 	process.on("SIGINT", sigintHandler)
 	process.on("SIGTERM", sigtermHandler)
+
+	// REQUIREMENT: Save terminal title BEFORE setting ghost title.
+	// This pushes the current title to the terminal's title stack so it can be
+	// restored when OpenCode exits. Must happen before setTerminalName().
+	saveTerminalTitle()
 
 	// Set terminal name for easy identification in tmux/terminal tabs
 	const gitInfo = await getGitInfo(cwd)
