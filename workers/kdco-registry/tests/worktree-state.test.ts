@@ -15,7 +15,9 @@ import {
 	getAllSessions,
 	getPendingDelete,
 	getPendingSpawn,
+	getProjectId,
 	getSession,
+	getWorktreePath,
 	initStateDb,
 	removeSession,
 	setPendingDelete,
@@ -41,11 +43,11 @@ afterEach(() => {
 
 describe("worktree-state", () => {
 	describe("Database Initialization", () => {
-		it("should create database file in correct location", () => {
+		it("should create database file in correct location", async () => {
 			const projectRoot = path.join(testDir, "my-project")
 			fs.mkdirSync(projectRoot, { recursive: true })
 
-			const db = initStateDb(projectRoot)
+			const db = await initStateDb(projectRoot)
 			db.close()
 
 			// Check that a SQLite file was created in the worktree plugin directory
@@ -54,22 +56,22 @@ describe("worktree-state", () => {
 			expect(files.some((f: string) => f.endsWith(".sqlite"))).toBe(true)
 		})
 
-		it("should enable WAL mode", () => {
+		it("should enable WAL mode", async () => {
 			const projectRoot = path.join(testDir, "wal-test")
 			fs.mkdirSync(projectRoot, { recursive: true })
 
-			const db = initStateDb(projectRoot)
+			const db = await initStateDb(projectRoot)
 			const result = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string }
 			db.close()
 
 			expect(result.journal_mode).toBe("wal")
 		})
 
-		it("should create tables on first init", () => {
+		it("should create tables on first init", async () => {
 			const projectRoot = path.join(testDir, "tables-test")
 			fs.mkdirSync(projectRoot, { recursive: true })
 
-			const db = initStateDb(projectRoot)
+			const db = await initStateDb(projectRoot)
 
 			// Check sessions table exists
 			const sessionsTable = db
@@ -86,12 +88,12 @@ describe("worktree-state", () => {
 			db.close()
 		})
 
-		it("should return same database schema on multiple calls with same projectRoot", () => {
+		it("should return same database schema on multiple calls with same projectRoot", async () => {
 			const projectRoot = path.join(testDir, "multi-init")
 			fs.mkdirSync(projectRoot, { recursive: true })
 
 			// First init
-			const db1 = initStateDb(projectRoot)
+			const db1 = await initStateDb(projectRoot)
 			addSession(db1, {
 				id: "session-1",
 				branch: "feature-test",
@@ -101,7 +103,7 @@ describe("worktree-state", () => {
 			db1.close()
 
 			// Second init should see the same data
-			const db2 = initStateDb(projectRoot)
+			const db2 = await initStateDb(projectRoot)
 			const session = getSession(db2, "session-1")
 			db2.close()
 
@@ -109,9 +111,56 @@ describe("worktree-state", () => {
 			expect(session?.branch).toBe("feature-test")
 		})
 
-		it("should throw for invalid project root", () => {
-			expect(() => initStateDb("")).toThrow("valid project root path")
-			expect(() => initStateDb(null as unknown as string)).toThrow("valid project root path")
+		it("should throw for invalid project root", async () => {
+			await expect(initStateDb("")).rejects.toThrow("valid project root path")
+			await expect(initStateDb(null as unknown as string)).rejects.toThrow(
+				"valid project root path",
+			)
+		})
+	})
+
+	describe("Project ID and Worktree Paths", () => {
+		it("should getProjectId return consistent ID for same project", async () => {
+			const projectRoot = path.join(testDir, "id-test")
+			fs.mkdirSync(projectRoot, { recursive: true })
+
+			// Call twice, should get the same result
+			const id1 = await getProjectId(projectRoot)
+			const id2 = await getProjectId(projectRoot)
+
+			expect(id1).toBe(id2)
+			// Should be a 16-char hex hash for non-git repos (path-based fallback)
+			expect(id1).toMatch(/^[a-f0-9]{16}$/)
+		})
+
+		it("should getProjectId throw for empty project root", async () => {
+			await expect(getProjectId("")).rejects.toThrow("projectRoot is required")
+		})
+
+		it("should getWorktreePath return correct path structure", async () => {
+			const projectRoot = path.join(testDir, "worktree-path-test")
+			fs.mkdirSync(projectRoot, { recursive: true })
+
+			const worktreePath = await getWorktreePath(projectRoot, "feature-branch")
+
+			// Should include ~/.local/share/opencode/worktree/{project-id}/{branch}
+			expect(worktreePath).toContain(os.homedir())
+			expect(worktreePath).toContain(".local")
+			expect(worktreePath).toContain("share")
+			expect(worktreePath).toContain("opencode")
+			expect(worktreePath).toContain("worktree")
+			expect(worktreePath).toContain("feature-branch")
+		})
+
+		it("should getWorktreePath use consistent project ID", async () => {
+			const projectRoot = path.join(testDir, "worktree-consistent-test")
+			fs.mkdirSync(projectRoot, { recursive: true })
+
+			const projectId = await getProjectId(projectRoot)
+			const worktreePath = await getWorktreePath(projectRoot, "test-branch")
+
+			// Path should contain the project ID
+			expect(worktreePath).toContain(projectId)
 		})
 	})
 
@@ -119,9 +168,9 @@ describe("worktree-state", () => {
 		let db: Database
 		const projectRoot = () => path.join(testDir, "crud-project")
 
-		beforeEach(() => {
+		beforeEach(async () => {
 			fs.mkdirSync(projectRoot(), { recursive: true })
-			db = initStateDb(projectRoot())
+			db = await initStateDb(projectRoot())
 		})
 
 		afterEach(() => {
@@ -306,9 +355,9 @@ describe("worktree-state", () => {
 		let db: Database
 		const projectRoot = () => path.join(testDir, "spawn-project")
 
-		beforeEach(() => {
+		beforeEach(async () => {
 			fs.mkdirSync(projectRoot(), { recursive: true })
-			db = initStateDb(projectRoot())
+			db = await initStateDb(projectRoot())
 		})
 
 		afterEach(() => {
@@ -422,9 +471,9 @@ describe("worktree-state", () => {
 		let db: Database
 		const projectRoot = () => path.join(testDir, "delete-project")
 
-		beforeEach(() => {
+		beforeEach(async () => {
 			fs.mkdirSync(projectRoot(), { recursive: true })
-			db = initStateDb(projectRoot())
+			db = await initStateDb(projectRoot())
 		})
 
 		afterEach(() => {
@@ -520,9 +569,9 @@ describe("worktree-state", () => {
 		let db: Database
 		const projectRoot = () => path.join(testDir, "interaction-project")
 
-		beforeEach(() => {
+		beforeEach(async () => {
 			fs.mkdirSync(projectRoot(), { recursive: true })
-			db = initStateDb(projectRoot())
+			db = await initStateDb(projectRoot())
 		})
 
 		afterEach(() => {
@@ -598,9 +647,9 @@ describe("worktree-state", () => {
 		let warnSpy: ReturnType<typeof spyOn>
 		const projectRoot = () => path.join(testDir, "warning-project")
 
-		beforeEach(() => {
+		beforeEach(async () => {
 			fs.mkdirSync(projectRoot(), { recursive: true })
-			db = initStateDb(projectRoot())
+			db = await initStateDb(projectRoot())
 			warnSpy = spyOn(console, "warn")
 		})
 
@@ -721,8 +770,8 @@ describe("worktree-state", () => {
 			fs.mkdirSync(projectRoot(), { recursive: true })
 		})
 
-		it("should multiple addSession calls not lose data", () => {
-			const db = initStateDb(projectRoot())
+		it("should multiple addSession calls not lose data", async () => {
+			const db = await initStateDb(projectRoot())
 
 			// Add multiple sessions rapidly
 			const sessions = Array.from({ length: 10 }, (_, i) => ({
@@ -749,8 +798,8 @@ describe("worktree-state", () => {
 			db.close()
 		})
 
-		it("should setPendingSpawn be atomic (last write wins, no corruption)", () => {
-			const db = initStateDb(projectRoot())
+		it("should setPendingSpawn be atomic (last write wins, no corruption)", async () => {
+			const db = await initStateDb(projectRoot())
 
 			// Rapidly set multiple pending spawns
 			for (let i = 0; i < 10; i++) {
@@ -771,9 +820,9 @@ describe("worktree-state", () => {
 			db.close()
 		})
 
-		it("should operations work across multiple database handles", () => {
+		it("should operations work across multiple database handles", async () => {
 			// First handle creates data
-			const db1 = initStateDb(projectRoot())
+			const db1 = await initStateDb(projectRoot())
 			addSession(db1, {
 				id: "cross-handle-session",
 				branch: "cross-handle-branch",
@@ -788,7 +837,7 @@ describe("worktree-state", () => {
 			db1.close()
 
 			// Second handle reads data
-			const db2 = initStateDb(projectRoot())
+			const db2 = await initStateDb(projectRoot())
 			const session = getSession(db2, "cross-handle-session")
 			const spawn = getPendingSpawn(db2)
 
@@ -804,16 +853,16 @@ describe("worktree-state", () => {
 			db2.close()
 
 			// Third handle verifies modifications
-			const db3 = initStateDb(projectRoot())
+			const db3 = await initStateDb(projectRoot())
 			expect(getSession(db3, "cross-handle-session")).toBeNull()
 			expect(getPendingSpawn(db3)).toBeNull()
 			db3.close()
 		})
 
-		it("should handle busy_timeout for concurrent access", () => {
+		it("should handle busy_timeout for concurrent access", async () => {
 			// Open two handles simultaneously
-			const db1 = initStateDb(projectRoot())
-			const db2 = initStateDb(projectRoot())
+			const db1 = await initStateDb(projectRoot())
+			const db2 = await initStateDb(projectRoot())
 
 			// Both should be able to operate without errors
 			addSession(db1, {

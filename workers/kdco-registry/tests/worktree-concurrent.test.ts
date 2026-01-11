@@ -30,11 +30,11 @@ import { Mutex } from "../files/plugin/worktree/terminal"
 let testProjectRoot: string
 let db: Database
 
-beforeEach(() => {
+beforeEach(async () => {
 	// Create unique temp directory for test isolation
 	testProjectRoot = path.join(os.tmpdir(), `worktree-test-${Bun.randomUUIDv7()}`)
 	fs.mkdirSync(testProjectRoot, { recursive: true })
-	db = initStateDb(testProjectRoot)
+	db = await initStateDb(testProjectRoot)
 })
 
 afterEach(() => {
@@ -316,8 +316,8 @@ describe("Read-Modify-Write Atomicity", () => {
 describe("Cross-Handle Database Access", () => {
 	it("handles multiple database handles to same file", async () => {
 		// Simulate cross-process access via multiple handles
-		const db1 = initStateDb(testProjectRoot)
-		const db2 = initStateDb(testProjectRoot)
+		const db1 = await initStateDb(testProjectRoot)
+		const db2 = await initStateDb(testProjectRoot)
 
 		addSession(db1, { id: "s1", branch: "b1", path: "/p1", createdAt: new Date().toISOString() })
 		addSession(db2, { id: "s2", branch: "b2", path: "/p2", createdAt: new Date().toISOString() })
@@ -332,8 +332,8 @@ describe("Cross-Handle Database Access", () => {
 	})
 
 	it("handles concurrent writes from multiple handles", async () => {
-		const db1 = initStateDb(testProjectRoot)
-		const db2 = initStateDb(testProjectRoot)
+		const db1 = await initStateDb(testProjectRoot)
+		const db2 = await initStateDb(testProjectRoot)
 
 		const promises = [
 			...Array.from({ length: 5 }, (_, i) =>
@@ -377,8 +377,8 @@ describe("Cross-Handle Database Access", () => {
 	})
 
 	it("pending operations are visible across handles", async () => {
-		const db1 = initStateDb(testProjectRoot)
-		const db2 = initStateDb(testProjectRoot)
+		const db1 = await initStateDb(testProjectRoot)
+		const db2 = await initStateDb(testProjectRoot)
 
 		setPendingSpawn(db1, {
 			branch: "cross-handle-branch",
@@ -403,7 +403,7 @@ describe("Cross-Handle Database Access", () => {
 	})
 
 	it("handles handle closure gracefully", async () => {
-		const db1 = initStateDb(testProjectRoot)
+		const db1 = await initStateDb(testProjectRoot)
 
 		addSession(db1, {
 			id: "before-close",
@@ -415,7 +415,7 @@ describe("Cross-Handle Database Access", () => {
 		db1.close()
 
 		// Open a new handle and verify data persisted
-		const db2 = initStateDb(testProjectRoot)
+		const db2 = await initStateDb(testProjectRoot)
 		const sessions = getAllSessions(db2)
 
 		expect(sessions.length).toBe(1)

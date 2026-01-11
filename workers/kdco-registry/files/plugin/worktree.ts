@@ -25,6 +25,7 @@ import {
 	clearPendingDelete,
 	getPendingDelete,
 	getSession,
+	getWorktreePath,
 	initStateDb,
 	removeSession,
 	setPendingDelete,
@@ -185,7 +186,7 @@ function registerCleanupHandlers(database: Database): void {
  * @returns Database instance
  * @throws {Error} if initialization fails after all retries
  */
-function getDb(): Database {
+async function getDb(): Promise<Database> {
 	if (db) return db
 
 	if (!projectRoot) {
@@ -196,7 +197,7 @@ function getDb(): Database {
 
 	for (let attempt = 1; attempt <= DB_MAX_RETRIES; attempt++) {
 		try {
-			db = initStateDb(projectRoot)
+			db = await initStateDb(projectRoot)
 			registerCleanupHandlers(db)
 			return db
 		} catch (error) {
@@ -220,7 +221,7 @@ function getDb(): Database {
  * Initialize the database with the project root path.
  * Must be called once before any getDb() calls.
  */
-function initDb(root: string): Database {
+async function initDb(root: string): Promise<Database> {
 	projectRoot = root
 	return getDb()
 }
@@ -264,7 +265,7 @@ async function createWorktree(
 	branch: string,
 	baseBranch?: string,
 ): Promise<Result<string, string>> {
-	const worktreePath = path.join(repoRoot, ".opencode", "worktrees", branch)
+	const worktreePath = await getWorktreePath(repoRoot, branch)
 
 	// Ensure parent directory exists
 	await fs.mkdir(path.dirname(worktreePath), { recursive: true })
@@ -575,7 +576,7 @@ export const WorktreePlugin: Plugin = async (ctx) => {
 	const { directory } = ctx
 
 	// Initialize SQLite database
-	const database = initDb(directory)
+	const database = await initDb(directory)
 
 	// Run one-time migration from JSON state
 	await migrateFromJsonState(database, directory)

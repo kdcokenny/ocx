@@ -37,12 +37,12 @@ flowchart LR
 ```
 
 1. **Create** - AI calls `worktree_create("feature/dark-mode")`
-2. **Terminal spawns** - New window opens with OpenCode at `.opencode/worktrees/feature/dark-mode`
+2. **Terminal spawns** - New window opens with OpenCode at `~/.local/share/opencode/worktree/<project-id>/feature/dark-mode`
 3. **Work** - AI experiments in complete isolation
 4. **Delete** - AI calls `worktree_delete("reason")`
 5. **Cleanup** - Changes commit automatically, git worktree removed
 
-Worktrees are stored in `.opencode/worktrees/<branch-name>/` within your repository.
+Worktrees are stored in `~/.local/share/opencode/worktree/<project-id>/<branch>/` outside your repository.
 
 ## Installation
 
@@ -82,7 +82,7 @@ worktree_create:
 ```
 
 When called, this:
-1. Creates git worktree at `.opencode/worktrees/feature/dark-mode`
+1. Creates git worktree at `~/.local/share/opencode/worktree/<project-id>/feature/dark-mode`
 2. Syncs files based on `.opencode/worktree.jsonc` config
 3. Runs post-create hooks (e.g., `pnpm install`)
 4. Opens a new terminal with OpenCode running
@@ -188,7 +188,7 @@ Worktrees created with this plugin work fine in OpenCode Desktop, but you lose t
 
 ### What happens if I forget to delete the worktree?
 
-Changes remain in `.opencode/worktrees/<branch>`. The branch exists in git. You can manually check out or delete it later. The plugin doesn't force cleanup—it's just the convenient default path.
+Changes remain in `~/.local/share/opencode/worktree/<project-id>/<branch>`. The branch exists in git. You can manually check out or delete it later. The plugin doesn't force cleanup—it's just the convenient default path.
 
 ### Can I have multiple worktrees simultaneously?
 

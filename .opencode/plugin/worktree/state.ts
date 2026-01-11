@@ -5,7 +5,7 @@
  * Uses bun:sqlite for zero external dependencies.
  *
  * Database location: ~/.local/share/opencode/plugins/worktree/{project-id}.sqlite
- * Project ID is a SHA-256 hash of the project root path for isolation.
+ * Project ID is the first git root commit SHA (40-char hex), with SHA-256 path hash fallback (16-char).
  */
 
 import { Database } from "bun:sqlite"
@@ -67,11 +67,79 @@ const pendingDeleteSchema = z.object({
 
 /**
  * Generate a unique project ID from the project root path.
- * Uses SHA-256 hash truncated to 16 chars for filesystem safety.
+ *
+ * Uses the first root commit SHA for stability across renames/moves.
+ * Falls back to path hash for non-git repos or empty repos.
+ * Caches result in .git/opencode for performance.
+ *
+ * @param projectRoot - Absolute path to the project root
+ * @returns 40-char hex SHA (git root) or 16-char hash (fallback)
  */
-function getProjectId(projectRoot: string): string {
+export async function getProjectId(projectRoot: string): Promise<string> {
+	// Guard: throw if projectRoot empty/invalid
+	if (!projectRoot || typeof projectRoot !== "string") {
+		throw new Error("projectRoot is required")
+	}
+
+	// Try to read cached ID from .git/opencode
+	const gitDir = path.join(projectRoot, ".git")
+	const cacheFile = path.join(gitDir, "opencode")
+	try {
+		const cached = await Bun.file(cacheFile).text()
+		const trimmed = cached.trim()
+		// Validate: must be 40-char hex SHA
+		if (/^[a-f0-9]{40}$/i.test(trimmed)) {
+			return trimmed
+		}
+	} catch {
+		// Cache miss or read error - continue to compute
+	}
+
+	// Try to get first root commit SHA
+	try {
+		const proc = Bun.spawn(["git", "rev-list", "--max-parents=0", "--all"], {
+			cwd: projectRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		const output = await new Response(proc.stdout).text()
+		const roots = output
+			.split("\n")
+			.filter(Boolean)
+			.map((s) => s.trim())
+			.toSorted()
+
+		if (roots.length > 0 && /^[a-f0-9]{40}$/i.test(roots[0])) {
+			const projectId = roots[0]
+
+			// Cache the result (warn on failure, don't throw)
+			try {
+				await Bun.write(cacheFile, projectId)
+			} catch (e) {
+				console.warn("Failed to cache project ID:", e)
+			}
+
+			return projectId
+		}
+	} catch {
+		// Git command failed - fallback to path hash
+	}
+
+	// Fallback: use current path-hash behavior
 	const hash = crypto.createHash("sha256").update(projectRoot).digest("hex")
 	return hash.slice(0, 16)
+}
+
+/**
+ * Get the worktree path for a given project and branch.
+ *
+ * @param projectRoot - Absolute path to the project root
+ * @param branch - Branch name for the worktree
+ * @returns Absolute path to the worktree directory
+ */
+export async function getWorktreePath(projectRoot: string, branch: string): Promise<string> {
+	const projectId = await getProjectId(projectRoot)
+	return path.join(os.homedir(), ".local", "share", "opencode", "worktree", projectId, branch)
 }
 
 /**
@@ -87,8 +155,8 @@ function getDbDirectory(): string {
  * Get the full database file path for a project.
  * @param projectRoot - Absolute path to the project root
  */
-function getDbPath(projectRoot: string): string {
-	const projectId = getProjectId(projectRoot)
+async function getDbPath(projectRoot: string): Promise<string> {
+	const projectId = await getProjectId(projectRoot)
 	return path.join(getDbDirectory(), `${projectId}.sqlite`)
 }
 
@@ -101,18 +169,18 @@ function getDbPath(projectRoot: string): string {
  *
  * @example
  * ```ts
- * const db = initStateDb("/home/user/my-project")
+ * const db = await initStateDb("/home/user/my-project")
  * const sessions = getAllSessions(db)
  * db.close()
  * ```
  */
-export function initStateDb(projectRoot: string): Database {
+export async function initStateDb(projectRoot: string): Promise<Database> {
 	// Guard: validate project root
 	if (!projectRoot || typeof projectRoot !== "string") {
 		throw new Error("initStateDb requires a valid project root path")
 	}
 
-	const dbPath = getDbPath(projectRoot)
+	const dbPath = await getDbPath(projectRoot)
 	const dbDir = path.dirname(dbPath)
 
 	// Create directory synchronously (required before opening DB)

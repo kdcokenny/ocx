@@ -123,9 +123,9 @@ Before pushing changes, test the full CLI flow using local registry sources.
 - Use **absolute paths** with `file://` URLs (use `$(pwd)` to expand)
 
 ```bash
-# 1. Clean slate - wipe generated files (preserves .opencode/worktrees/)
+# 1. Clean slate - wipe generated files
 rm -f opencode.jsonc ocx.lock ocx.jsonc
-find .opencode -mindepth 1 -maxdepth 1 ! -name 'worktrees' -exec rm -rf {} + 2>/dev/null || true
+rm -rf .opencode
 
 # 2. Rebuild the CLI
 cd packages/cli && bun run build && cd ../..
@@ -170,12 +170,9 @@ Example structure:
 
 For repeated testing (assumes registry is already built):
 
-> **Note:** `.opencode/worktrees/` contains git worktrees and must be preserved.
-> The cleanup command below removes OCX-managed contents while keeping worktrees intact.
-
 ```bash
 rm -f opencode.jsonc ocx.lock ocx.jsonc && \
-find .opencode -mindepth 1 -maxdepth 1 ! -name 'worktrees' -exec rm -rf {} + 2>/dev/null; \
+rm -rf .opencode && \
 ./packages/cli/dist/index.js init && \
 ./packages/cli/dist/index.js registry add "file://$(pwd)/workers/kdco-registry/dist" --name kdco && \
 ./packages/cli/dist/index.js add kdco/workspace --force && \
