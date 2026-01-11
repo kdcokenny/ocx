@@ -146,6 +146,16 @@ Use these quick checks to verify ghost mode is working correctly:
 When testing OCX features, **always use ghost mode** with the `ocx-dev` profile.
 This prevents accidental modifications to the repository and provides clean isolation.
 
+#### Global Config Awareness
+
+When testing Ghost Mode, be aware of the global OpenCode config at `~/.config/opencode/opencode.jsonc`.
+This config applies to ALL profiles and may include:
+- Model/provider settings
+- Agent model assignments  
+- MCP servers that apply globally
+
+**For AI Agents**: Always check this file if you see unexpected behavior or settings that don't match your profile config. The global config merges with profile-specific configs.
+
 ### Registry Tests
 
 ```bash
