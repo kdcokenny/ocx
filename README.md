@@ -165,7 +165,7 @@ Or use the `OCX_PROFILE` environment variable to temporarily switch profiles.
 | `ocx ghost search <query>` | `ocx g search` | Search ghost registries |
 | `ocx ghost opencode [args...]` | `ocx g opencode` | Run OpenCode with ghost config |
 
-> **How it works:** Ghost mode uses symlink isolation to run OpenCode without seeing the project's config. Ghost mode also sets informative terminal names (`ghost[profile]:repo/branch`) for easy session identification (configurable via `renameWindow` or `--no-rename`). Git, LSPs, and file editing all work normally—changes go directly to the real project files.
+> **How it works:** Ghost mode uses symlink isolation to run OpenCode without seeing the project's config. New files created during a ghost session are automatically synced back to your real project in real-time. Ghost mode also sets informative terminal names (`ghost[profile]:repo/branch`) for easy session identification (configurable via `renameWindow` or `--no-rename`). Git, LSPs, and file editing all work normally—changes go directly to the real project files.
 
 #### Config Location
 

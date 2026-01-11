@@ -86,6 +86,66 @@ cd packages/cli
 bun test
 ```
 
+### Ghost Mode Testing (Preferred for Manual/AI Testing)
+
+Ghost mode provides isolated testing without affecting your local files or configuration.
+Use the `ocx-dev` profile to keep testing completely separate.
+
+#### Setup ocx-dev Profile (One-time)
+
+```bash
+# Create the ocx-dev profile
+./packages/cli/dist/index.js ghost profile add ocx-dev
+
+# Switch to ocx-dev profile
+./packages/cli/dist/index.js ghost profile use ocx-dev
+```
+
+#### Quick Feature Testing
+
+```bash
+# Build CLI first
+cd packages/cli && bun run build && cd ../..
+
+# Test with ghost opencode run
+./packages/cli/dist/index.js ghost opencode run "Your instruction here"
+```
+
+#### Verification Tests
+
+Use these quick checks to verify ghost mode is working correctly:
+
+| Test | Command | Expected |
+|------|---------|----------|
+| **AGENTS.md excluded** | `ghost opencode run "What does the AGENTS.md say?"` | Should see profile's AGENTS.md, not project's |
+| **AGENTS.md included** | (with `include: ["AGENTS.md"]`) Same command | Should see project's AGENTS.md |
+| **Plugins visible** | `ghost opencode run "What plugins are available?"` | Should list profile's configured plugins |
+| **Skills visible** | `ghost opencode run "What skills do you have?"` | Should list profile's skills |
+| **File sync works** | `ghost opencode run "Create test.txt with 'hello'"` | File should appear in real project |
+| **Gitignore respected** | `ghost opencode run "Create debug.log"` (if *.log gitignored) | File should NOT appear in project |
+
+#### Troubleshooting
+
+| Symptom | Likely Cause |
+|---------|--------------|
+| AI sees project's AGENTS.md instead of profile's | `include` pattern is overriding exclusion |
+| AI doesn't see expected plugins | Profile's `opencode.jsonc` not configured |
+| New files not appearing in project | File matches `.gitignore` pattern |
+| AI sees files that should be hidden | Check `exclude` patterns in `ghost.jsonc` |
+
+#### Why Ghost Mode for Testing?
+
+- **Isolated**: Uses `ocx-dev` profile, separate from your default config
+- **No cleanup needed**: Temp directory is automatically cleaned up
+- **Real-time sync**: New files sync to project immediately (~200ms)
+- **Safe**: Won't affect your working files or git state
+- **Sync reporting**: Exit shows "Synced X new files to project"
+
+#### For AI Agents
+
+When testing OCX features, **always use ghost mode** with the `ocx-dev` profile.
+This prevents accidental modifications to the repository and provides clean isolation.
+
 ### Registry Tests
 
 ```bash
@@ -113,6 +173,9 @@ Key test scenarios:
 - `--dry-run` previews without changes
 - `@version` syntax pins to specific version
 - Error cases (conflicts, missing components)
+
+> **Note:** For quick manual testing or AI-driven testing, prefer Ghost Mode Testing above.
+> The section below is for comprehensive integration testing of the full CLI flow.
 
 ### Local Testing (End-to-End)
 

@@ -1280,9 +1280,10 @@ ocx ghost opencode -- /path/to/file.md
 3. **Apply Filters**: Uses `include`/`exclude` patterns from ghost config
 4. **Symlink Farm**: Creates temporary directory with symlinks to filtered files
 5. **Git Integration**: Sets `GIT_WORK_TREE` and `GIT_DIR` to see real project
-6. **Terminal Naming**: Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification (unless disabled via `--no-rename` flag or `renameWindow: false` in config)
-7. **Spawn OpenCode**: Runs OpenCode from temp directory with ghost config via env vars
-8. **Cleanup**: Removes temp directory on exit
+6. **File Sync**: Watches for new files created in the temp directory and syncs them back to your real project in real-time (respects `.gitignore` patterns)
+7. **Terminal Naming**: Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification (unless disabled via `--no-rename` flag or `renameWindow: false` in config)
+8. **Spawn OpenCode**: Runs OpenCode from temp directory with ghost config via env vars
+9. **Cleanup**: Removes temp directory on exit, reports number of synced files
 
 ---
 

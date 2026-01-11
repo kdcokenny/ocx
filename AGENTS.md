@@ -284,8 +284,10 @@ Ghost mode enables working in repositories without modifying them:
 5. Starts real-time file sync that watches the temp directory
    - New files created by OpenCode are automatically synced to the real project
    - Deletions are also synced (only for files that were created during the session)
+   - Respects project's `.gitignore` patterns (build artifacts, node_modules, etc. excluded)
+   - OS junk files (`.DS_Store`, `Thumbs.db`) are always excluded
    - Files appear in the real project immediately (~200ms delay for write completion)
-   - On exit, reports number of synced files
+   - On exit, reports: "Synced X new files to project"
 6. Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification
    - Disabled with `--no-rename` flag or `renameWindow: false` in ghost config
 7. Spawns OpenCode from temp dir with `OCX_PROFILE` env var set
@@ -298,6 +300,7 @@ Ghost mode enables working in repositories without modifying them:
 - Crash recovery: On hard crash (SIGKILL), unsynced files remain in temp dir
 - Directory deletion: Only deletes empty directories
 - Rapid create+delete: Files created and deleted within 200ms may not sync
+- Gitignore: Only root `.gitignore` is parsed (nested gitignores not supported)
 
 ### GhostConfigProvider vs ProfileManager
 
