@@ -244,7 +244,6 @@ Ghost mode enables working in repositories without modifying them:
 | `profile/paths.ts` | `src/profile/paths.ts` | Path constants and helpers for profile directories |
 | `profile/migrate.ts` | `src/profile/migrate.ts` | Migration from legacy `~/.config/ocx/` to profiles |
 | `GhostConfigProvider` | `src/config/provider.ts` | Provides config from current profile |
-| `opencode-discovery.ts` | `src/utils/` | Finds OpenCode config files to exclude |
 | `symlink-farm.ts` | `src/utils/` | Creates temp dir with symlinks |
 | Ghost commands | `src/commands/ghost/` | init, config, registry, add, search, opencode |
 | Profile commands | `src/commands/ghost/profile/` | list, add, remove, use, show, config |
@@ -276,31 +275,22 @@ Ghost mode enables working in repositories without modifying them:
 ### How `ghost opencode` Works
 
 1. Resolves current profile using priority above
-2. Discovers all OpenCode project files (config, AGENTS.md, .opencode/)
-3. Applies `include`/`exclude` patterns from profile's ghost.jsonc to customize visibility
-4. Creates temp directory with symlinks to project (excluding filtered files)
-5. Sets `GIT_WORK_TREE` and `GIT_DIR` so Git sees real project
-6. Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification
-7. Spawns OpenCode from temp dir with `OCX_PROFILE` env var set
-8. Cleans up temp dir on exit
+2. Creates temp directory with symlinks to project:
+   - `exclude` patterns hide files (default: AGENTS.md, .opencode/, opencode.jsonc, etc.)
+   - `include` patterns re-add files from the excluded set
+3. Injects profile overlay (everything in profile dir except `ghost.jsonc`) into temp dir
+   - If user's `include` pattern matches a file, project version is used (not profile overlay)
+4. Sets `GIT_WORK_TREE` and `GIT_DIR` so Git sees real project
+5. Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification
+6. Spawns OpenCode from temp dir with `OCX_PROFILE` env var set
+7. Cleans up temp dir on exit
 
-**Customization:** The `include`/`exclude` fields in `ghost.jsonc` control which OpenCode files
-are visible. Follows TypeScript-style semantics—`include` selects, `exclude` filters.
+**Customization:** Use `include` to keep specific project files visible (e.g., `["AGENTS.md"]` keeps root AGENTS.md from project instead of profile overlay).
 
 ### GhostConfigProvider vs ProfileManager
 
 - **`GhostConfigProvider`**: Reads config from the current profile, used at runtime by ghost commands
 - **`ProfileManager`**: Manages profile lifecycle (create, delete, switch, list)
-
-### OpenCode Discovery Reference
-
-The discovery logic in `opencode-discovery.ts` mirrors OpenCode's scanning:
-
-- **Config files:** `opencode.jsonc`, `opencode.json`
-- **Rule files:** `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`
-- **Config dirs:** `.opencode/`
-
-Reference: https://github.com/sst/opencode (see source comments for exact file locations)
 
 ### Ghost Mode Profiles
 

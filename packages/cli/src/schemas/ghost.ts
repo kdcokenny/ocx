@@ -66,21 +66,42 @@ export const ghostConfigSchema = z.object({
 	componentPath: safeRelativePathSchema.optional(),
 
 	/**
-	 * Glob patterns for OpenCode project files to include in ghost mode.
-	 * By default, all OpenCode files (AGENTS.md, .opencode/, etc.) are excluded
-	 * from the symlink farm. Patterns here specify which to include back.
+	 * Glob patterns to exclude from the symlink farm.
 	 *
-	 * Example: `["AGENTS.md", ".opencode/skills/**"]`
+	 * **Semantics (TypeScript-style):**
+	 * 1. `exclude` is applied first — matching files are hidden
+	 * 2. `include` re-adds files from the excluded set (for power users)
+	 *
+	 * Default excludes all OpenCode project files so ghost mode provides
+	 * a clean slate. Override to keep specific files visible.
 	 */
-	include: z.array(globPatternSchema).optional(),
+	exclude: z
+		.array(globPatternSchema)
+		.default([
+			// Rule files - recursive (can exist at any depth)
+			"**/AGENTS.md",
+			"**/CLAUDE.md",
+			"**/CONTEXT.md",
+			// Config - root only (one per project)
+			".opencode",
+			"opencode.jsonc",
+			"opencode.json",
+		])
+		.describe("Glob patterns to exclude from the symlink farm"),
 
 	/**
-	 * Glob patterns to exclude from include results.
-	 * Use this to create exceptions to include patterns.
+	 * Glob patterns to re-include from the excluded set.
 	 *
-	 * Example: `["vendor/**", "node_modules/**"]`
+	 * Use this to selectively restore files that were excluded.
+	 * Only matches files that were first matched by `exclude`.
+	 *
+	 * Example: ["AGENTS.md"] keeps root AGENTS.md visible while
+	 * still hiding nested ones matched by the recursive pattern.
 	 */
-	exclude: z.array(globPatternSchema).optional(),
+	include: z
+		.array(globPatternSchema)
+		.default([])
+		.describe("Glob patterns to re-include from excluded set (for power users)"),
 })
 
 export type GhostConfig = z.infer<typeof ghostConfigSchema>

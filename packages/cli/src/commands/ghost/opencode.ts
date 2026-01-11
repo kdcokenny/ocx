@@ -7,23 +7,21 @@
  */
 
 import { renameSync, rmSync } from "node:fs"
-import { copyFile as copyFilePromise } from "node:fs/promises"
+import { copyFile, mkdir, readdir } from "node:fs/promises"
 import path from "node:path"
+import { Glob } from "bun"
 import type { Command } from "commander"
 import { ProfileManager } from "../../profile/manager.js"
 import { needsMigration } from "../../profile/migrate.js"
-import { getProfileAgents, getProfileDir, getProfileOpencodeConfig } from "../../profile/paths.js"
+import { getProfileDir, getProfileOpencodeConfig } from "../../profile/paths.js"
 import { ProfilesNotInitializedError } from "../../utils/errors.js"
 import { getGitInfo } from "../../utils/git-context.js"
 import { detectGitRepo, handleError, logger } from "../../utils/index.js"
-import { discoverProjectFiles } from "../../utils/opencode-discovery.js"
-
 import { sharedOptions } from "../../utils/shared-options.js"
 import {
 	cleanupOrphanedGhostDirs,
 	cleanupSymlinkFarm,
 	createSymlinkFarm,
-	injectGhostFiles,
 	REMOVING_SUFFIX,
 } from "../../utils/symlink-farm.js"
 import { formatTerminalName, setTerminalName } from "../../utils/terminal-title.js"
@@ -94,28 +92,17 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	const cwd = process.cwd()
 	const gitContext = await detectGitRepo(cwd)
 
-	// Discover project files to exclude (use cwd as gitRoot fallback if not in repo)
-	const gitRoot = gitContext?.workTree ?? cwd
-	const discoveredPaths = await discoverProjectFiles(cwd, gitRoot)
-
 	// Create symlink farm with pattern-based filtering
-	// Pattern matching is handled internally by computeSymlinkPlan
+	// Exclude patterns handle OpenCode config files (opencode.jsonc, AGENTS.md, .opencode/)
 	const ghostConfig = profile.ghost
-	const tempDir = await createSymlinkFarm(cwd, discoveredPaths, {
+	const tempDir = await createSymlinkFarm(cwd, {
 		includePatterns: ghostConfig.include,
 		excludePatterns: ghostConfig.exclude,
 	})
 
-	// Inject ghost OpenCode files from profile directory into the temp directory
-	const ghostFiles = await discoverProjectFiles(profileDir, profileDir)
-	await injectGhostFiles(tempDir, profileDir, ghostFiles)
-
-	// If profile has AGENTS.md, copy it into temp directory
-	if (profile.hasAgents) {
-		const agentsPath = getProfileAgents(profileName)
-		const destAgentsPath = path.join(tempDir, "AGENTS.md")
-		await copyFilePromise(agentsPath, destAgentsPath)
-	}
+	// Inject profile overlay - everything in profile dir except ghost.jsonc
+	// This includes opencode.jsonc, AGENTS.md, .opencode/, etc.
+	await injectProfileOverlay(tempDir, profileDir, ghostConfig.include)
 
 	// Track cleanup state to prevent double cleanup
 	let cleanupDone = false
@@ -187,5 +174,61 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 		process.off("SIGTERM", sigtermHandler)
 		process.off("exit", exitHandler)
 		await performCleanup()
+	}
+}
+
+/**
+ * Check if user explicitly included a path via include patterns.
+ * When a user explicitly includes a project file, don't overwrite with profile version.
+ *
+ * @param relativePath - Path relative to project root
+ * @param compiledPatterns - Pre-compiled Glob patterns from ghost.jsonc
+ * @returns True if user explicitly included this path
+ */
+function userExplicitlyIncluded(relativePath: string, compiledPatterns: Glob[]): boolean {
+	// Law 1: Early Exit - no patterns means nothing explicitly included
+	if (compiledPatterns.length === 0) return false
+
+	return compiledPatterns.some((glob) => glob.match(relativePath))
+}
+
+/**
+ * Inject everything from profile directory except ghost.jsonc into the symlink farm.
+ * This copies profile config files (opencode.jsonc, AGENTS.md, .opencode/, etc.)
+ * into the temp directory so OpenCode discovers them.
+ *
+ * @param tempDir - Target temp directory (symlink farm)
+ * @param profileDir - Source profile directory
+ * @param includePatterns - User's include patterns (to avoid overwriting explicitly included project files)
+ */
+async function injectProfileOverlay(
+	tempDir: string,
+	profileDir: string,
+	includePatterns: string[],
+): Promise<void> {
+	const entries = await readdir(profileDir, { withFileTypes: true, recursive: true })
+
+	// Pre-compile globs once before the loop (performance optimization)
+	const compiledIncludePatterns = includePatterns.map((p) => new Glob(p))
+
+	for (const entry of entries) {
+		// Build relative path from profile directory
+		const relativePath = path.relative(profileDir, path.join(entry.parentPath, entry.name))
+
+		// Law 1: Early Exit - skip ghost.jsonc (our config, not OpenCode's)
+		if (relativePath === "ghost.jsonc") continue
+
+		// Law 1: Early Exit - skip if user explicitly included the project version
+		// This lets users keep project AGENTS.md by including it explicitly
+		if (userExplicitlyIncluded(relativePath, compiledIncludePatterns)) continue
+
+		// Law 1: Early Exit - skip directories, files create their parents
+		if (entry.isDirectory()) continue
+
+		const destPath = path.join(tempDir, relativePath)
+
+		// Ensure parent directory exists and copy file
+		await mkdir(path.dirname(destPath), { recursive: true })
+		await copyFile(path.join(entry.parentPath, entry.name), destPath)
 	}
 }

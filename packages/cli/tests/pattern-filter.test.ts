@@ -92,10 +92,12 @@ describe("PathMatcher", () => {
 			expect(result.type).toBe("excluded")
 		})
 
-		it("should prioritize exclude over include", () => {
+		it("should allow include to re-include excluded paths", () => {
+			// Per schema: include "re-adds files from the excluded set"
 			const matcher = createPathMatcher([".opencode/**"], [".opencode/skill/**"])
 			const result = matcher.getDisposition(".opencode/skill/foo.md")
-			expect(result.type).toBe("excluded")
+			// Include pattern overrides exclude (re-includes from excluded set)
+			expect(result.type).toBe("included")
 		})
 
 		it("should return 'partial' when patterns target inside directory", () => {

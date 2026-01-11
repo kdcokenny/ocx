@@ -1,8 +1,8 @@
 /**
  * Symlink Farm Utility
  *
- * Creates a temporary directory with symlinks to all project files
- * except those in the exclusion set. Used by ghost mode to isolate
+ * Creates a temporary directory with symlinks to project files,
+ * filtered by include/exclude patterns. Used by ghost mode to isolate
  * from project-level OpenCode configuration.
  */
 
@@ -10,12 +10,7 @@ import { randomBytes } from "node:crypto"
 import { mkdir, readdir, rename, rm, stat, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, relative } from "node:path"
-import {
-	createPathMatcher,
-	normalizeForMatching,
-	type PathDisposition,
-	type PathMatcher,
-} from "./pattern-filter"
+import { createPathMatcher, normalizeForMatching, type PathMatcher } from "./pattern-filter"
 
 /**
  * Pre-computed symlink plan - parsed once, executed without re-evaluation.
@@ -29,15 +24,6 @@ export interface SymlinkPlan {
 	/** Directories needing partial expansion - recursive structure */
 	partialDirs: Map<string, SymlinkPlan>
 }
-
-/**
- * Result of handling an excluded entry based on pattern disposition.
- * Discriminated union for type safety (Law 2: Parse Don't Validate).
- */
-type ExcludedEntryResult =
-	| { action: "skip" }
-	| { action: "includeWhole" }
-	| { action: "partial"; nestedPlan: SymlinkPlan }
 
 /** Age threshold for stale ghost sessions (24 hours) */
 const STALE_SESSION_THRESHOLD_MS = 24 * 60 * 60 * 1000
@@ -56,19 +42,17 @@ export const GHOST_MARKER_FILE = ".ocx-ghost-marker"
 
 /**
  * Creates a temporary directory with symlinks to the source directory contents,
- * excluding specified paths and respecting include/exclude patterns.
+ * respecting include/exclude patterns for filtering.
  *
  * Uses plan-based approach: compute plan first, then execute.
  * This separates decision logic from I/O for testability and clarity.
  *
  * @param sourceDir - The source directory to create symlinks from
- * @param excludePaths - Set of absolute paths to exclude
  * @param options - Optional include/exclude patterns for fine-grained control
  * @returns Path to the temporary directory containing symlinks
  */
 export async function createSymlinkFarm(
 	sourceDir: string,
-	excludePaths: Set<string>,
 	options?: {
 		includePatterns?: string[]
 		excludePatterns?: string[]
@@ -87,19 +71,13 @@ export async function createSymlinkFarm(
 
 	try {
 		// Create PathMatcher once with patterns (Law 2: Parse at boundary)
-		// Empty arrays mean "no pattern filtering" = include everything not in excludePaths
 		const matcher = createPathMatcher(
 			options?.includePatterns ?? [],
 			options?.excludePatterns ?? [],
 		)
 
 		// Compute plan (decision phase - pure logic)
-		const plan = await computeSymlinkPlan(
-			sourceDir,
-			sourceDir, // projectRoot = sourceDir for top-level call
-			excludePaths,
-			matcher, // Pass pre-compiled matcher
-		)
+		const plan = await computeSymlinkPlan(sourceDir, sourceDir, matcher)
 
 		// Execute plan (I/O phase - creates symlinks)
 		await executeSymlinkPlan(plan, sourceDir, tempDir)
@@ -258,54 +236,18 @@ export async function cleanupOrphanedGhostDirs(tempBase: string = tmpdir()): Pro
 }
 
 /**
- * Handle an excluded entry based on pattern disposition.
- * Centralized logic for determining how to process excluded paths.
- *
- * @param isDirectory - Whether the entry is a directory
- * @param disposition - Pre-computed path disposition from PathMatcher
- * @param computeNestedPlan - Function to compute nested plan for partial directories
- * @returns Action to take: skip, include whole, or partial with nested plan
- */
-async function handleExcludedEntry(
-	isDirectory: boolean,
-	disposition: PathDisposition,
-	computeNestedPlan: () => Promise<SymlinkPlan>,
-): Promise<ExcludedEntryResult> {
-	if (disposition.type === "excluded") {
-		return { action: "skip" }
-	}
-
-	if (disposition.type === "included") {
-		return { action: "includeWhole" }
-	}
-
-	// disposition.type === "partial" - need to recurse into directory
-	if (isDirectory) {
-		const nestedPlan = await computeNestedPlan()
-		return { action: "partial", nestedPlan }
-	}
-
-	// Files can't be "partial" - skip if we got here somehow
-	return { action: "skip" }
-}
-
-/**
- * Compute symlink plan by walking source directory and applying filters.
+ * Compute symlink plan by walking source directory and applying pattern filters.
  * Pure function - no I/O side effects except reading directory.
  *
  * @param sourceDir - Current directory being processed (absolute path)
  * @param projectRoot - Root of the project (for normalizing paths)
- * @param excludedPaths - Set of absolute paths that are excluded
  * @param matcher - Pre-compiled PathMatcher for efficient pattern matching
- * @param insideExcludedTree - Whether we're recursing inside an excluded directory (default: false)
  * @returns Pre-computed symlink plan
  */
 export async function computeSymlinkPlan(
 	sourceDir: string,
 	projectRoot: string,
-	excludedPaths: Set<string>,
 	matcher: PathMatcher,
-	insideExcludedTree = false,
 ): Promise<SymlinkPlan> {
 	// Guard: sourceDir must be absolute (Law 1: Early Exit)
 	if (!isAbsolute(sourceDir)) {
@@ -324,78 +266,32 @@ export async function computeSymlinkPlan(
 		const sourcePath = join(sourceDir, entry.name)
 		const relativePath = normalizeForMatching(sourcePath, projectRoot)
 
-		// When inside an excluded tree, apply pattern matching to ALL entries
-		if (insideExcludedTree) {
-			const disposition = matcher.getDisposition(relativePath)
-			const result = await handleExcludedEntry(entry.isDirectory(), disposition, () =>
-				computeSymlinkPlan(
-					sourcePath,
-					projectRoot,
-					excludedPaths,
-					matcher, // Pass the same matcher instance
-					true, // Still inside excluded tree
-				),
-			)
+		// Law 1: Early Exit - check patterns FIRST for all paths
+		const disposition = matcher.getDisposition(relativePath)
 
-			if (result.action === "skip") {
-				continue
+		if (disposition.type === "excluded") {
+			continue // Skip this path entirely
+		}
+
+		if (disposition.type === "included") {
+			// Fully included - symlink as-is
+			if (entry.isDirectory()) {
+				plan.wholeDirs.push(entry.name)
+			} else {
+				plan.files.push(entry.name)
 			}
-
-			if (result.action === "includeWhole") {
-				if (entry.isDirectory()) {
-					plan.wholeDirs.push(entry.name)
-				} else {
-					plan.files.push(entry.name)
-				}
-				continue
-			}
-
-			// result.action === "partial"
-			plan.partialDirs.set(entry.name, result.nestedPlan)
 			continue
 		}
 
-		// Check if this path is in the excluded set (top-level exclusion)
-		if (excludedPaths.has(sourcePath)) {
-			// Guard: No patterns = simple exclusion (backward compatibility)
-			if (!matcher.hasIncludePatterns()) {
-				continue
-			}
-
-			// Path is excluded - check disposition for potential inclusion via patterns
-			const disposition = matcher.getDisposition(relativePath)
-			const result = await handleExcludedEntry(entry.isDirectory(), disposition, () =>
-				computeSymlinkPlan(
-					sourcePath,
-					projectRoot,
-					excludedPaths,
-					matcher, // Pass the same matcher instance
-					true, // Now entering excluded tree
-				),
-			)
-
-			if (result.action === "skip") {
-				continue
-			}
-
-			if (result.action === "includeWhole") {
-				if (entry.isDirectory()) {
-					plan.wholeDirs.push(entry.name)
-				} else {
-					plan.files.push(entry.name)
-				}
-				continue
-			}
-
-			// result.action === "partial"
-			plan.partialDirs.set(entry.name, result.nestedPlan)
-			continue
-		}
-
-		// Not in excluded paths - symlink as-is
+		// disposition.type === "partial" - directory needs recursive expansion
 		if (entry.isDirectory()) {
-			plan.wholeDirs.push(entry.name)
+			const nestedPlan = await computeSymlinkPlan(sourcePath, projectRoot, matcher)
+			plan.partialDirs.set(entry.name, nestedPlan)
 		} else {
+			// Files with "partial" disposition: when there are no include patterns,
+			// this means we're in default exclude-only mode and the file should be included
+			// (it wasn't matched by any exclude pattern, just marked partial due to directory
+			// traversal optimization for nested excludes like **/AGENTS.md)
 			plan.files.push(entry.name)
 		}
 	}

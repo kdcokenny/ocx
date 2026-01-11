@@ -48,7 +48,7 @@ describe("createSymlinkFarm", () => {
 		await Bun.write(join(sourceDir, "file1.txt"), "content1")
 		await Bun.write(join(sourceDir, "file2.txt"), "content2")
 
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 
 		try {
 			// Check symlinks exist
@@ -75,7 +75,7 @@ describe("createSymlinkFarm", () => {
 		await mkdir(subDir, { recursive: true })
 		await Bun.write(join(subDir, "nested.txt"), "nested content")
 
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 
 		try {
 			// Check symlink exists
@@ -94,18 +94,15 @@ describe("createSymlinkFarm", () => {
 		}
 	})
 
-	it("should exclude paths in the exclusion set", async () => {
+	it("should exclude paths via excludePatterns", async () => {
 		// Create some files
 		await Bun.write(join(sourceDir, "keep.txt"), "keep")
 		await Bun.write(join(sourceDir, "exclude.txt"), "exclude")
 		await Bun.write(join(sourceDir, "opencode.jsonc"), "{}")
 
-		const excludePaths = new Set([
-			join(sourceDir, "exclude.txt"),
-			join(sourceDir, "opencode.jsonc"),
-		])
-
-		const tempDir = await createSymlinkFarm(sourceDir, excludePaths)
+		const tempDir = await createSymlinkFarm(sourceDir, {
+			excludePatterns: ["exclude.txt", "opencode.jsonc"],
+		})
 
 		try {
 			// keep.txt should be linked
@@ -123,16 +120,16 @@ describe("createSymlinkFarm", () => {
 		}
 	})
 
-	it("should exclude directories in the exclusion set", async () => {
+	it("should exclude directories via excludePatterns", async () => {
 		// Create files and directories
 		await Bun.write(join(sourceDir, "file.txt"), "content")
 		const opencodDir = join(sourceDir, ".opencode")
 		await mkdir(opencodDir, { recursive: true })
 		await Bun.write(join(opencodDir, "config.json"), "{}")
 
-		const excludePaths = new Set([opencodDir])
-
-		const tempDir = await createSymlinkFarm(sourceDir, excludePaths)
+		const tempDir = await createSymlinkFarm(sourceDir, {
+			excludePatterns: [".opencode/**"],
+		})
 
 		try {
 			// file.txt should be linked
@@ -150,7 +147,7 @@ describe("createSymlinkFarm", () => {
 	it("should create temp directory in system temp location", async () => {
 		await Bun.write(join(sourceDir, "test.txt"), "test")
 
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 
 		try {
 			// Should start with ocx-ghost prefix
@@ -163,7 +160,7 @@ describe("createSymlinkFarm", () => {
 	it("should handle empty source directory", async () => {
 		// sourceDir is already empty
 
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 
 		try {
 			// Should have created the marker file
@@ -180,7 +177,7 @@ describe("cleanupSymlinkFarm", () => {
 		const sourceDir = await createTempDir("symlink-farm-cleanup")
 		await Bun.write(join(sourceDir, "file.txt"), "content")
 
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 
 		// Verify it exists
 		const existsBefore = await Bun.file(join(tempDir, "file.txt")).exists()
@@ -226,7 +223,7 @@ describe("injectGhostFiles", () => {
 		await Bun.write(join(injectDir, "config.json"), "{}")
 
 		// Create farm and inject
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 		const injectPaths = new Set([join(injectDir, "injected.txt"), join(injectDir, "config.json")])
 		await injectGhostFiles(tempDir, injectDir, injectPaths)
 
@@ -257,7 +254,7 @@ describe("injectGhostFiles", () => {
 		await Bun.write(join(subDir, "plugin.ts"), "// plugin")
 
 		// Create farm and inject the directory
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 		const injectPaths = new Set([subDir])
 		await injectGhostFiles(tempDir, injectDir, injectPaths)
 
@@ -275,7 +272,7 @@ describe("injectGhostFiles", () => {
 	})
 
 	it("should handle empty inject set", async () => {
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 
 		// Should not throw
 		await injectGhostFiles(tempDir, injectDir, new Set())
@@ -284,7 +281,7 @@ describe("injectGhostFiles", () => {
 	})
 
 	it("should throw if injectPath is outside sourceDir", async () => {
-		const tempDir = await createSymlinkFarm(sourceDir, new Set())
+		const tempDir = await createSymlinkFarm(sourceDir)
 		const outsidePath = join(injectDir, "..", "outside.txt")
 
 		try {

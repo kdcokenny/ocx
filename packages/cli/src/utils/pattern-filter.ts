@@ -212,9 +212,11 @@ export class PathMatcher {
 	private readonly includeGlobs: { pattern: string; glob: Glob }[]
 	private readonly excludeGlobs: { pattern: string; glob: Glob }[]
 	private readonly includePatterns: string[]
+	private readonly excludePatterns: string[]
 
 	constructor(includePatterns: string[] = [], excludePatterns: string[] = []) {
 		this.includePatterns = includePatterns
+		this.excludePatterns = excludePatterns
 		// Compile patterns ONCE at construction (Law 2: Parse at boundary)
 		this.includeGlobs = includePatterns.map((p) => ({ pattern: p, glob: new Glob(p) }))
 		this.excludeGlobs = excludePatterns.map((p) => ({ pattern: p, glob: new Glob(p) }))
@@ -222,39 +224,90 @@ export class PathMatcher {
 
 	/**
 	 * Get disposition for a path using pre-compiled globs.
-	 * Algorithm: exclude first → include second → fallback.
+	 * Algorithm: exclude first → include second → check nested → fallback.
 	 *
 	 * @param relativePath - The relative path to check (POSIX format)
 	 * @returns PathDisposition indicating how to handle this path
 	 */
 	getDisposition(relativePath: string): PathDisposition {
-		// Step 1: Exclude takes precedence (using pre-compiled globs)
-		if (this.excludeGlobs.some((g) => g.glob.match(relativePath))) {
-			return { type: "excluded" }
-		}
+		const matchesExclude = this.excludeGlobs.some((g) => g.glob.match(relativePath))
+		const matchesInclude = this.includeGlobs.some((g) => g.glob.match(relativePath))
 
-		// Step 2: Direct include match
-		if (this.includeGlobs.some((g) => g.glob.match(relativePath))) {
+		// Case 1: Both include AND exclude patterns exist
+		// Include "re-adds from excluded set" - so include overrides exclude when both match
+		if (this.includePatterns.length > 0 && this.excludePatterns.length > 0) {
+			// Include pattern matches → include (overrides exclude per schema semantics)
+			if (matchesInclude) {
+				return { type: "included" }
+			}
+
+			// Excluded and not re-included → excluded
+			if (matchesExclude) {
+				return { type: "excluded" }
+			}
+
+			// Check if patterns target inside this directory
+			const hasIncludesInside = this.includePatterns.some((pattern) => {
+				if (pattern.startsWith(`${relativePath}/`)) return true
+				if (pattern.startsWith("**/")) return true
+				return false
+			})
+
+			const hasExcludesInside = this.excludePatterns.some((pattern) => {
+				if (pattern.startsWith(`${relativePath}/`)) return true
+				if (pattern.startsWith("**/")) return true
+				return false
+			})
+
+			if (hasIncludesInside || hasExcludesInside) {
+				return { type: "partial", patterns: this.includePatterns }
+			}
+
+			// Not matched by any pattern → include by default
 			return { type: "included" }
 		}
 
-		// Step 3: Check if patterns target inside this directory (for partial expansion)
-		const patternsInsideDir = this.includePatterns.filter((pattern) => {
+		// Case 2: Only include patterns exist (whitelist mode)
+		// Only included paths are visible
+		if (this.includePatterns.length > 0) {
+			// Matches include → included
+			if (matchesInclude) {
+				return { type: "included" }
+			}
+
+			// Check if include patterns target inside this directory
+			const hasIncludesInside = this.includePatterns.some((pattern) => {
+				if (pattern.startsWith(`${relativePath}/`)) return true
+				if (pattern.startsWith("**/")) return true
+				return false
+			})
+
+			if (hasIncludesInside) {
+				return { type: "partial", patterns: this.includePatterns }
+			}
+
+			// Not matched → excluded (whitelist mode)
+			return { type: "excluded" }
+		}
+
+		// Case 3: Only exclude patterns exist (default ghost mode)
+		// Include everything except excluded paths
+		if (matchesExclude) {
+			return { type: "excluded" }
+		}
+
+		// Check if exclude patterns target inside this directory
+		const hasExcludesInside = this.excludePatterns.some((pattern) => {
 			if (pattern.startsWith(`${relativePath}/`)) return true
 			if (pattern.startsWith("**/")) return true
 			return false
 		})
 
-		if (patternsInsideDir.length > 0) {
-			return { type: "partial", patterns: patternsInsideDir }
+		if (hasExcludesInside) {
+			return { type: "partial", patterns: [] }
 		}
 
-		// Step 4: Include patterns exist but none matched → excluded
-		if (this.includePatterns.length > 0) {
-			return { type: "excluded" }
-		}
-
-		// Step 5: No include patterns → include everything by default
+		// Not excluded → include
 		return { type: "included" }
 	}
 
