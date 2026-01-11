@@ -131,11 +131,9 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 			restoreTerminalTitle()
 		}
 
-		// Best-effort file sync close (sync, may not complete all async work)
+		// Best-effort file sync close - can't await in sync handler
 		if (fileSync) {
-			// Note: close() is async but we're in sync exit handler
-			// The watcher will be GC'd, pending syncs may be lost
-			// This is acceptable - we document this as a crash limitation
+			fileSync.close().catch(() => {})
 		}
 
 		if (!cleanupDone && tempDir) {

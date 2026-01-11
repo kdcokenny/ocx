@@ -174,9 +174,6 @@
 			"enabled": true
 		}
 	},
-	"plugin": [
-		"@tarquinen/opencode-dcp@1.1.2",
-		"@franlol/opencode-md-table-formatter@0.0.3"
-	]
+	"plugin": ["@tarquinen/opencode-dcp@1.1.2", "@franlol/opencode-md-table-formatter@0.0.3"]
 	// Add MCP servers, tools, plugins here
 }

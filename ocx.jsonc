@@ -1,10 +1,10 @@
 {
-  "$schema": "https://ocx.kdco.dev/schema.json",
-  "registries": {
-    "kdco": {
-      "url": "file:///Users/kenny/workspace/kdcokenny/ocx/workers/kdco-registry/dist"
-    }
-  },
-  "lockRegistries": false,
-  "skipCompatCheck": false
+	"$schema": "https://ocx.kdco.dev/schema.json",
+	"registries": {
+		"kdco": {
+			"url": "file:///Users/kenny/workspace/kdcokenny/ocx/workers/kdco-registry/dist"
+		}
+	},
+	"lockRegistries": false,
+	"skipCompatCheck": false
 }
