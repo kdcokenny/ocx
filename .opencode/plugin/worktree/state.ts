@@ -102,7 +102,13 @@ export async function getProjectId(projectRoot: string): Promise<string> {
 			stdout: "pipe",
 			stderr: "pipe",
 		})
-		const output = await new Response(proc.stdout).text()
+
+		// 5-second timeout to prevent hanging on slow/unresponsive git
+		const timeout = new Promise<string>((_, reject) =>
+			setTimeout(() => reject(new Error("git command timeout")), 5000),
+		)
+
+		const output = await Promise.race([new Response(proc.stdout).text(), timeout])
 		const roots = output
 			.split("\n")
 			.filter(Boolean)
@@ -138,6 +144,9 @@ export async function getProjectId(projectRoot: string): Promise<string> {
  * @returns Absolute path to the worktree directory
  */
 export async function getWorktreePath(projectRoot: string, branch: string): Promise<string> {
+	if (!branch || typeof branch !== "string") {
+		throw new Error("branch is required")
+	}
 	const projectId = await getProjectId(projectRoot)
 	return path.join(os.homedir(), ".local", "share", "opencode", "worktree", projectId, branch)
 }
