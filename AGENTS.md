@@ -242,7 +242,7 @@ Ghost mode enables working in repositories without modifying them:
 |-----------|----------|---------|
 | `ProfileManager` | `src/profile/manager.ts` | Static factory for profile CRUD operations |
 | `profile/paths.ts` | `src/profile/paths.ts` | Path constants and helpers for profile directories |
-| `profile/migrate.ts` | `src/profile/migrate.ts` | Migration from legacy `~/.config/ocx/` to profiles |
+
 | `GhostConfigProvider` | `src/config/provider.ts` | Provides config from current profile |
 | `symlink-farm.ts` | `src/utils/` | Creates temp dir with symlinks |
 | Ghost commands | `src/commands/ghost/` | init, config, registry, add, search, opencode |
@@ -282,6 +282,7 @@ Ghost mode enables working in repositories without modifying them:
    - If user's `include` pattern matches a file, project version is used (not profile overlay)
 4. Sets `GIT_WORK_TREE` and `GIT_DIR` so Git sees real project
 5. Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification
+   - Disabled with `--no-rename` flag or `renameWindow: false` in ghost config
 6. Spawns OpenCode from temp dir with `OCX_PROFILE` env var set
 7. Cleans up temp dir on exit
 
@@ -326,17 +327,6 @@ ocx ghost profile add client-x --from work
 # List all profiles
 ocx ghost profile list
 ```
-
-#### Migration from Legacy Config
-
-If you have an existing `~/.config/ocx/` configuration:
-
-```bash
-ocx ghost migrate --dry-run  # Preview changes
-ocx ghost migrate            # Perform migration
-```
-
-This moves your config to `profiles/default/` and renames the old directory to `~/.config/ocx.bak/`.
 
 ## Quick Reference
 

@@ -840,7 +840,6 @@ Ghost mode lets you work in repositories without modifying them.
 | Command | Description |
 |---------|-------------|
 | `ocx ghost init` | Initialize ghost mode (`~/.config/opencode/profiles/<profile-name>/ghost.jsonc`) |
-| `ocx ghost migrate` | Migrate from legacy config location |
 | `ocx ghost profile add <name>` | Create a new profile |
 | `ocx ghost profile remove <name>` | Delete a profile |
 | `ocx ghost profile list` | List available profiles |
@@ -872,12 +871,13 @@ Ghost mode uses multi-profile configuration with configuration files stored at `
 
 #### Schema
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `registries` | `object` | Registry name → URL mapping |
-| `componentPath` | `string` | Where to install components (default: `.opencode`) |
-| `include` | `string[]` | Glob patterns for project files to include in ghost sessions |
-| `exclude` | `string[]` | Glob patterns to filter out from include results |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `registries` | `object` | `{}` | Registry name → URL mapping |
+| `componentPath` | `string` | `.opencode` | Where to install components |
+| `include` | `string[]` | `[]` | Glob patterns for project files to include in ghost sessions |
+| `exclude` | `string[]` | `[]` | Glob patterns to filter out from include results |
+| `renameWindow` | `boolean` | `true` | Set terminal/tmux window name when launching OpenCode |
 
 #### Include/Exclude Patterns
 
@@ -1237,50 +1237,6 @@ ocx ghost init --profile work
 
 ---
 
-### Ghost Migrate
-
-Migrate legacy ghost configuration from `~/.config/ocx/` to the multi-profile directory structure at `~/.config/opencode/profiles/`.
-
-#### Usage
-
-```bash
-ocx ghost migrate [options]
-```
-
-#### Options
-
-| Option | Description |
-|--------|-------------|
-| `--dry-run` | Preview changes without applying them |
-
-#### Examples
-
-```bash
-# Preview migration
-ocx ghost migrate --dry-run
-
-# Execute migration (backs up old config)
-ocx ghost migrate
-```
-
-#### Changes
-
-- **Before**: `~/.config/ocx/ghost.jsonc`
-- **After**: `~/.config/opencode/profiles/default/ghost.jsonc`
-- **Backup**: `~/.config/ocx.bak/` (original directory moved)
-
-#### Dry Run Output
-
-```bash
-$ ocx ghost migrate --dry-run
-Would migrate ghost config from ~/.config/ocx to ~/.config/opencode/profiles/default
-Would backup: ~/.config/ocx → ~/.config/ocx.bak
-Starting profile: default
-✔ Migration ready to execute
-```
-
----
-
 ### Ghost Opencode
 
 Run OpenCode with ghost configuration isolated from project files.
@@ -1302,6 +1258,7 @@ ocx ghost opencode [args...] [options]
 | Option | Description |
 |--------|-------------|
 | `--profile, -p <name>` | Specify ghost profile to use |
+| `--no-rename` | Disable terminal/tmux window renaming |
 
 #### Examples
 
@@ -1323,7 +1280,7 @@ ocx ghost opencode -- /path/to/file.md
 3. **Apply Filters**: Uses `include`/`exclude` patterns from ghost config
 4. **Symlink Farm**: Creates temporary directory with symlinks to filtered files
 5. **Git Integration**: Sets `GIT_WORK_TREE` and `GIT_DIR` to see real project
-6. **Terminal Naming**: Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification
+6. **Terminal Naming**: Sets terminal/tmux window name to `ghost[profile]:repo/branch` for session identification (unless disabled via `--no-rename` flag or `renameWindow: false` in config)
 7. **Spawn OpenCode**: Runs OpenCode from temp directory with ghost config via env vars
 8. **Cleanup**: Removes temp directory on exit
 

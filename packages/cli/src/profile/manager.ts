@@ -38,6 +38,7 @@ const DEFAULT_GHOST_CONFIG: GhostConfig = {
 		"opencode.json",
 	],
 	include: [],
+	renameWindow: true,
 }
 
 /**

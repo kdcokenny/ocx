@@ -126,6 +126,8 @@
 							"exa_*": "allow",
 							"gh_grep_*": "allow",
 							"kagi_*": "deny",
+							// Allow web fetching for external research
+							"webfetch": "allow",
 							// Researcher is read-only - no file modifications
 							"write": "deny",
 							"edit": "deny",
@@ -291,7 +293,9 @@
 				"plugin": ["@tarquinen/opencode-dcp@1.1.2", "@franlol/opencode-md-table-formatter@0.0.3"],
 				"permission": {
 					// Disable webfetch globally for security
-					"webfetch": "deny"
+					"webfetch": "deny",
+					// Worktree tools restricted to primary orchestrator agents
+					"worktree_*": "deny"
 				},
 				// Configure orchestrator agents with appropriate permissions
 				"agent": {
@@ -300,7 +304,8 @@
 							"edit": "deny",
 							"write": "deny",
 							"bash": { "*": "deny" },
-							"task": "allow"
+							"task": "allow",
+							"worktree_*": "allow"
 						}
 					},
 					"build": {
@@ -309,7 +314,8 @@
 							"edit": "deny",
 							"write": "deny",
 							"bash": { "*": "deny" },
-							"task": "allow"
+							"task": "allow",
+							"worktree_*": "allow"
 						}
 					},
 					"explore": {

@@ -12,7 +12,6 @@ import type { Command } from "commander"
 import { registerGhostAddCommand } from "./add.js"
 import { registerGhostConfigCommand } from "./config.js"
 import { registerGhostInitCommand } from "./init.js"
-import { registerGhostMigrateCommand } from "./migrate.js"
 import { registerGhostOpenCodeCommand } from "./opencode.js"
 import { registerGhostProfileCommand } from "./profile/index.js"
 import { registerGhostRegistryCommand } from "./registry.js"
@@ -32,5 +31,4 @@ export function registerGhostCommand(program: Command): void {
 	registerGhostSearchCommand(ghost)
 	registerGhostOpenCodeCommand(ghost)
 	registerGhostProfileCommand(ghost)
-	registerGhostMigrateCommand(ghost)
 }

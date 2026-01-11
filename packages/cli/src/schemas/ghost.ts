@@ -102,6 +102,15 @@ export const ghostConfigSchema = z.object({
 		.array(globPatternSchema)
 		.default([])
 		.describe("Glob patterns to re-include from excluded set (for power users)"),
+
+	/**
+	 * Whether to set terminal/tmux window name when launching OpenCode.
+	 * Set to false to preserve your existing terminal title.
+	 */
+	renameWindow: z
+		.boolean()
+		.default(true)
+		.describe("Set terminal/tmux window name when launching OpenCode"),
 })
 
 export type GhostConfig = z.infer<typeof ghostConfigSchema>

@@ -6,7 +6,8 @@
 		"exa_*": "deny",
 		"gh_grep_*": "deny",
 		"kagi_*": "deny",
-		"webfetch": "deny"
+		"webfetch": "deny",
+		"worktree_*": "deny"
 	},
 	"agent": {
 		"researcher": {
@@ -15,6 +16,7 @@
 				"exa_*": "allow",
 				"gh_grep_*": "allow",
 				"kagi_*": "deny",
+				"webfetch": "allow",
 				"write": "deny",
 				"edit": "deny",
 				"bash": {
@@ -105,7 +107,8 @@
 				"bash": {
 					"*": "deny"
 				},
-				"task": "allow"
+				"task": "allow",
+				"worktree_*": "allow"
 			}
 		},
 		"build": {
@@ -116,7 +119,8 @@
 				"bash": {
 					"*": "deny"
 				},
-				"task": "allow"
+				"task": "allow",
+				"worktree_*": "allow"
 			}
 		},
 		"explore": {
@@ -170,6 +174,9 @@
 			"enabled": true
 		}
 	},
-	"plugin": ["@tarquinen/opencode-dcp@1.1.2", "@franlol/opencode-md-table-formatter@0.0.3"]
+	"plugin": [
+		"@tarquinen/opencode-dcp@1.1.2",
+		"@franlol/opencode-md-table-formatter@0.0.3"
+	]
 	// Add MCP servers, tools, plugins here
 }

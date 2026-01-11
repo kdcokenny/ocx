@@ -3,6 +3,9 @@
  *
  * Provides cross-environment terminal identification by setting both
  * the terminal title (via ANSI OSC escape) and tmux window name (if applicable).
+ *
+ * Terminal renaming can be disabled via ghost config (`renameWindow: false`)
+ * or the `--no-rename` CLI flag for `ocx ghost opencode`.
  */
 
 import path from "node:path"

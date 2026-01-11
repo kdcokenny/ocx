@@ -200,6 +200,26 @@ describe("ocx ghost opencode", () => {
 		expect(output).toContain("--message")
 		expect(output).toContain("hello world")
 	})
+
+	it("should accept --no-rename flag without error", async () => {
+		// Write ghost.jsonc (required for ghost mode)
+		const configPath = getGhostConfigPath()
+		await Bun.write(configPath, '{"registries": {}}')
+
+		// Write empty opencode.jsonc
+		const opencodeConfigPath = getGhostOpencodeConfigPath()
+		await Bun.write(opencodeConfigPath, "{}")
+
+		const { stderr } = await runGhostCLI(["opencode", "--no-rename"], {
+			XDG_CONFIG_HOME: testDir,
+			PATH: `${mockBinDir}:${process.env.PATH}`,
+		})
+
+		// The command should parse the flag without error
+		// It will still run because we have a mock opencode binary, but the flag should be recognized
+		expect(stderr).not.toContain("unknown option")
+		expect(stderr).not.toContain("--no-rename")
+	})
 })
 
 // =============================================================================

@@ -16,7 +16,7 @@ This ensures that once a version is approved and locked by your team, it cannot 
 
 We take the security of OCX seriously. If you believe you have found a security vulnerability, please report it to us responsibly.
 
-**Contact**: [security@kdco.ai](mailto:ocx-security@alias.kdco.llc)
+**Contact**: [ocx-security@alias.kdco.llc](mailto:ocx-security@alias.kdco.llc)
 
 ### Disclosure Policy
 

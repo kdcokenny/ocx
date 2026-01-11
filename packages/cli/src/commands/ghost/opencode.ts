@@ -12,7 +12,6 @@ import path from "node:path"
 import { Glob } from "bun"
 import type { Command } from "commander"
 import { ProfileManager } from "../../profile/manager.js"
-import { needsMigration } from "../../profile/migrate.js"
 import { getProfileDir, getProfileOpencodeConfig } from "../../profile/paths.js"
 import { ProfilesNotInitializedError } from "../../utils/errors.js"
 import { getGitInfo } from "../../utils/git-context.js"
@@ -35,6 +34,7 @@ interface GhostOpenCodeOptions {
 	json?: boolean
 	quiet?: boolean
 	profile?: string
+	rename?: boolean
 }
 
 export function registerGhostOpenCodeCommand(parent: Command): void {
@@ -42,6 +42,7 @@ export function registerGhostOpenCodeCommand(parent: Command): void {
 		.command("opencode")
 		.description("Launch OpenCode with ghost mode configuration")
 		.option("-p, --profile <name>", "Use specific profile")
+		.option("--no-rename", "Disable terminal/tmux window renaming")
 		.addOption(sharedOptions.json())
 		.addOption(sharedOptions.quiet())
 		.allowUnknownOption()
@@ -62,12 +63,6 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	const manager = ProfileManager.create()
 	if (!(await manager.isInitialized())) {
 		throw new ProfilesNotInitializedError()
-	}
-
-	// Check for legacy config and print migration notice (but still proceed)
-	if (!options.quiet && (await needsMigration())) {
-		console.log("Notice: Found legacy config at ~/.config/ocx/")
-		console.log("Run 'ocx ghost migrate' to upgrade to the new profiles system.\n")
 	}
 
 	// Clean up orphaned temp directories from interrupted sessions (SIGKILL resilience)
@@ -109,6 +104,10 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	// This includes opencode.jsonc, AGENTS.md, .opencode/, etc.
 	await injectProfileOverlay(tempDir, profileDir, ghostConfig.include)
 
+	// Determine if terminal should be renamed (Law 1: compute once, use in closure)
+	// Precedence: CLI flag > config > default(true)
+	const shouldRename = options.rename !== false && ghostConfig.renameWindow !== false
+
 	// Track cleanup state to prevent double cleanup
 	let cleanupDone = false
 	const performCleanup = async () => {
@@ -121,10 +120,10 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	// This ensures SIGKILL resilience: if rename succeeds but rm is interrupted,
 	// the -removing directory will be cleaned up on next startup
 	const exitHandler = () => {
-		// REQUIREMENT: Restore terminal title FIRST in exit handler.
-		// Must run before any other cleanup while stdout is still valid.
-		// This pops the saved title from the terminal's title stack.
-		restoreTerminalTitle()
+		// Only restore if we renamed (Law 3: Atomic Predictability)
+		if (shouldRename) {
+			restoreTerminalTitle()
+		}
 
 		if (!cleanupDone && tempDir) {
 			try {
@@ -148,14 +147,12 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	process.on("SIGINT", sigintHandler)
 	process.on("SIGTERM", sigtermHandler)
 
-	// REQUIREMENT: Save terminal title BEFORE setting ghost title.
-	// This pushes the current title to the terminal's title stack so it can be
-	// restored when OpenCode exits. Must happen before setTerminalName().
-	saveTerminalTitle()
-
-	// Set terminal name for easy identification in tmux/terminal tabs
-	const gitInfo = await getGitInfo(cwd)
-	setTerminalName(formatTerminalName(cwd, profileName, gitInfo))
+	// Set terminal name only if enabled (Law 1: Early Exit pattern)
+	if (shouldRename) {
+		saveTerminalTitle()
+		const gitInfo = await getGitInfo(cwd)
+		setTerminalName(formatTerminalName(cwd, profileName, gitInfo))
+	}
 
 	// Spawn opencode from the temp directory with config passed via environment
 	// Only set GIT_DIR/GIT_WORK_TREE when actually in a git repository

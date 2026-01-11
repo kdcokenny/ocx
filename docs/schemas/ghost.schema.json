@@ -49,6 +49,11 @@
 			"type": "array",
 			"items": { "type": "string", "minLength": 1 },
 			"description": "Glob patterns to exclude from include results"
+		},
+		"renameWindow": {
+			"type": "boolean",
+			"default": true,
+			"description": "Set terminal/tmux window name when launching OpenCode. Set to false to preserve your existing terminal title."
 		}
 	}
 }

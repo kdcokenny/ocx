@@ -118,9 +118,6 @@ Ghost mode lets you work in repositories without modifying them, using your own 
 ocx ghost init              # Creates your first profile
 ocx ghost config            # Edit your active profile
 
-# Or migrate existing config
-ocx ghost migrate           # Move from ~/.config/ocx/ → ~/.config/opencode/profiles/default/
-
 # Add registries
 ocx ghost registry add https://registry.kdco.dev --name kdco
 ocx ghost registry list
@@ -168,7 +165,7 @@ Or use the `OCX_PROFILE` environment variable to temporarily switch profiles.
 | `ocx ghost search <query>` | `ocx g search` | Search ghost registries |
 | `ocx ghost opencode [args...]` | `ocx g opencode` | Run OpenCode with ghost config |
 
-> **How it works:** Ghost mode uses symlink isolation to run OpenCode without seeing the project's config. Ghost mode also sets informative terminal names (`ghost[profile]:repo/branch`) for easy session identification. Git, LSPs, and file editing all work normally—changes go directly to the real project files.
+> **How it works:** Ghost mode uses symlink isolation to run OpenCode without seeing the project's config. Ghost mode also sets informative terminal names (`ghost[profile]:repo/branch`) for easy session identification (configurable via `renameWindow` or `--no-rename`). Git, LSPs, and file editing all work normally—changes go directly to the real project files.
 
 #### Config Location
 
