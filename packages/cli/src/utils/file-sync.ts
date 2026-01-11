@@ -44,7 +44,7 @@ function loadGitignore(projectDir: string): Ignore {
  * Normalize path for consistent Set operations.
  * Handles trailing slashes and path separators.
  */
-function normalizePath(p: string): string {
+export function normalizePath(p: string): string {
 	return p.replace(/\\/g, "/").replace(/\/$/, "")
 }
 
@@ -114,6 +114,15 @@ export interface FileSyncHandle {
 	getSyncCount: () => number
 }
 
+/** Options for file sync behavior */
+export interface FileSyncOptions {
+	/**
+	 * Paths injected from profile overlay. These are never synced back to the project.
+	 * Paths should be normalized (forward slashes). Empty or undefined = sync all new files.
+	 */
+	overlayFiles?: Set<string>
+}
+
 /**
  * Create a real-time file sync watcher.
  * Watches tempDir for new files and syncs them to projectDir.
@@ -122,9 +131,14 @@ export interface FileSyncHandle {
  *
  * @param tempDir - The symlink farm temp directory to watch
  * @param projectDir - The real project directory to sync to
+ * @param options - Optional configuration for sync behavior
  * @returns FileSyncHandle for cleanup and status
  */
-export function createFileSync(tempDir: string, projectDir: string): FileSyncHandle {
+export function createFileSync(
+	tempDir: string,
+	projectDir: string,
+	options?: FileSyncOptions,
+): FileSyncHandle {
 	const failures: Array<{ path: string; error: Error }> = []
 	const syncedFiles = new Set<string>() // Track normalized paths of files WE created
 
@@ -153,6 +167,7 @@ export function createFileSync(tempDir: string, projectDir: string): FileSyncHan
 		if (isSymlink(filePath)) return // Skip symlinks - they point to real project
 		const relativePath = relative(tempDir, filePath)
 		const normalizedPath = normalizePath(relativePath)
+		if (options?.overlayFiles?.has(normalizedPath)) return // Skip - overlay file from profile
 		const destPath = join(projectDir, relativePath)
 		try {
 			await syncFile(filePath, destPath)
@@ -165,6 +180,8 @@ export function createFileSync(tempDir: string, projectDir: string): FileSyncHan
 	const handleChange = async (filePath: string) => {
 		if (isSymlink(filePath)) return
 		const relativePath = relative(tempDir, filePath)
+		const normalizedPath = normalizePath(relativePath)
+		if (options?.overlayFiles?.has(normalizedPath)) return // Skip - overlay file from profile
 		const destPath = join(projectDir, relativePath)
 		try {
 			await syncFile(filePath, destPath)

@@ -141,6 +141,34 @@ describe("file-sync", () => {
 			)
 		})
 
+		it("does NOT sync *.log files when gitignore has *.log pattern", async () => {
+			// Create .gitignore in project dir (destDir) with *.log pattern (user's scenario)
+			await Bun.write(
+				join(destDir, ".gitignore"),
+				"node_modules/\ndist/\n.wrangler/\n*.log\n.DS_Store\n",
+			)
+
+			fileSync = createFileSync(tempDir, destDir)
+			await delay(DELAY)
+
+			// Create files: one matching *.log, one normal file
+			await Bun.write(join(tempDir, "test-ignored.log"), "should be ignored")
+			await Bun.write(join(tempDir, "normal.txt"), "should sync")
+
+			// Wait for sync
+			await waitFor(() => existsSync(join(destDir, "normal.txt")))
+			await delay(100) // Extra buffer for excluded files
+
+			// Verify: normal.txt synced, test-ignored.log NOT synced
+			verifyFiles(
+				{
+					"normal.txt": "should sync",
+					"test-ignored.log": null, // gitignored by *.log
+				},
+				destDir,
+			)
+		})
+
 		it("syncs files when no .gitignore exists (only OS junk excluded)", async () => {
 			// No .gitignore in destDir - only OS junk should be excluded
 			fileSync = createFileSync(tempDir, destDir)
@@ -244,6 +272,113 @@ describe("file-sync", () => {
 			const failures = fileSync.getFailures()
 			// We don't expect failures in normal operation, but the method should work
 			expect(Array.isArray(failures)).toBe(true)
+		})
+	})
+
+	describe("overlayFiles exclusion", () => {
+		it("does NOT sync files in overlayFiles set", async () => {
+			// Create file-sync with overlayFiles containing "overlay.txt"
+			const overlayFiles = new Set(["overlay.txt"])
+			fileSync = createFileSync(tempDir, destDir, { overlayFiles })
+			await delay(DELAY)
+
+			// Create overlay.txt in temp dir
+			await Bun.write(join(tempDir, "overlay.txt"), "overlay content")
+			// Also create a normal file to verify sync is working
+			await Bun.write(join(tempDir, "normal.txt"), "normal content")
+
+			// Wait for normal file to sync
+			await waitFor(() => existsSync(join(destDir, "normal.txt")))
+			await delay(100) // Extra buffer
+
+			// Verify: normal.txt synced, overlay.txt NOT synced
+			verifyFiles(
+				{
+					"normal.txt": "normal content",
+					"overlay.txt": null, // Should NOT be synced
+				},
+				destDir,
+			)
+		})
+
+		it("syncs files NOT in overlayFiles set", async () => {
+			// Create file-sync with overlayFiles containing only "overlay.txt"
+			const overlayFiles = new Set(["overlay.txt"])
+			fileSync = createFileSync(tempDir, destDir, { overlayFiles })
+			await delay(DELAY)
+
+			// Create normal.txt in temp dir (NOT in set)
+			await Bun.write(join(tempDir, "normal.txt"), "should sync")
+			await Bun.write(join(tempDir, "another.ts"), "also syncs")
+
+			// Wait for sync
+			await waitFor(() => existsSync(join(destDir, "another.ts")))
+
+			// Verify both files synced
+			verifyFiles(
+				{
+					"normal.txt": "should sync",
+					"another.ts": "also syncs",
+				},
+				destDir,
+			)
+		})
+
+		it("does NOT sync nested overlay files", async () => {
+			// Create file-sync with overlayFiles containing nested path
+			const overlayFiles = new Set([".opencode/skills/test/SKILL.md"])
+			fileSync = createFileSync(tempDir, destDir, { overlayFiles })
+			await delay(DELAY)
+
+			// Create the nested directory structure and file
+			await mkdir(join(tempDir, ".opencode", "skills", "test"), { recursive: true })
+			await Bun.write(join(tempDir, ".opencode", "skills", "test", "SKILL.md"), "skill content")
+			// Also create a normal nested file to verify nested sync works
+			await Bun.write(join(tempDir, ".opencode", "config.json"), '{"key": "value"}')
+
+			// Wait for normal nested file to sync
+			await waitFor(() => existsSync(join(destDir, ".opencode", "config.json")))
+			await delay(100) // Extra buffer
+
+			// Verify: config.json synced, SKILL.md NOT synced
+			verifyFiles(
+				{
+					".opencode/config.json": '{"key": "value"}',
+					".opencode/skills/test/SKILL.md": null, // Should NOT be synced
+				},
+				destDir,
+			)
+		})
+
+		it("does NOT sync changes to overlay files", async () => {
+			// Create file-sync with overlayFiles containing "overlay.txt"
+			const overlayFiles = new Set(["overlay.txt"])
+			fileSync = createFileSync(tempDir, destDir, { overlayFiles })
+			await delay(DELAY)
+
+			// Create overlay file first (should not sync)
+			await Bun.write(join(tempDir, "overlay.txt"), "original overlay")
+			// Create a normal file to verify sync is working
+			await Bun.write(join(tempDir, "normal.txt"), "normal content")
+
+			await waitFor(() => existsSync(join(destDir, "normal.txt")))
+			await delay(100)
+
+			// Verify overlay.txt does not exist in dest
+			verifyFiles({ "overlay.txt": null }, destDir)
+
+			// Modify the overlay file
+			await Bun.write(join(tempDir, "overlay.txt"), "modified overlay")
+			await delay(300) // Wait for awaitWriteFinish (200ms) + buffer
+
+			// Verify modifications don't sync - file still should not exist
+			verifyFiles(
+				{
+					"overlay.txt": null, // Still not synced
+					"normal.txt": "normal content", // Normal file still there
+				},
+				destDir,
+			)
 		})
 	})
 
