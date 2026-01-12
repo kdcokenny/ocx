@@ -12,12 +12,16 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { z } from "zod"
-import { logWarn } from "../primitives/log-warn"
-import { Mutex } from "../primitives/mutex"
-import { escapeAppleScript, escapeBash, escapeBatch } from "../primitives/shell"
-import { getTempDir } from "../primitives/temp"
-import { isInsideTmux } from "../primitives/terminal-detect"
-import type { OpencodeClient } from "../primitives/types"
+import {
+	Mutex,
+	escapeAppleScript,
+	escapeBash,
+	escapeBatch,
+	getTempDir,
+	isInsideTmux,
+	logWarn,
+} from "../primitives"
+import type { OpencodeClient } from "../primitives"
 
 // =============================================================================
 // TEMP SCRIPT HELPER
@@ -91,13 +95,6 @@ export type TerminalType = "tmux" | "macos" | "windows" | "linux-desktop"
 export interface TerminalResult {
 	success: boolean
 	error?: string
-}
-
-/** Result of a command execution */
-export interface ExecResult {
-	stdout: string
-	stderr: string
-	exitCode: number
 }
 
 // Singleton mutex for all tmux operations in this process

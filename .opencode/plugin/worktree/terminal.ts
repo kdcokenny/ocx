@@ -11,31 +11,17 @@
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
-import type { createOpencodeClient } from "@opencode-ai/sdk"
 import { z } from "zod"
-import { Mutex } from "../primitives/mutex"
-import { escapeAppleScript, escapeBash, escapeBatch } from "../primitives/shell"
-import { getTempDir } from "../primitives/temp"
-import { isInsideTmux } from "../primitives/terminal-detect"
-
-type OpencodeClient = ReturnType<typeof createOpencodeClient>
-
-/**
- * Log a warning message using client.app.log if available, otherwise console.warn.
- * @param client - Optional OpenCode client for proper logging
- * @param message - Warning message to log
- */
-function logWarn(client: OpencodeClient | undefined, message: string): void {
-	if (client) {
-		client.app
-			.log({
-				body: { service: "worktree", level: "warn", message },
-			})
-			.catch(() => {})
-	} else {
-		console.warn(message)
-	}
-}
+import {
+	Mutex,
+	escapeAppleScript,
+	escapeBash,
+	escapeBatch,
+	getTempDir,
+	isInsideTmux,
+	logWarn,
+} from "../primitives"
+import type { OpencodeClient } from "../primitives"
 
 // =============================================================================
 // TEMP SCRIPT HELPER
@@ -72,7 +58,7 @@ export async function withTempScript<T>(
 			}
 		} catch (cleanupError) {
 			// Log but don't throw - cleanup is best-effort
-			logWarn(client, `Failed to cleanup temp script: ${scriptPath}: ${cleanupError}`)
+			logWarn(client, "worktree", `Failed to cleanup temp script: ${scriptPath}: ${cleanupError}`)
 		}
 	}
 }

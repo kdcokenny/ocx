@@ -12,11 +12,9 @@ import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import type { createOpencodeClient } from "@opencode-ai/sdk"
 import { z } from "zod"
-import { getProjectId } from "../primitives/get-project-id"
-
-type OpencodeClient = ReturnType<typeof createOpencodeClient>
+import { getProjectId, logWarn } from "../primitives"
+import type { OpencodeClient } from "../primitives"
 
 // =============================================================================
 // TYPES
@@ -64,23 +62,6 @@ const pendingDeleteSchema = z.object({
 	branch: z.string().min(1),
 	path: z.string().min(1),
 })
-
-/**
- * Log a warning message using client.app.log if available, otherwise console.warn.
- * @param client - Optional OpenCode client for proper logging
- * @param message - Warning message to log
- */
-function logWarn(client: OpencodeClient | undefined, message: string): void {
-	if (client) {
-		client.app
-			.log({
-				body: { service: "worktree", level: "warn", message },
-			})
-			.catch(() => {})
-	} else {
-		console.warn(message)
-	}
-}
 
 // =============================================================================
 // DATABASE UTILITIES
@@ -290,9 +271,17 @@ export function setPendingSpawn(db: Database, spawn: PendingSpawn, client?: Open
 	const existingDelete = getPendingDelete(db)
 
 	if (existingSpawn) {
-		logWarn(client, `Replacing pending spawn: "${existingSpawn.branch}" → "${parsed.branch}"`)
+		logWarn(
+			client,
+			"worktree",
+			`Replacing pending spawn: "${existingSpawn.branch}" → "${parsed.branch}"`,
+		)
 	} else if (existingDelete) {
-		logWarn(client, `Pending spawn replacing pending delete for: "${existingDelete.branch}"`)
+		logWarn(
+			client,
+			"worktree",
+			`Pending spawn replacing pending delete for: "${existingDelete.branch}"`,
+		)
 	}
 
 	// Atomic: replace any existing pending operation
@@ -364,9 +353,17 @@ export function setPendingDelete(db: Database, del: PendingDelete, client?: Open
 	const existingSpawn = getPendingSpawn(db)
 
 	if (existingDelete) {
-		logWarn(client, `Replacing pending delete: "${existingDelete.branch}" → "${parsed.branch}"`)
+		logWarn(
+			client,
+			"worktree",
+			`Replacing pending delete: "${existingDelete.branch}" → "${parsed.branch}"`,
+		)
 	} else if (existingSpawn) {
-		logWarn(client, `Pending delete replacing pending spawn for: "${existingSpawn.branch}"`)
+		logWarn(
+			client,
+			"worktree",
+			`Pending delete replacing pending spawn for: "${existingSpawn.branch}"`,
+		)
 	}
 
 	// Atomic: replace any existing pending operation
