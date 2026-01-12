@@ -878,6 +878,7 @@ Ghost mode uses multi-profile configuration with configuration files stored at `
 | `include` | `string[]` | `[]` | Glob patterns for project files to include in ghost sessions |
 | `exclude` | `string[]` | `[]` | Glob patterns to filter out from include results |
 | `renameWindow` | `boolean` | `true` | Set terminal/tmux window name when launching OpenCode |
+| `maxFiles` | `number` | `10000` | Maximum files to process when creating symlink farm. Set to 0 for unlimited. Safety check against massive directories. |
 
 #### Include/Exclude Patterns
 
@@ -886,6 +887,9 @@ By default, ghost mode hides all OpenCode project files from the symlink farm. U
 ```jsonc
 {
   "registries": { "kdco": { "url": "https://registry.kdco.dev" } },
+  
+  // Safety limit for symlink farm creation (0 = unlimited)
+  "maxFiles": 10000,
   
   // Include specific OpenCode files in ghost sessions
   "include": [
