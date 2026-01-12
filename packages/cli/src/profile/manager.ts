@@ -39,6 +39,7 @@ const DEFAULT_GHOST_CONFIG: GhostConfig = {
 	],
 	include: [],
 	renameWindow: true,
+	maxFiles: 10000,
 }
 
 /**

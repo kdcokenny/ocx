@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { lstat, mkdir, readlink, rm } from "node:fs/promises"
 import { join } from "node:path"
+import { FileLimitExceededError } from "../../src/utils/errors.js"
 import {
 	cleanupSymlinkFarm,
 	createSymlinkFarm,
@@ -291,5 +292,100 @@ describe("injectGhostFiles", () => {
 		} finally {
 			await cleanupSymlinkFarm(tempDir)
 		}
+	})
+})
+
+describe("maxFiles limit", () => {
+	let sourceDir: string
+
+	beforeEach(async () => {
+		sourceDir = await createTempDir("symlink-farm-maxfiles")
+	})
+
+	afterEach(async () => {
+		await cleanupTempDir(sourceDir)
+	})
+
+	it("should throw FileLimitExceededError when file count exceeds limit", async () => {
+		// Create 5 files
+		for (let i = 0; i < 5; i++) {
+			await Bun.write(join(sourceDir, `file${i}.txt`), `content${i}`)
+		}
+
+		// Set limit to 3, should fail
+		await expect(createSymlinkFarm(sourceDir, { maxFiles: 3 })).rejects.toThrow(
+			FileLimitExceededError,
+		)
+	})
+
+	it("should include count and limit in error", async () => {
+		// Create 10 files
+		for (let i = 0; i < 10; i++) {
+			await Bun.write(join(sourceDir, `file${i}.txt`), `content${i}`)
+		}
+
+		try {
+			await createSymlinkFarm(sourceDir, { maxFiles: 5 })
+			expect.unreachable("Should have thrown")
+		} catch (error) {
+			expect(error).toBeInstanceOf(FileLimitExceededError)
+			const e = error as FileLimitExceededError
+			expect(e.count).toBeGreaterThan(5)
+			expect(e.limit).toBe(5)
+			expect(e.message).toContain("File limit exceeded")
+			expect(e.message).toContain("maxFiles")
+		}
+	})
+
+	it("should respect custom maxFiles limit", async () => {
+		// Create 20 files
+		for (let i = 0; i < 20; i++) {
+			await Bun.write(join(sourceDir, `file${i}.txt`), `content${i}`)
+		}
+
+		// Set limit to 50, should succeed
+		const tempDir = await createSymlinkFarm(sourceDir, { maxFiles: 50 })
+
+		try {
+			// Verify symlinks were created
+			const stat = await lstat(join(tempDir, "file0.txt"))
+			expect(stat.isSymbolicLink()).toBe(true)
+		} finally {
+			await cleanupSymlinkFarm(tempDir)
+		}
+	})
+
+	it("should disable limit when maxFiles is 0", async () => {
+		// Create 100 files - would exceed default limit of 10000 if we created that many
+		// but 0 means unlimited so any count should work
+		for (let i = 0; i < 100; i++) {
+			await Bun.write(join(sourceDir, `file${i}.txt`), `content${i}`)
+		}
+
+		// maxFiles: 0 should disable the limit
+		const tempDir = await createSymlinkFarm(sourceDir, { maxFiles: 0 })
+
+		try {
+			// Verify it succeeded
+			const stat = await lstat(join(tempDir, "file0.txt"))
+			expect(stat.isSymbolicLink()).toBe(true)
+		} finally {
+			await cleanupSymlinkFarm(tempDir)
+		}
+	})
+
+	it("should count directories toward the limit", async () => {
+		// Create 3 files and 3 directories (6 entries total)
+		for (let i = 0; i < 3; i++) {
+			await Bun.write(join(sourceDir, `file${i}.txt`), `content${i}`)
+		}
+		for (let i = 0; i < 3; i++) {
+			await mkdir(join(sourceDir, `dir${i}`), { recursive: true })
+		}
+
+		// Set limit to 5, should fail (6 entries > 5)
+		await expect(createSymlinkFarm(sourceDir, { maxFiles: 5 })).rejects.toThrow(
+			FileLimitExceededError,
+		)
 	})
 })

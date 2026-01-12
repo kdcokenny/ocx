@@ -10,6 +10,7 @@ import { randomBytes } from "node:crypto"
 import { mkdir, readdir, rename, rm, stat, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, relative } from "node:path"
+import { FileLimitExceededError } from "./errors"
 import { createPathMatcher, normalizeForMatching, type PathMatcher } from "./pattern-filter"
 
 /**
@@ -41,6 +42,12 @@ export const REMOVING_SUFFIX = "-removing"
 export const GHOST_MARKER_FILE = ".ocx-ghost-marker"
 
 /**
+ * Mutable state passed through recursive traversal.
+ * Tracks total entries processed for file limit enforcement.
+ */
+type TraversalState = { count: number }
+
+/**
  * Creates a temporary directory with symlinks to the source directory contents,
  * respecting include/exclude patterns for filtering.
  *
@@ -56,6 +63,7 @@ export async function createSymlinkFarm(
 	options?: {
 		includePatterns?: string[]
 		excludePatterns?: string[]
+		maxFiles?: number
 	},
 ): Promise<string> {
 	// Guard: sourceDir must be absolute (Law 1: Early Exit)
@@ -76,8 +84,12 @@ export async function createSymlinkFarm(
 			options?.excludePatterns ?? [],
 		)
 
+		// Initialize traversal state for file limit tracking
+		const maxFiles = options?.maxFiles ?? 10000
+		const state: TraversalState = { count: 0 }
+
 		// Compute plan (decision phase - pure logic)
-		const plan = await computeSymlinkPlan(sourceDir, sourceDir, matcher)
+		const plan = await computeSymlinkPlan(sourceDir, sourceDir, matcher, state, maxFiles)
 
 		// Execute plan (I/O phase - creates symlinks)
 		await executeSymlinkPlan(plan, sourceDir, tempDir)
@@ -248,6 +260,8 @@ export async function computeSymlinkPlan(
 	sourceDir: string,
 	projectRoot: string,
 	matcher: PathMatcher,
+	state: TraversalState,
+	maxFiles: number,
 ): Promise<SymlinkPlan> {
 	// Guard: sourceDir must be absolute (Law 1: Early Exit)
 	if (!isAbsolute(sourceDir)) {
@@ -261,6 +275,14 @@ export async function computeSymlinkPlan(
 	}
 
 	const entries = await readdir(sourceDir, { withFileTypes: true })
+
+	// Count entries BEFORE filtering (fail-fast on massive directories)
+	state.count += entries.length
+
+	// Guard: Check file limit (0 = unlimited)
+	if (maxFiles > 0 && state.count > maxFiles) {
+		throw new FileLimitExceededError(state.count, maxFiles)
+	}
 
 	for (const entry of entries) {
 		const sourcePath = join(sourceDir, entry.name)
@@ -285,7 +307,7 @@ export async function computeSymlinkPlan(
 
 		// disposition.type === "partial" - directory needs recursive expansion
 		if (entry.isDirectory()) {
-			const nestedPlan = await computeSymlinkPlan(sourcePath, projectRoot, matcher)
+			const nestedPlan = await computeSymlinkPlan(sourcePath, projectRoot, matcher, state, maxFiles)
 			plan.partialDirs.set(entry.name, nestedPlan)
 		} else {
 			// Files with "partial" disposition: when there are no include patterns,

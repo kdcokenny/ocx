@@ -111,6 +111,18 @@ export const ghostConfigSchema = z.object({
 		.boolean()
 		.default(true)
 		.describe("Set terminal/tmux window name when launching OpenCode"),
+
+	/**
+	 * Maximum number of files to process when creating the symlink farm.
+	 * Acts as a safety check against accidentally running in massive directories.
+	 * Set to 0 to disable the limit entirely.
+	 */
+	maxFiles: z
+		.number()
+		.int()
+		.min(0, "maxFiles must be non-negative")
+		.default(10000)
+		.describe("Maximum files to process (0 = unlimited)"),
 })
 
 export type GhostConfig = z.infer<typeof ghostConfigSchema>
