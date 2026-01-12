@@ -54,6 +54,12 @@
 			"type": "boolean",
 			"default": true,
 			"description": "Set terminal/tmux window name when launching OpenCode. Set to false to preserve your existing terminal title."
+		},
+		"maxFiles": {
+			"type": "integer",
+			"minimum": 0,
+			"default": 10000,
+			"description": "Maximum number of files to process when creating the symlink farm. Acts as a safety check against accidentally running in massive directories. Set to 0 to disable the limit."
 		}
 	}
 }

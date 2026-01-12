@@ -1,31 +1,149 @@
 {
   "lockVersion": 1,
   "installed": {
-    "kdco/primitives": {
-      "registry": "kdco",
-      "version": "1.0.0",
-      "hash": "5cdb1d2c4ccc8b404ef9e1c84bcd437c0268c917ea098e5a12c5b2697e09cad5",
-      "files": [
-        ".opencode/plugin/primitives/get-project-id.ts",
-        ".opencode/plugin/primitives/with-timeout.ts",
-        ".opencode/plugin/primitives/log-warn.ts",
-        ".opencode/plugin/primitives/types.ts",
-        ".opencode/plugin/primitives/mutex.ts",
-        ".opencode/plugin/primitives/shell.ts",
-        ".opencode/plugin/primitives/temp.ts",
-        ".opencode/plugin/primitives/terminal-detect.ts",
-        ".opencode/plugin/primitives/index.ts"
-      ],
-      "installedAt": "2026-01-12T15:18:54.400Z"
-    },
     "kdco/background-agents": {
       "registry": "kdco",
       "version": "1.0.0",
-      "hash": "227a803feda2e227d9d8a2235ad9b7c6811faa0f2f960e5195d3a16ac86daabc",
+      "hash": "8b52056af26e17ef0aa0d2d1f4670499923c0f788289873e5908f9a8a10a6f96",
       "files": [
         ".opencode/plugin/background-agents.ts"
       ],
-      "installedAt": "2026-01-12T15:18:54.400Z"
+      "installedAt": "2026-01-12T16:57:35.933Z"
+    },
+    "kdco/workspace-plugin": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "81942490d661e067c0ed25fa3e58225439b46aab93283c652ff4f50328d7b8df",
+      "files": [
+        ".opencode/plugin/workspace-plugin.ts"
+      ],
+      "installedAt": "2026-01-12T16:57:35.934Z"
+    },
+    "kdco/plan-protocol": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "bee4b844ee705305eb692d82e48122bcbc2d69e84eda56d37c6caf1b8e3e6f42",
+      "files": [
+        ".opencode/skill/plan-protocol/SKILL.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.935Z"
+    },
+    "kdco/researcher": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "750b46976f47a9716146fc495042ced167e4edf341a483c549e19b761c1ba5bd",
+      "files": [
+        ".opencode/agent/researcher.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.936Z"
+    },
+    "kdco/scribe": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "758fe4dc0c0a2d7dc03261278746639c6b02172ef5d0628120e44ab71351fd80",
+      "files": [
+        ".opencode/agent/scribe.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.936Z"
+    },
+    "kdco/coder": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "d7ad9717006ff75752e0ce1c123cb8849a4783856dc440de89ad72cb24fe267a",
+      "files": [
+        ".opencode/agent/coder.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.936Z"
+    },
+    "kdco/code-review": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "8a19be50c6ec904a8c5a1a32ebaabb8499579206388114202e07d83954269d74",
+      "files": [
+        ".opencode/skill/code-review/SKILL.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.937Z"
+    },
+    "kdco/plan-review": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "db9dbdf58fdf124a11436957fe9dcb51fcde63b5783a6810b12086ea994857c5",
+      "files": [
+        ".opencode/skill/plan-review/SKILL.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.937Z"
+    },
+    "kdco/reviewer": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "d8c3492c3a917146c82b102bd70823b365e5a7e2fa1149bb517e04a1cc527bd3",
+      "files": [
+        ".opencode/agent/reviewer.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.938Z"
+    },
+    "kdco/review": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "0825fe7b718b38e0ca74e6112b640da17d8a3b880056b860748b1c296875965c",
+      "files": [
+        ".opencode/command/review.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.938Z"
+    },
+    "kdco/notify": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "52265cc5a40b2e6eabf6981bf6e12ae1cf17c06742ba6ea34b1296bc9e6bd322",
+      "files": [
+        ".opencode/plugin/notify.ts"
+      ],
+      "installedAt": "2026-01-12T16:57:35.939Z"
+    },
+    "kdco/worktree": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "26b062488e67076a0321744bdfb23ff55f83e1d2b39e568b224a5f9473f443e5",
+      "files": [
+        ".opencode/plugin/worktree.ts",
+        ".opencode/plugin/worktree/state.ts",
+        ".opencode/plugin/worktree/terminal.ts"
+      ],
+      "installedAt": "2026-01-12T16:57:35.941Z"
+    },
+    "kdco/code-philosophy": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "1c9b013f1aacf3b524665d3bdc30aed992f6b78b1281eaafa3b986e71aaa8256",
+      "files": [
+        ".opencode/skill/code-philosophy/SKILL.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.941Z"
+    },
+    "kdco/frontend-philosophy": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "94c59572402621a869b2cd69da91dc9bfbb6dc6a24ca7ddff9c14805a7ea42e3",
+      "files": [
+        ".opencode/skill/frontend-philosophy/SKILL.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.941Z"
+    },
+    "kdco/philosophy": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "946587f02649d0bb118327421213b6f5886852f1747511857b92be3af3f7a12e",
+      "files": [
+        ".opencode/philosophy/AGENTS.md"
+      ],
+      "installedAt": "2026-01-12T16:57:35.942Z"
+    },
+    "kdco/workspace": {
+      "registry": "kdco",
+      "version": "1.0.0",
+      "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "files": [],
+      "installedAt": "2026-01-12T16:57:35.942Z"
     }
   }
 }

@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { getGhostConfigPath, getGhostOpencodeConfigPath } from "../../src/ghost/config.js"
+import { getProfileGhostConfig } from "../../src/profile/paths.js"
 
 // =============================================================================
 // HELPERS
@@ -35,13 +36,18 @@ async function cleanupTempDir(dir: string): Promise<void> {
 	await rm(dir, { recursive: true, force: true })
 }
 
-async function runGhostCLI(args: string[], env: Record<string, string> = {}): Promise<CLIResult> {
+async function runGhostCLI(
+	args: string[],
+	env: Record<string, string> = {},
+	cwd?: string,
+): Promise<CLIResult> {
 	const indexPath = join(import.meta.dir, "..", "..", "src/index.ts")
 
 	const proc = Bun.spawn(["bun", "run", indexPath, "ghost", ...args], {
 		env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", ...env },
 		stdout: "pipe",
 		stderr: "pipe",
+		...(cwd && { cwd }),
 	})
 
 	const [stdout, stderr] = await Promise.all([
@@ -83,11 +89,15 @@ exit 0
 describe("ocx ghost opencode", () => {
 	let testDir: string
 	let mockBinDir: string
+	let projectDir: string // Clean project directory for running tests
 	const originalXdgConfigHome = process.env.XDG_CONFIG_HOME
 
 	beforeEach(async () => {
 		testDir = await createTempConfigDir("ghost-opencode")
 		mockBinDir = await createTempConfigDir("mock-bin")
+		// Create a clean project directory for tests to run from (avoids file limit issues)
+		projectDir = await createTempConfigDir("ghost-project")
+		await Bun.write(join(projectDir, "example.txt"), "test content")
 		await createMockOpencode(mockBinDir)
 		// Initialize ghost config
 		await runGhostCLI(["init"], { XDG_CONFIG_HOME: testDir })
@@ -102,6 +112,7 @@ describe("ocx ghost opencode", () => {
 		}
 		await cleanupTempDir(testDir)
 		await cleanupTempDir(mockBinDir)
+		await cleanupTempDir(projectDir)
 	})
 
 	it("should fail if ghost mode is not initialized", async () => {
@@ -147,10 +158,14 @@ describe("ocx ghost opencode", () => {
 		}
 		await Bun.write(opencodeConfigPath, JSON.stringify(opencodeConfig))
 
-		const { output } = await runGhostCLI(["opencode"], {
-			XDG_CONFIG_HOME: testDir,
-			PATH: `${mockBinDir}:${process.env.PATH}`,
-		})
+		const { output } = await runGhostCLI(
+			["opencode"],
+			{
+				XDG_CONFIG_HOME: testDir,
+				PATH: `${mockBinDir}:${process.env.PATH}`,
+			},
+			projectDir,
+		)
 
 		// The mock script outputs OPENCODE_CONFIG_CONTENT
 		expect(output).toContain("OPENCODE_CONFIG_CONTENT=")
@@ -174,10 +189,14 @@ describe("ocx ghost opencode", () => {
 		await Bun.write(opencodeConfigPath, '{"model": "test"}')
 
 		// Use arguments that won't be intercepted by Commander
-		const { output } = await runGhostCLI(["opencode", "--custom-flag", "arg1", "arg2"], {
-			XDG_CONFIG_HOME: testDir,
-			PATH: `${mockBinDir}:${process.env.PATH}`,
-		})
+		const { output } = await runGhostCLI(
+			["opencode", "--custom-flag", "arg1", "arg2"],
+			{
+				XDG_CONFIG_HOME: testDir,
+				PATH: `${mockBinDir}:${process.env.PATH}`,
+			},
+			projectDir,
+		)
 
 		// The mock script outputs the args
 		expect(output).toContain("ARGS=--custom-flag arg1 arg2")
@@ -192,10 +211,14 @@ describe("ocx ghost opencode", () => {
 		const opencodeConfigPath = getGhostOpencodeConfigPath()
 		await Bun.write(opencodeConfigPath, "{}")
 
-		const { output } = await runGhostCLI(["opencode", "--message", "hello world"], {
-			XDG_CONFIG_HOME: testDir,
-			PATH: `${mockBinDir}:${process.env.PATH}`,
-		})
+		const { output } = await runGhostCLI(
+			["opencode", "--message", "hello world"],
+			{
+				XDG_CONFIG_HOME: testDir,
+				PATH: `${mockBinDir}:${process.env.PATH}`,
+			},
+			projectDir,
+		)
 
 		expect(output).toContain("--message")
 		expect(output).toContain("hello world")
@@ -210,15 +233,57 @@ describe("ocx ghost opencode", () => {
 		const opencodeConfigPath = getGhostOpencodeConfigPath()
 		await Bun.write(opencodeConfigPath, "{}")
 
-		const { stderr } = await runGhostCLI(["opencode", "--no-rename"], {
-			XDG_CONFIG_HOME: testDir,
-			PATH: `${mockBinDir}:${process.env.PATH}`,
-		})
+		const { stderr } = await runGhostCLI(
+			["opencode", "--no-rename"],
+			{
+				XDG_CONFIG_HOME: testDir,
+				PATH: `${mockBinDir}:${process.env.PATH}`,
+			},
+			projectDir,
+		)
 
 		// The command should parse the flag without error
 		// It will still run because we have a mock opencode binary, but the flag should be recognized
 		expect(stderr).not.toContain("unknown option")
 		expect(stderr).not.toContain("--no-rename")
+	})
+
+	it("should fail when file count exceeds maxFiles limit", async () => {
+		// Write ghost.jsonc with a very low maxFiles limit
+		const configPath = getProfileGhostConfig("default")
+		await Bun.write(
+			configPath,
+			JSON.stringify({
+				registries: {},
+				maxFiles: 3, // Very low limit
+			}),
+		)
+
+		// Write opencode.jsonc
+		const opencodeConfigPath = getGhostOpencodeConfigPath()
+		await Bun.write(opencodeConfigPath, '{"model": "test"}')
+
+		// Create a project directory with many files to exceed the limit
+		const projectDir = join(testDir, "test-project")
+		await mkdir(projectDir, { recursive: true })
+		for (let i = 0; i < 10; i++) {
+			await Bun.write(join(projectDir, `file${i}.txt`), `content${i}`)
+		}
+
+		// Run from the project directory with many files
+		const { exitCode, output } = await runGhostCLI(
+			["opencode"],
+			{
+				XDG_CONFIG_HOME: testDir,
+				PATH: `${mockBinDir}:${process.env.PATH}`,
+			},
+			projectDir,
+		)
+
+		// Should fail with file limit error (exit code 74 = BSD sysexits FILE_LIMIT)
+		expect(exitCode).toBe(74)
+		expect(output).toContain("File limit exceeded")
+		expect(output).toContain("maxFiles")
 	})
 })
 

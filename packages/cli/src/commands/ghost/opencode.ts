@@ -141,6 +141,7 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	const { tempDir, symlinkRoots } = await createSymlinkFarm(cwd, {
 		includePatterns: ghostConfig.include,
 		excludePatterns: ghostConfig.exclude,
+		maxFiles: ghostConfig.maxFiles,
 	})
 
 	// Inject profile overlay - everything in profile dir except ghost.jsonc

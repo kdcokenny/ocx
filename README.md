@@ -206,6 +206,9 @@ By default, ghost mode hides all OpenCode project files (AGENTS.md, .opencode/, 
     "kdco": "https://registry.kdco.dev"
   },
   
+  // Safety limit for symlink farm creation (0 = unlimited)
+  "maxFiles": 10000,
+  
   // Include specific OpenCode files in ghost sessions
   "include": [
     "**/AGENTS.md",           // Include all AGENTS.md files

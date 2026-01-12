@@ -12,6 +12,7 @@ export type ErrorCode =
 	| "PERMISSION_ERROR"
 	| "INTEGRITY_ERROR"
 	| "UPDATE_ERROR"
+	| "FILE_LIMIT"
 
 export const EXIT_CODES = {
 	SUCCESS: 0,
@@ -20,6 +21,7 @@ export const EXIT_CODES = {
 	NETWORK: 69,
 	CONFIG: 78,
 	INTEGRITY: 1, // Exit code for integrity failures
+	FILE_LIMIT: 74, // BSD sysexits "data too large"
 } as const
 
 export class OCXError extends Error {
@@ -122,6 +124,21 @@ export class GhostConfigError extends OCXError {
 	constructor(message: string) {
 		super(message, "CONFIG_ERROR", EXIT_CODES.CONFIG)
 		this.name = "GhostConfigError"
+	}
+}
+
+export class FileLimitExceededError extends OCXError {
+	constructor(
+		public readonly count: number,
+		public readonly limit: number,
+	) {
+		super(
+			`File limit exceeded: found ${count} entries (limit: ${limit}). ` +
+				`To fix: add exclude patterns to ghost.jsonc, or set "maxFiles" to a higher value (0 = unlimited).`,
+			"FILE_LIMIT",
+			EXIT_CODES.FILE_LIMIT,
+		)
+		this.name = "FileLimitExceededError"
 	}
 }
 
