@@ -7,12 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import {
-	escapeAppleScript,
-	escapeBash,
-	escapeBatch,
-	withTempScript,
-} from "../files/plugin/worktree/terminal"
+import { escapeAppleScript, escapeBash, escapeBatch } from "../files/plugin/primitives/shell"
+import { withTempScript } from "../files/plugin/worktree/terminal"
 
 describe("worktree-terminal", () => {
 	describe("Shell Escape Functions", () => {

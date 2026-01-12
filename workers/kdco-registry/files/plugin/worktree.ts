@@ -16,9 +16,8 @@ import { access, copyFile, cp, mkdir, rm, stat, symlink } from "node:fs/promises
 import * as os from "node:os"
 import * as path from "node:path"
 import { type Plugin, tool } from "@opencode-ai/plugin"
-import type { createOpencodeClient, Event } from "@opencode-ai/sdk"
-
-type OpencodeClient = ReturnType<typeof createOpencodeClient>
+import type { Event } from "@opencode-ai/sdk"
+import type { OpencodeClient } from "./primitives/types"
 
 /** Logger interface for structured logging */
 interface Logger {

@@ -8,27 +8,17 @@
  * interface for terminal operations with proper concurrency control.
  */
 
-import * as fsSync from "node:fs"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { createOpencodeClient } from "@opencode-ai/sdk"
 import { z } from "zod"
+import { Mutex } from "../primitives/mutex"
+import { escapeAppleScript, escapeBash, escapeBatch } from "../primitives/shell"
+import { getTempDir } from "../primitives/temp"
+import { isInsideTmux } from "../primitives/terminal-detect"
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>
-
-// =============================================================================
-// TEMP DIRECTORY HELPER
-// =============================================================================
-
-/**
- * Get the real temp directory path, resolving symlinks.
- * Critical for macOS where os.tmpdir() returns a symlink (/var/folders -> /private/var/folders).
- * @see Bun test harness, VS Code, Eclipse Theia for this pattern
- */
-function getTempDir(): string {
-	return fsSync.realpathSync.native(os.tmpdir())
-}
 
 /**
  * Log a warning message using client.app.log if available, otherwise console.warn.
@@ -121,81 +111,6 @@ export interface TerminalResult {
 	error?: string
 }
 
-/** Result of a command execution */
-export interface ExecResult {
-	stdout: string
-	stderr: string
-	exitCode: number
-}
-
-// =============================================================================
-// MUTEX
-// =============================================================================
-
-/**
- * Simple promise-based mutex for serializing async operations.
- * No external dependencies - uses native Promise mechanics.
- *
- * @example
- * ```ts
- * const mutex = new Mutex()
- * await mutex.runExclusive(async () => {
- *   // Only one caller executes this at a time
- * })
- * ```
- */
-export class Mutex {
-	private locked = false
-	private queue: (() => void)[] = []
-
-	/**
-	 * Acquire the mutex lock.
-	 * If already locked, waits in queue until released.
-	 */
-	async acquire(): Promise<void> {
-		if (!this.locked) {
-			this.locked = true
-			return
-		}
-
-		// Wait in queue for lock release
-		return new Promise<void>((resolve) => {
-			this.queue.push(resolve)
-		})
-	}
-
-	/**
-	 * Release the mutex lock.
-	 * Notifies the next waiter in queue if any.
-	 */
-	release(): void {
-		const next = this.queue.shift()
-		if (next) {
-			// Pass lock to next waiter
-			next()
-		} else {
-			// No waiters, unlock
-			this.locked = false
-		}
-	}
-
-	/**
-	 * Run a function exclusively under mutex protection.
-	 * Automatically acquires and releases the lock.
-	 *
-	 * @param fn - Async function to execute exclusively
-	 * @returns The function's return value
-	 */
-	async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
-		await this.acquire()
-		try {
-			return await fn()
-		} finally {
-			this.release()
-		}
-	}
-}
-
 // Singleton mutex for all tmux operations in this process
 const tmuxMutex = new Mutex()
 
@@ -203,88 +118,8 @@ const tmuxMutex = new Mutex()
 const STABILIZATION_DELAY_MS = 150
 
 // =============================================================================
-// SHELL ESCAPING
-// =============================================================================
-
-/** Characters that cannot be safely escaped in shell - must reject */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: Null byte detection is intentional for security
-const SHELL_FORBIDDEN_CHARS = /[\x00]/
-
-/**
- * Assert that a string is safe for shell escaping.
- * Null bytes cannot be escaped in any shell and must be rejected.
- *
- * @param value - String to validate
- * @param context - Description for error message (e.g., "Bash argument")
- * @throws {Error} if string contains forbidden characters
- */
-export function assertShellSafe(value: string, context: string): void {
-	if (SHELL_FORBIDDEN_CHARS.test(value)) {
-		throw new Error(
-			`${context} contains null bytes which cannot be safely escaped for shell execution`,
-		)
-	}
-}
-
-/**
- * Escape a string for safe use in bash double-quoted strings.
- * Handles all special characters including newlines and carriage returns.
- *
- * @param str - String to escape
- * @returns Escaped string safe for bash
- * @throws {Error} if string contains null bytes
- */
-export function escapeBash(str: string): string {
-	assertShellSafe(str, "Bash argument")
-	return str
-		.replace(/\\/g, "\\\\")
-		.replace(/"/g, '\\"')
-		.replace(/\$/g, "\\$")
-		.replace(/`/g, "\\`")
-		.replace(/!/g, "\\!")
-		.replace(/\n/g, " ")
-		.replace(/\r/g, " ")
-}
-
-/**
- * Escape a string for safe use in AppleScript double-quoted strings.
- * Replaces newlines with spaces since AppleScript doesn't support \n escapes.
- *
- * @param str - String to escape
- * @returns Escaped string safe for AppleScript
- * @throws {Error} if string contains null bytes
- */
-export function escapeAppleScript(str: string): string {
-	assertShellSafe(str, "AppleScript argument")
-	return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ").replace(/\r/g, " ")
-}
-
-/**
- * Escape a string for safe use in Windows batch files.
- *
- * @param str - String to escape
- * @returns Escaped string safe for batch files
- * @throws {Error} if string contains null bytes
- */
-export function escapeBatch(str: string): string {
-	assertShellSafe(str, "Batch argument")
-	return str
-		.replace(/%/g, "%%")
-		.replace(/\^/g, "^^")
-		.replace(/&/g, "^&")
-		.replace(/</g, "^<")
-		.replace(/>/g, "^>")
-		.replace(/\|/g, "^|")
-}
-
-// =============================================================================
 // ENVIRONMENT DETECTION SCHEMAS
 // =============================================================================
-
-/** Validates tmux environment detection */
-const tmuxEnvSchema = z.object({
-	TMUX: z.string().optional(),
-})
 
 /** Validates WSL environment detection */
 const wslEnvSchema = z.object({
@@ -331,17 +166,6 @@ type MacTerminal = "ghostty" | "iterm" | "warp" | "kitty" | "alacritty" | "termi
 // =============================================================================
 // PLATFORM DETECTION
 // =============================================================================
-
-/**
- * Check if running inside tmux.
- *
- * @returns true if TMUX environment variable is set
- */
-export function isInsideTmux(): boolean {
-	const parsed = tmuxEnvSchema.safeParse(process.env)
-	if (!parsed.success) return false
-	return !!parsed.data.TMUX
-}
 
 /**
  * Check if running inside WSL (Windows Subsystem for Linux).
@@ -394,42 +218,6 @@ export function detectTerminalType(): TerminalType {
 // =============================================================================
 // TMUX OPERATIONS (MUTEX-PROTECTED)
 // =============================================================================
-
-/**
- * Execute a tmux command with mutex protection.
- * Serializes all tmux operations to prevent socket races.
- *
- * @param args - tmux command arguments (without 'tmux' prefix)
- * @returns Command execution result
- *
- * @example
- * ```ts
- * const result = await execTmuxSerialized(["list-windows", "-F", "#{window_name}"])
- * if (result.exitCode === 0) {
- *   console.log(result.stdout)
- * }
- * ```
- */
-export async function execTmuxSerialized(args: string[]): Promise<ExecResult> {
-	return tmuxMutex.runExclusive(async () => {
-		const proc = Bun.spawn(["tmux", ...args], {
-			stdout: "pipe",
-			stderr: "pipe",
-		})
-
-		const [stdout, stderr, exitCode] = await Promise.all([
-			new Response(proc.stdout).text(),
-			new Response(proc.stderr).text(),
-			proc.exited,
-		])
-
-		return {
-			stdout: stdout.trim(),
-			stderr: stderr.trim(),
-			exitCode,
-		}
-	})
-}
 
 /**
  * Open a new tmux window with mutex protection.
