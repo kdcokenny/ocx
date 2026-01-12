@@ -25,6 +25,16 @@ export interface SymlinkPlan {
 	partialDirs: Map<string, SymlinkPlan>
 }
 
+/**
+ * Result of creating a symlink farm.
+ */
+export interface SymlinkFarmResult {
+	/** Path to the temporary directory containing symlinks */
+	tempDir: string
+	/** Set of relative paths that are symlinks (for containment checks). Uses forward slashes only. */
+	symlinkRoots: Set<string>
+}
+
 /** Age threshold for stale ghost sessions (24 hours) */
 const STALE_SESSION_THRESHOLD_MS = 24 * 60 * 60 * 1000
 
@@ -57,7 +67,7 @@ export async function createSymlinkFarm(
 		includePatterns?: string[]
 		excludePatterns?: string[]
 	},
-): Promise<string> {
+): Promise<SymlinkFarmResult> {
 	// Guard: sourceDir must be absolute (Law 1: Early Exit)
 	if (!isAbsolute(sourceDir)) {
 		throw new Error(`sourceDir must be an absolute path, got: ${sourceDir}`)
@@ -80,9 +90,11 @@ export async function createSymlinkFarm(
 		const plan = await computeSymlinkPlan(sourceDir, sourceDir, matcher)
 
 		// Execute plan (I/O phase - creates symlinks)
-		await executeSymlinkPlan(plan, sourceDir, tempDir)
+		// Track all symlinked paths for containment checks during overlay
+		const symlinkRoots = new Set<string>()
+		await executeSymlinkPlan(plan, sourceDir, tempDir, "", symlinkRoots)
 
-		return tempDir
+		return { tempDir, symlinkRoots }
 	} catch (error) {
 		// Cleanup on failure (Law 4: Fail Fast)
 		await rm(tempDir, { recursive: true, force: true }).catch(() => {})
@@ -311,6 +323,8 @@ export async function executeSymlinkPlan(
 	plan: SymlinkPlan,
 	sourceRoot: string,
 	targetRoot: string,
+	relativePath: string = "",
+	symlinkRoots?: Set<string>,
 ): Promise<void> {
 	// Guard: paths must be absolute (Law 1: Early Exit)
 	if (!isAbsolute(sourceRoot)) {
@@ -325,6 +339,7 @@ export async function executeSymlinkPlan(
 		const sourcePath = join(sourceRoot, dirName)
 		const targetPath = join(targetRoot, dirName)
 		await symlink(sourcePath, targetPath)
+		symlinkRoots?.add(relativePath ? `${relativePath}/${dirName}` : dirName)
 	}
 
 	// Symlink all files
@@ -332,6 +347,7 @@ export async function executeSymlinkPlan(
 		const sourcePath = join(sourceRoot, fileName)
 		const targetPath = join(targetRoot, fileName)
 		await symlink(sourcePath, targetPath)
+		symlinkRoots?.add(relativePath ? `${relativePath}/${fileName}` : fileName)
 	}
 
 	// Handle partial directories - create real directory and recurse
@@ -343,6 +359,7 @@ export async function executeSymlinkPlan(
 		await mkdir(targetPath, { recursive: true })
 
 		// Recursively execute nested plan
-		await executeSymlinkPlan(nestedPlan, sourcePath, targetPath)
+		const nestedRelativePath = relativePath ? `${relativePath}/${dirName}` : dirName
+		await executeSymlinkPlan(nestedPlan, sourcePath, targetPath, nestedRelativePath, symlinkRoots)
 	}
 }

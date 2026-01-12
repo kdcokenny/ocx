@@ -48,7 +48,7 @@ describe("createSymlinkFarm", () => {
 		await Bun.write(join(sourceDir, "file1.txt"), "content1")
 		await Bun.write(join(sourceDir, "file2.txt"), "content2")
 
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 
 		try {
 			// Check symlinks exist
@@ -75,7 +75,7 @@ describe("createSymlinkFarm", () => {
 		await mkdir(subDir, { recursive: true })
 		await Bun.write(join(subDir, "nested.txt"), "nested content")
 
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 
 		try {
 			// Check symlink exists
@@ -100,7 +100,7 @@ describe("createSymlinkFarm", () => {
 		await Bun.write(join(sourceDir, "exclude.txt"), "exclude")
 		await Bun.write(join(sourceDir, "opencode.jsonc"), "{}")
 
-		const tempDir = await createSymlinkFarm(sourceDir, {
+		const { tempDir } = await createSymlinkFarm(sourceDir, {
 			excludePatterns: ["exclude.txt", "opencode.jsonc"],
 		})
 
@@ -127,7 +127,7 @@ describe("createSymlinkFarm", () => {
 		await mkdir(opencodDir, { recursive: true })
 		await Bun.write(join(opencodDir, "config.json"), "{}")
 
-		const tempDir = await createSymlinkFarm(sourceDir, {
+		const { tempDir } = await createSymlinkFarm(sourceDir, {
 			excludePatterns: [".opencode/**"],
 		})
 
@@ -147,7 +147,7 @@ describe("createSymlinkFarm", () => {
 	it("should create temp directory in system temp location", async () => {
 		await Bun.write(join(sourceDir, "test.txt"), "test")
 
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 
 		try {
 			// Should start with ocx-ghost prefix
@@ -160,7 +160,7 @@ describe("createSymlinkFarm", () => {
 	it("should handle empty source directory", async () => {
 		// sourceDir is already empty
 
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 
 		try {
 			// Should have created the marker file
@@ -177,7 +177,7 @@ describe("cleanupSymlinkFarm", () => {
 		const sourceDir = await createTempDir("symlink-farm-cleanup")
 		await Bun.write(join(sourceDir, "file.txt"), "content")
 
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 
 		// Verify it exists
 		const existsBefore = await Bun.file(join(tempDir, "file.txt")).exists()
@@ -223,7 +223,7 @@ describe("injectGhostFiles", () => {
 		await Bun.write(join(injectDir, "config.json"), "{}")
 
 		// Create farm and inject
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 		const injectPaths = new Set([join(injectDir, "injected.txt"), join(injectDir, "config.json")])
 		await injectGhostFiles(tempDir, injectDir, injectPaths)
 
@@ -254,7 +254,7 @@ describe("injectGhostFiles", () => {
 		await Bun.write(join(subDir, "plugin.ts"), "// plugin")
 
 		// Create farm and inject the directory
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 		const injectPaths = new Set([subDir])
 		await injectGhostFiles(tempDir, injectDir, injectPaths)
 
@@ -272,7 +272,7 @@ describe("injectGhostFiles", () => {
 	})
 
 	it("should handle empty inject set", async () => {
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 
 		// Should not throw
 		await injectGhostFiles(tempDir, injectDir, new Set())
@@ -281,7 +281,7 @@ describe("injectGhostFiles", () => {
 	})
 
 	it("should throw if injectPath is outside sourceDir", async () => {
-		const tempDir = await createSymlinkFarm(sourceDir)
+		const { tempDir } = await createSymlinkFarm(sourceDir)
 		const outsidePath = join(injectDir, "..", "outside.txt")
 
 		try {
@@ -291,5 +291,106 @@ describe("injectGhostFiles", () => {
 		} finally {
 			await cleanupSymlinkFarm(tempDir)
 		}
+	})
+})
+
+describe("symlinkRoots tracking", () => {
+	let tempDir: string
+	let sourceDir: string
+
+	beforeEach(async () => {
+		sourceDir = await createTempDir("symlink-roots-source-")
+	})
+
+	afterEach(async () => {
+		await cleanupTempDir(tempDir)
+		await cleanupTempDir(sourceDir)
+	})
+
+	it("tracks symlinked directories in symlinkRoots", async () => {
+		// Create source structure
+		await mkdir(join(sourceDir, "src"), { recursive: true })
+		await Bun.write(join(sourceDir, "src/index.ts"), "export {}")
+		await Bun.write(join(sourceDir, "package.json"), "{}")
+
+		const result = await createSymlinkFarm(sourceDir, {
+			excludePatterns: [],
+			includePatterns: [],
+		})
+		tempDir = result.tempDir
+
+		// Both src/ and package.json should be in symlinkRoots
+		expect(result.symlinkRoots.has("src")).toBe(true)
+		expect(result.symlinkRoots.has("package.json")).toBe(true)
+	})
+
+	it("tracks nested symlinks with correct relative paths", async () => {
+		// Create nested structure
+		await mkdir(join(sourceDir, "packages/cli/src"), { recursive: true })
+		await Bun.write(join(sourceDir, "packages/cli/src/index.ts"), "export {}")
+		await Bun.write(join(sourceDir, "packages/cli/package.json"), "{}")
+
+		const result = await createSymlinkFarm(sourceDir, {
+			excludePatterns: [],
+			includePatterns: [],
+		})
+		tempDir = result.tempDir
+
+		// packages/ should be a whole directory symlink
+		expect(result.symlinkRoots.has("packages")).toBe(true)
+	})
+
+	it("does not include partial directories in symlinkRoots", async () => {
+		// Create structure where root has both excluded and included files
+		await mkdir(join(sourceDir, "src"), { recursive: true })
+		await Bun.write(join(sourceDir, "src/index.ts"), "export {}")
+		await Bun.write(join(sourceDir, "AGENTS.md"), "# Agent instructions")
+		await Bun.write(join(sourceDir, "package.json"), "{}")
+
+		const result = await createSymlinkFarm(sourceDir, {
+			excludePatterns: ["AGENTS.md"],
+			includePatterns: [],
+		})
+		tempDir = result.tempDir
+
+		// src/ and package.json should be symlinked
+		expect(result.symlinkRoots.has("src")).toBe(true)
+		expect(result.symlinkRoots.has("package.json")).toBe(true)
+		// AGENTS.md should NOT be in symlinkRoots (it was excluded, creating a "hole")
+		expect(result.symlinkRoots.has("AGENTS.md")).toBe(false)
+	})
+
+	it("enables containment check for nested paths", async () => {
+		// Create .opencode directory
+		await mkdir(join(sourceDir, ".opencode"), { recursive: true })
+		await Bun.write(join(sourceDir, ".opencode/config.json"), "{}")
+		await Bun.write(join(sourceDir, "package.json"), "{}")
+
+		const result = await createSymlinkFarm(sourceDir, {
+			excludePatterns: [],
+			includePatterns: [],
+		})
+		tempDir = result.tempDir
+
+		// .opencode should be in symlinkRoots
+		expect(result.symlinkRoots.has(".opencode")).toBe(true)
+
+		// Containment check helper (same logic as in opencode.ts)
+		const isWithinSymlinkRoot = (relativePath: string, roots: Set<string>): boolean => {
+			for (const root of roots) {
+				if (relativePath === root || relativePath.startsWith(`${root}/`)) {
+					return true
+				}
+			}
+			return false
+		}
+
+		// .opencode/config.json should be within .opencode symlink root
+		expect(isWithinSymlinkRoot(".opencode/config.json", result.symlinkRoots)).toBe(true)
+		expect(isWithinSymlinkRoot(".opencode/plugins/foo.js", result.symlinkRoots)).toBe(true)
+		// package.json is its own root, not within another
+		expect(isWithinSymlinkRoot("package.json", result.symlinkRoots)).toBe(true)
+		// Random non-existent path should not be within any root
+		expect(isWithinSymlinkRoot("some/other/path.ts", result.symlinkRoots)).toBe(false)
 	})
 })

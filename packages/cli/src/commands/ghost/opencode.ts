@@ -6,7 +6,7 @@
  * config files, to prevent OpenCode from discovering project-level settings.
  */
 
-import { renameSync, rmSync } from "node:fs"
+import { existsSync, renameSync, rmSync } from "node:fs"
 import { copyFile, mkdir, readdir } from "node:fs/promises"
 import path from "node:path"
 import { Glob } from "bun"
@@ -32,19 +32,46 @@ import {
 } from "../../utils/terminal-title.js"
 
 /**
- * Patterns for files that should never be copied from profile directory to symlink farm.
- * These are build artifacts, dependencies, and other non-config files that may exist
- * in profile directories but are not valid OpenCode configuration.
+ * Files/patterns that are valid OpenCode configuration and should be copied
+ * from profile directory to symlink farm. Everything else is ignored.
+ * Profile only "fills holes" (excluded patterns) - never overwrites symlinks.
  */
-const PROFILE_OVERLAY_EXCLUDE: RegExp[] = [
-	/^node_modules(\/|$)/, // Dependencies - never profile config
-	/^\.git(\/|$)/, // Git directory
-	/\.lock$/, // Lock files (bun.lock, package-lock.json, yarn.lock)
-	/\.lockb$/, // Bun binary lockfile
-	/^dist(\/|$)/, // Build output
-	/^\.turbo(\/|$)/, // Turbo cache
-	/\.tsbuildinfo$/, // TypeScript incremental build info
+const PROFILE_OVERLAY_ALLOWED: (string | RegExp)[] = [
+	"opencode.jsonc",
+	"opencode.json",
+	"opencode.yaml",
+	"AGENTS.md",
+	"CLAUDE.md",
+	"CONTEXT.md",
+	/^\.opencode(\/|$)/, // .opencode/ directory and all contents (plugins, etc.)
 ]
+
+/**
+ * Check if a path matches the profile overlay allowlist.
+ * Uses exact match for strings, regex test for patterns.
+ */
+function isAllowedOverlayFile(relativePath: string): boolean {
+	return PROFILE_OVERLAY_ALLOWED.some((pattern) =>
+		typeof pattern === "string" ? relativePath === pattern : pattern.test(relativePath),
+	)
+}
+
+/**
+ * Check if a path is within a symlinked directory.
+ * Used to prevent profile overlay from writing into project-owned areas.
+ * Uses forward slashes only (Unix/Bun assumption).
+ *
+ * @param relativePath - Path to check (forward slashes)
+ * @param symlinkRoots - Set of symlinked paths from createSymlinkFarm
+ */
+function isWithinSymlinkRoot(relativePath: string, symlinkRoots: Set<string>): boolean {
+	for (const root of symlinkRoots) {
+		if (relativePath === root || relativePath.startsWith(`${root}/`)) {
+			return true
+		}
+	}
+	return false
+}
 
 interface GhostOpenCodeOptions {
 	json?: boolean
@@ -111,14 +138,19 @@ async function runGhostOpenCode(args: string[], options: GhostOpenCodeOptions): 
 	// Create symlink farm with pattern-based filtering
 	// Exclude patterns handle OpenCode config files (opencode.jsonc, AGENTS.md, .opencode/)
 	const ghostConfig = profile.ghost
-	const tempDir = await createSymlinkFarm(cwd, {
+	const { tempDir, symlinkRoots } = await createSymlinkFarm(cwd, {
 		includePatterns: ghostConfig.include,
 		excludePatterns: ghostConfig.exclude,
 	})
 
 	// Inject profile overlay - everything in profile dir except ghost.jsonc
 	// This includes opencode.jsonc, AGENTS.md, .opencode/, etc.
-	const overlayFiles = await injectProfileOverlay(tempDir, profileDir, ghostConfig.include)
+	const overlayFiles = await injectProfileOverlay(
+		tempDir,
+		profileDir,
+		ghostConfig.include,
+		symlinkRoots,
+	)
 
 	// Track cleanup state to prevent double cleanup
 	let cleanupDone = false
@@ -259,18 +291,20 @@ function userExplicitlyIncluded(relativePath: string, compiledPatterns: Glob[]):
 }
 
 /**
- * Inject everything from profile directory except ghost.jsonc into the symlink farm.
- * This copies profile config files (opencode.jsonc, AGENTS.md, .opencode/, etc.)
- * into the temp directory so OpenCode discovers them.
+ * Inject allowed config files from profile directory into the symlink farm.
+ * Only copies files in PROFILE_OVERLAY_ALLOWED that don't exist in symlinked areas.
+ * This ensures profile configs "fill holes" without overwriting project files.
  *
  * @param tempDir - Target temp directory (symlink farm)
  * @param profileDir - Source profile directory
  * @param includePatterns - User's include patterns (to avoid overwriting explicitly included project files)
+ * @param symlinkRoots - Set of symlinked paths (to prevent writing into project-owned areas)
  */
 async function injectProfileOverlay(
 	tempDir: string,
 	profileDir: string,
 	includePatterns: string[],
+	symlinkRoots: Set<string>,
 ): Promise<Set<string>> {
 	const entries = await readdir(profileDir, { withFileTypes: true, recursive: true })
 
@@ -292,8 +326,11 @@ async function injectProfileOverlay(
 		// Copying it would overwrite the project's symlinked .gitignore and break file-sync filtering.
 		if (relativePath === ".gitignore") continue
 
-		// Law 1: Early Exit - skip non-config files (dependencies, build artifacts, etc.)
-		if (PROFILE_OVERLAY_EXCLUDE.some((pattern) => pattern.test(relativePath))) continue
+		// Law 1: Early Exit - skip if not an allowed config file (allowlist approach)
+		if (!isAllowedOverlayFile(relativePath)) continue
+
+		// Law 1: Early Exit - skip if within a symlinked directory (project owns this area)
+		if (isWithinSymlinkRoot(relativePath, symlinkRoots)) continue
 
 		// Law 1: Early Exit - skip if user explicitly included the project version
 		// This lets users keep project AGENTS.md by including it explicitly
@@ -303,6 +340,10 @@ async function injectProfileOverlay(
 		if (entry.isDirectory()) continue
 
 		const destPath = path.join(tempDir, relativePath)
+
+		// Law 1: Early Exit - skip if file already exists (symlink or real file from project)
+		// This is a safety net in case symlinkRoots doesn't cover all cases
+		if (existsSync(destPath)) continue
 
 		// Ensure parent directory exists and copy file
 		await mkdir(path.dirname(destPath), { recursive: true })

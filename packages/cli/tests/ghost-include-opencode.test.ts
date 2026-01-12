@@ -47,7 +47,7 @@ async function existsInFarm(farmPath: string, relativePath: string): Promise<boo
 
 describe("exclude patterns", () => {
 	let projectDir: string
-	let symlinkFarm: string | null = null
+	let symlinkFarm: { tempDir: string; symlinkRoots: Set<string> } | null = null
 
 	beforeEach(async () => {
 		projectDir = await createTempDir("exclude-patterns")
@@ -79,7 +79,7 @@ describe("exclude patterns", () => {
 
 	afterEach(async () => {
 		if (symlinkFarm) {
-			await cleanupSymlinkFarm(symlinkFarm)
+			await cleanupSymlinkFarm(symlinkFarm.tempDir)
 			symlinkFarm = null
 		}
 		await cleanupTempDir(projectDir)
@@ -91,11 +91,11 @@ describe("exclude patterns", () => {
 		})
 
 		// src/ should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, "src/index.ts")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src/index.ts")).toBe(true)
 
 		// .opencode should NOT be visible (excluded)
-		expect(await existsInFarm(symlinkFarm, ".opencode")).toBe(false)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode")).toBe(false)
 	})
 
 	it("should exclude specific subdirectories with proper patterns", async () => {
@@ -107,25 +107,25 @@ describe("exclude patterns", () => {
 		})
 
 		// src/ should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
 
 		// .opencode and skill/ should be visible
-		expect(await existsInFarm(symlinkFarm, ".opencode")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/qualification")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/qualification")).toBe(true)
 
 		// command/ should NOT be visible (excluded by ".opencode/command" pattern)
-		expect(await existsInFarm(symlinkFarm, ".opencode/command")).toBe(false)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/command")).toBe(false)
 	})
 
 	it("should include everything when no patterns specified", async () => {
 		symlinkFarm = await createSymlinkFarm(projectDir)
 
 		// Everything should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/command")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/command")).toBe(true)
 	})
 })
 
@@ -135,7 +135,7 @@ describe("exclude patterns", () => {
 
 describe("include patterns (whitelist mode)", () => {
 	let projectDir: string
-	let symlinkFarm: string | null = null
+	let symlinkFarm: { tempDir: string; symlinkRoots: Set<string> } | null = null
 
 	beforeEach(async () => {
 		projectDir = await createTempDir("include-patterns")
@@ -170,7 +170,7 @@ describe("include patterns (whitelist mode)", () => {
 
 	afterEach(async () => {
 		if (symlinkFarm) {
-			await cleanupSymlinkFarm(symlinkFarm)
+			await cleanupSymlinkFarm(symlinkFarm.tempDir)
 			symlinkFarm = null
 		}
 		await cleanupTempDir(projectDir)
@@ -182,11 +182,11 @@ describe("include patterns (whitelist mode)", () => {
 		})
 
 		// src/ should be visible (matches pattern)
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, "src/index.ts")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src/index.ts")).toBe(true)
 
 		// .opencode should NOT be visible (not in include patterns)
-		expect(await existsInFarm(symlinkFarm, ".opencode")).toBe(false)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode")).toBe(false)
 	})
 
 	it("should include specific skills from .opencode via patterns", async () => {
@@ -199,20 +199,22 @@ describe("include patterns (whitelist mode)", () => {
 		})
 
 		// src/ should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
 
 		// .opencode should exist (partial expansion for nested patterns)
-		expect(await existsInFarm(symlinkFarm, ".opencode")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode")).toBe(true)
 
 		// qualification/ and pipeline/ should be visible
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/qualification")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/qualification/SKILL.md")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/pipeline")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/pipeline/SKILL.md")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/qualification")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/qualification/SKILL.md")).toBe(
+			true,
+		)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/pipeline")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/pipeline/SKILL.md")).toBe(true)
 
 		// other/ and command/ should NOT be visible (not in include patterns)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/other")).toBe(false)
-		expect(await existsInFarm(symlinkFarm, ".opencode/command")).toBe(false)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/other")).toBe(false)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/command")).toBe(false)
 	})
 
 	it("should include entire .opencode when pattern is .opencode/**", async () => {
@@ -221,10 +223,10 @@ describe("include patterns (whitelist mode)", () => {
 		})
 
 		// Everything should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/command")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/command")).toBe(true)
 	})
 })
 
@@ -234,7 +236,7 @@ describe("include patterns (whitelist mode)", () => {
 
 describe("include + exclude patterns combo", () => {
 	let projectDir: string
-	let symlinkFarm: string | null = null
+	let symlinkFarm: { tempDir: string; symlinkRoots: Set<string> } | null = null
 
 	beforeEach(async () => {
 		projectDir = await createTempDir("combo-patterns")
@@ -255,7 +257,7 @@ describe("include + exclude patterns combo", () => {
 
 	afterEach(async () => {
 		if (symlinkFarm) {
-			await cleanupSymlinkFarm(symlinkFarm)
+			await cleanupSymlinkFarm(symlinkFarm.tempDir)
 			symlinkFarm = null
 		}
 		await cleanupTempDir(projectDir)
@@ -270,15 +272,15 @@ describe("include + exclude patterns combo", () => {
 		})
 
 		// src/ should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
 
 		// qualification/ and pipeline/ should be visible
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/qualification")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/pipeline")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/qualification")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/pipeline")).toBe(true)
 
 		// other/ IS visible because include overrides exclude (per schema semantics)
 		// This matches the ghost mode use case where include "re-adds" excluded files
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/other")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/other")).toBe(true)
 	})
 })
 
@@ -288,7 +290,7 @@ describe("include + exclude patterns combo", () => {
 
 describe("edge cases", () => {
 	let projectDir: string
-	let symlinkFarm: string | null = null
+	let symlinkFarm: { tempDir: string; symlinkRoots: Set<string> } | null = null
 
 	beforeEach(async () => {
 		projectDir = await createTempDir("edge-cases")
@@ -296,7 +298,7 @@ describe("edge cases", () => {
 
 	afterEach(async () => {
 		if (symlinkFarm) {
-			await cleanupSymlinkFarm(symlinkFarm)
+			await cleanupSymlinkFarm(symlinkFarm.tempDir)
 			symlinkFarm = null
 		}
 		await cleanupTempDir(projectDir)
@@ -321,16 +323,18 @@ describe("edge cases", () => {
 		})
 
 		// Deeply nested path should be visible
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/category/subcategory")).toBe(true)
-		expect(await existsInFarm(symlinkFarm, ".opencode/skill/category/subcategory/SKILL.md")).toBe(
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/category/subcategory")).toBe(
 			true,
 		)
+		expect(
+			await existsInFarm(symlinkFarm.tempDir, ".opencode/skill/category/subcategory/SKILL.md"),
+		).toBe(true)
 
 		// command/ should NOT be visible (not matched by pattern)
-		expect(await existsInFarm(symlinkFarm, ".opencode/command")).toBe(false)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/command")).toBe(false)
 
 		// src/ should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
 	})
 
 	it("should handle non-existent paths gracefully", async () => {
@@ -349,10 +353,10 @@ describe("edge cases", () => {
 		expect(symlinkFarm).toBeTruthy()
 
 		// src/ should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
 
 		// command/ should NOT be visible (not matched by pattern)
-		expect(await existsInFarm(symlinkFarm, ".opencode/command")).toBe(false)
+		expect(await existsInFarm(symlinkFarm.tempDir, ".opencode/command")).toBe(false)
 	})
 
 	it("should handle empty directory gracefully", async () => {
@@ -370,6 +374,6 @@ describe("edge cases", () => {
 		expect(symlinkFarm).toBeTruthy()
 
 		// src/ should be visible
-		expect(await existsInFarm(symlinkFarm, "src")).toBe(true)
+		expect(await existsInFarm(symlinkFarm.tempDir, "src")).toBe(true)
 	})
 })
