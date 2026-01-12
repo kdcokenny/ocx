@@ -30,11 +30,11 @@ interface Logger {
 import { parse as parseJsonc } from "jsonc-parser"
 import { z } from "zod"
 
+import { getProjectId } from "./primitives/get-project-id"
 import {
 	addSession,
 	clearPendingDelete,
 	getPendingDelete,
-	getProjectId,
 	getSession,
 	getWorktreePath,
 	initStateDb,
