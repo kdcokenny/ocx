@@ -158,7 +158,12 @@ export function createFileSync(
 			stabilityThreshold: 200,
 			pollInterval: 50,
 		},
-		ignored: (filePath) => isExcluded(relative(tempDir, filePath), gitignore),
+		ignored: (filePath) => {
+			const relativePath = normalizePath(relative(tempDir, filePath))
+			// Check overlay files FIRST - prevents race condition with awaitWriteFinish
+			if (options?.overlayFiles?.has(relativePath)) return true
+			return isExcluded(relativePath, gitignore)
+		},
 	})
 
 	// Watcher error handler - captures EMFILE, permission errors, etc.

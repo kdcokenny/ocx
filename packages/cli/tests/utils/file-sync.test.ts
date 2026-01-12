@@ -381,6 +381,48 @@ describe("file-sync", () => {
 				destDir,
 			)
 		})
+
+		it("prevents race condition - overlay files with awaitWriteFinish timing", async () => {
+			// Regression test: overlay files were being synced due to race condition
+			// between awaitWriteFinish (200ms delay) and ignoreInitial.
+			// The fix moves overlay filtering to chokidar's `ignored` function.
+
+			// Simulate the exact bug scenario:
+			// 1. Profile has package.json that gets copied to temp dir
+			// 2. File sync starts with overlayFiles containing "package.json"
+			// 3. Due to awaitWriteFinish, the file might trigger an event after init
+			// 4. With the fix, chokidar's ignored function filters it out
+
+			const overlayFiles = new Set(["package.json"])
+
+			// Pre-create the overlay file BEFORE starting file sync (simulates injectProfileOverlay)
+			await Bun.write(join(tempDir, "package.json"), '{"name": "profile-pkg"}')
+
+			// Small delay to ensure file is written
+			await delay(50)
+
+			// Start file sync - this is where the race condition could occur
+			fileSync = createFileSync(tempDir, destDir, { overlayFiles })
+
+			// Wait longer than awaitWriteFinish stabilityThreshold (200ms) + buffer
+			await delay(400)
+
+			// Create a normal file to verify sync is working
+			await Bun.write(join(tempDir, "normal.txt"), "should sync")
+			await waitFor(() => existsSync(join(destDir, "normal.txt")))
+
+			// The overlay file should NOT have been synced despite timing
+			verifyFiles(
+				{
+					"normal.txt": "should sync",
+					"package.json": null, // Should NOT be synced - overlay file
+				},
+				destDir,
+			)
+
+			// Sync count should be 1 (only normal.txt), not 2
+			expect(fileSync.getSyncCount()).toBe(1)
+		})
 	})
 
 	describe("isSymlink detection", () => {

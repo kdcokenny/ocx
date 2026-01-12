@@ -31,6 +31,21 @@ import {
 	setTerminalName,
 } from "../../utils/terminal-title.js"
 
+/**
+ * Patterns for files that should never be copied from profile directory to symlink farm.
+ * These are build artifacts, dependencies, and other non-config files that may exist
+ * in profile directories but are not valid OpenCode configuration.
+ */
+const PROFILE_OVERLAY_EXCLUDE: RegExp[] = [
+	/^node_modules(\/|$)/, // Dependencies - never profile config
+	/^\.git(\/|$)/, // Git directory
+	/\.lock$/, // Lock files (bun.lock, package-lock.json, yarn.lock)
+	/\.lockb$/, // Bun binary lockfile
+	/^dist(\/|$)/, // Build output
+	/^\.turbo(\/|$)/, // Turbo cache
+	/\.tsbuildinfo$/, // TypeScript incremental build info
+]
+
 interface GhostOpenCodeOptions {
 	json?: boolean
 	quiet?: boolean
@@ -276,6 +291,9 @@ async function injectProfileOverlay(
 		// The profile's .gitignore is for the profile dir, not the project.
 		// Copying it would overwrite the project's symlinked .gitignore and break file-sync filtering.
 		if (relativePath === ".gitignore") continue
+
+		// Law 1: Early Exit - skip non-config files (dependencies, build artifacts, etc.)
+		if (PROFILE_OVERLAY_EXCLUDE.some((pattern) => pattern.test(relativePath))) continue
 
 		// Law 1: Early Exit - skip if user explicitly included the project version
 		// This lets users keep project AGENTS.md by including it explicitly
