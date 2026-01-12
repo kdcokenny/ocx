@@ -25,7 +25,7 @@ import type { Event } from "@opencode-ai/sdk"
 import detectTerminal from "detect-terminal"
 // @ts-expect-error - installed at runtime by OCX
 import notifier from "node-notifier"
-import type { OpencodeClient } from "./primitives/types"
+import type { OpencodeClient } from "./kdco-primitives/types"
 
 interface NotifyConfig {
 	/** Notify for child/sub-session events (default: false) */

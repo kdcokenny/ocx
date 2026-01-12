@@ -4,7 +4,7 @@
  * This module provides common utilities extracted from multiple plugin files
  * to eliminate duplication and ensure consistent behavior across plugins.
  *
- * @module primitives
+ * @module kdco-primitives
  */
 
 // Project identification

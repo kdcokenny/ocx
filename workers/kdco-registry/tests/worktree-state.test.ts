@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { getProjectId } from "../files/plugin/primitives/get-project-id"
+import { getProjectId } from "../files/plugin/kdco-primitives/get-project-id"
 import {
 	addSession,
 	clearPendingDelete,

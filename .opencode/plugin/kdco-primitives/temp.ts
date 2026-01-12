@@ -4,7 +4,7 @@
  * Provides a reliable temp directory path that resolves symlinks,
  * which is critical on macOS where os.tmpdir() returns a symlink.
  *
- * @module primitives/temp
+ * @module kdco-primitives/temp
  */
 
 import * as fsSync from "node:fs"

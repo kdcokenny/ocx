@@ -4,7 +4,7 @@
  * Provides a simple lock mechanism using native Promise mechanics.
  * No external dependencies required.
  *
- * @module primitives/mutex
+ * @module kdco-primitives/mutex
  */
 
 /**

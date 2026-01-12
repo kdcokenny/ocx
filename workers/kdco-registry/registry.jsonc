@@ -16,19 +16,19 @@
 		// Foundational plugins that enable workspace features
 		// ============================================================================
 		{
-			"name": "primitives",
+			"name": "kdco-primitives",
 			"type": "ocx:plugin",
 			"description": "Shared utility primitives for KDCO plugins",
 			"files": [
-				"plugin/primitives/get-project-id.ts",
-				"plugin/primitives/with-timeout.ts",
-				"plugin/primitives/log-warn.ts",
-				"plugin/primitives/types.ts",
-				"plugin/primitives/mutex.ts",
-				"plugin/primitives/shell.ts",
-				"plugin/primitives/temp.ts",
-				"plugin/primitives/terminal-detect.ts",
-				"plugin/primitives/index.ts"
+				"plugin/kdco-primitives/get-project-id.ts",
+				"plugin/kdco-primitives/with-timeout.ts",
+				"plugin/kdco-primitives/log-warn.ts",
+				"plugin/kdco-primitives/types.ts",
+				"plugin/kdco-primitives/mutex.ts",
+				"plugin/kdco-primitives/shell.ts",
+				"plugin/kdco-primitives/temp.ts",
+				"plugin/kdco-primitives/terminal-detect.ts",
+				"plugin/kdco-primitives/index.ts"
 			],
 			"dependencies": []
 		},
@@ -37,7 +37,7 @@
 			"type": "ocx:plugin",
 			"description": "Plan management and rule injection for workspace workflows",
 			"files": ["plugin/workspace-plugin.ts"],
-			"dependencies": ["background-agents", "primitives"],
+			"dependencies": ["background-agents", "kdco-primitives"],
 			"npmDevDependencies": ["zod@4.3.5"]
 		},
 		{
@@ -45,7 +45,7 @@
 			"type": "ocx:plugin",
 			"description": "Background agent execution - run async tasks while you work",
 			"files": ["plugin/background-agents.ts"],
-			"dependencies": ["primitives"],
+			"dependencies": ["kdco-primitives"],
 			"npmDevDependencies": ["unique-names-generator@4.7.1"],
 			"opencode": {
 				// Disable native task tool since this plugin provides delegation
@@ -59,7 +59,7 @@
 			"type": "ocx:plugin",
 			"description": "Native OS notifications - get notified when tasks complete",
 			"files": ["plugin/notify.ts"],
-			"dependencies": ["primitives"],
+			"dependencies": ["kdco-primitives"],
 			"npmDevDependencies": ["node-notifier@10.0.1", "detect-terminal@2.0.0"]
 		},
 		{
@@ -67,7 +67,7 @@
 			"type": "ocx:plugin",
 			"description": "Auto-manages Git worktrees for isolated AI sessions with seamless terminal spawning",
 			"files": ["plugin/worktree.ts", "plugin/worktree/state.ts", "plugin/worktree/terminal.ts"],
-			"dependencies": ["primitives"],
+			"dependencies": ["kdco-primitives"],
 			"npmDevDependencies": ["jsonc-parser@3.3.1", "zod@4.3.5"]
 		},
 

@@ -20,8 +20,8 @@ import {
 	getTempDir,
 	isInsideTmux,
 	logWarn,
-} from "../primitives"
-import type { OpencodeClient } from "../primitives"
+} from "../kdco-primitives"
+import type { OpencodeClient } from "../kdco-primitives"
 
 // =============================================================================
 // TEMP SCRIPT HELPER

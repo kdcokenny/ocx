@@ -4,7 +4,7 @@
  * Provides a clean wrapper around Promise.race for timeout handling,
  * replacing inline timeout patterns throughout the codebase.
  *
- * @module primitives/with-timeout
+ * @module kdco-primitives/with-timeout
  */
 
 /**

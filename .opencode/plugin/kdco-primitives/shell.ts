@@ -4,7 +4,7 @@
  * Provides safe escaping functions for Bash, Windows Batch, and AppleScript.
  * All functions validate input for forbidden characters before escaping.
  *
- * @module primitives/shell
+ * @module kdco-primitives/shell
  */
 
 /**

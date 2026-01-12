@@ -4,7 +4,7 @@
  * Provides a unified interface for logging warnings that works with
  * both the OpenCode client (when available) and console fallback.
  *
- * @module primitives/log-warn
+ * @module kdco-primitives/log-warn
  */
 
 import type { OpencodeClient } from "./types"

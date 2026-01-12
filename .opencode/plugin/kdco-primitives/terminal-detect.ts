@@ -4,7 +4,7 @@
  * Provides functions to detect the current terminal environment,
  * particularly useful for choosing terminal-specific behaviors.
  *
- * @module primitives/terminal-detect
+ * @module kdco-primitives/terminal-detect
  */
 
 /**

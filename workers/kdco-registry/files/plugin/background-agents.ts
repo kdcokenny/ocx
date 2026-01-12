@@ -15,8 +15,8 @@ import * as path from "node:path"
 import { type Plugin, type ToolContext, tool } from "@opencode-ai/plugin"
 import type { Event, Message, Part, TextPart } from "@opencode-ai/sdk"
 import { adjectives, animals, colors, uniqueNamesGenerator } from "unique-names-generator"
-import { getProjectId } from "./primitives/get-project-id"
-import type { OpencodeClient } from "./primitives/types"
+import { getProjectId } from "./kdco-primitives/get-project-id"
+import type { OpencodeClient } from "./kdco-primitives/types"
 
 // ==========================================
 // READABLE ID GENERATION

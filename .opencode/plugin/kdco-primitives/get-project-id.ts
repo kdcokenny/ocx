@@ -5,7 +5,7 @@
  * Used for cross-worktree consistency in delegation storage, state databases,
  * and other plugin data that should be shared across worktrees.
  *
- * @module primitives/get-project-id
+ * @module kdco-primitives/get-project-id
  */
 
 import * as crypto from "node:crypto"

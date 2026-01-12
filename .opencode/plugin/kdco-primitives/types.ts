@@ -1,7 +1,7 @@
 /**
  * Shared types for kdco registry plugins.
  *
- * @module primitives/types
+ * @module kdco-primitives/types
  */
 
 import type { createOpencodeClient } from "@opencode-ai/sdk"

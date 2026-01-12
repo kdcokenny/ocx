@@ -13,8 +13,8 @@ import { mkdirSync } from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { z } from "zod"
-import { getProjectId, logWarn } from "../primitives"
-import type { OpencodeClient } from "../primitives"
+import { getProjectId, logWarn } from "../kdco-primitives"
+import type { OpencodeClient } from "../kdco-primitives"
 
 // =============================================================================
 // TYPES
