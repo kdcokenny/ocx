@@ -185,6 +185,7 @@ interface Delegation {
 	// Generated on completion by small_model
 	title?: string
 	description?: string
+	result?: string
 }
 
 interface DelegateInput {
@@ -565,6 +566,7 @@ class DelegationManager {
 
 		// Get the result
 		const result = await this.getResult(delegation)
+		delegation.result = result
 
 		// Generate title and description using small model
 		const metadata = await generateMetadata(this.client, result, delegation.sessionID, (msg) =>
@@ -681,8 +683,8 @@ ${description}
 		try {
 			// Use generated title/description if available
 			const title = delegation.title || delegation.id
-			const description = delegation.description || "(No description)"
 			const statusText = delegation.status === "complete" ? "complete" : delegation.status
+			const result = delegation.result || "(No result)"
 
 			// Mark this delegation as complete in the pending tracker
 			const pendingSet = this.pendingByParent.get(delegation.parentSessionID)
@@ -700,59 +702,49 @@ ${description}
 
 			const remainingCount = pendingSet?.size || 0
 
-			// Build notification based on whether all are complete or some remain
-			let notification: string
-			if (allComplete) {
-				// All delegations complete - list all that completed for this parent
-				const completedDelegations = Array.from(this.delegations.values())
-					.filter(
-						(d) =>
-							d.parentSessionID === delegation.parentSessionID &&
-							(d.status === "complete" || d.status === "timeout" || d.status === "error"),
-					)
-					.map((d) => `- \`${d.id}\`: ${d.title || d.id}`)
-					.join("\n")
-
-				notification = `<system-reminder>
-All delegations complete.
-
-**Completed:**
-${completedDelegations || `- \`${delegation.id}\`: ${title}`}
-
-Use \`delegation_read(id)\` to retrieve each result.
-</system-reminder>`
-			} else {
-				// Individual completion - show remaining count with anti-polling reinforcement
-				notification = `<system-reminder>
-Delegation ${statusText}.
-
-**ID:** \`${delegation.id}\`
-**Title:** ${title}
-**Description:** ${description}
-**Status:** ${delegation.status}${delegation.error ? `\n**Error:** ${delegation.error}` : ""}
-
+			// Always send the completed delegation notification first
+			const progressNote =
+				remainingCount > 0
+					? `
 **${remainingCount} delegation${remainingCount === 1 ? "" : "s"} still in progress.** You WILL be notified when ALL complete.
-❌ Do NOT poll \`delegation_list\` - continue productive work.
-
-Use \`delegation_read("${delegation.id}")\` to retrieve this result when ready.
-</system-reminder>`
-			}
-
-			// If all delegations complete, trigger a response (noReply: false)
-			// Otherwise, add notification silently (noReply: true)
-			const shouldTriggerResponse = allComplete
+❌ Do NOT poll \`delegation_list\` - continue productive work.`
+					: ""
+			const completionNotification = `<task-notification>
+<task-id>${delegation.id}</task-id>
+<status>${statusText}</status>
+<summary>Agent "${title}" ${statusText}</summary>
+<result>${result}</result>
+${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
+</task-notification>${progressNote}`
 
 			await this.client.session.prompt({
 				path: { id: delegation.parentSessionID },
 				body: {
-					noReply: !shouldTriggerResponse,
+					noReply: true,
 					agent: delegation.parentAgent,
-					parts: [{ type: "text", text: notification }],
+					parts: [{ type: "text", text: completionNotification }],
 				},
 			})
 
+			// If all delegations complete, send a minimal completion notice that triggers response
+			if (allComplete) {
+				const allCompleteNotification = `<task-notification>
+<status>completed</status>
+<summary>All delegations complete.</summary>
+</task-notification>`
+
+				await this.client.session.prompt({
+					path: { id: delegation.parentSessionID },
+					body: {
+						noReply: false,
+						agent: delegation.parentAgent,
+						parts: [{ type: "text", text: allCompleteNotification }],
+					},
+				})
+			}
+
 			await this.debugLog(
-				`Notified parent session ${delegation.parentSessionID} (trigger=${shouldTriggerResponse}, remaining=${pendingSet?.size || 0})`,
+				`Notified parent session ${delegation.parentSessionID} (allComplete=${allComplete}, remaining=${pendingSet?.size || 0})`,
 			)
 		} catch (error) {
 			await this.debugLog(
@@ -994,8 +986,8 @@ Use this for:
 - Parallel work that can run in background
 - Any task where you want persistent, retrievable output
 
-On completion, a notification will arrive with the ID, title, and description.
-Use \`delegation_read\` with the ID to retrieve the full result.`,
+On completion, a notification will arrive with the ID, title, description, and result.
+Use \`delegation_read\` with the ID to retrieve the result again if it is lost during compaction.`,
 		args: {
 			prompt: tool.schema
 				.string()
@@ -1045,7 +1037,7 @@ Use \`delegation_read\` with the ID to retrieve the full result.`,
 function createDelegationRead(manager: DelegationManager): ReturnType<typeof tool> {
 	return tool({
 		description: `Read the output of a delegation by its ID.
-Use this to retrieve results from delegated tasks.`,
+Use this to retrieve results from delegated tasks if the inline notification was lost during compaction.`,
 		args: {
 			id: tool.schema.string().describe("The delegation ID (e.g., 'elegant-blue-tiger')"),
 		},
@@ -1090,7 +1082,7 @@ Shows both running and completed delegations.`,
 // DELEGATION RULES (injected into system prompt)
 // ==========================================
 
-const DELEGATION_RULES = `<system-reminder>
+const DELEGATION_RULES = `<task-notification>
 <delegation-system>
 
 ## Async Delegation
@@ -1123,14 +1115,14 @@ Agents route based on their permissions:
 ## Critical Constraints
 
 **NEVER poll \`delegation_list\` to check completion.**
-You WILL be notified via \`<system-reminder>\`. Polling wastes tokens.
+You WILL be notified via \`<task-notification>\`. Polling wastes tokens.
 
 **NEVER wait idle.** Always have productive work while delegations run.
 
 **Using wrong tool will fail fast with guidance.**
 
 </delegation-system>
-</system-reminder>`
+</task-notification>`
 
 // ==========================================
 // COMPACTION CONTEXT FORMATTING
@@ -1175,7 +1167,7 @@ function formatDelegationContext(
 
 		// Only include reminder when there ARE running delegations
 		sections.push(
-			"> **Note:** You WILL be notified via `<system-reminder>` when delegations complete.",
+			"> **Note:** You WILL be notified via `<task-notification>` when delegations complete.",
 		)
 		sections.push("> Do NOT poll `delegation_list` - continue productive work.")
 		sections.push("")
