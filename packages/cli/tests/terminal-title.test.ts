@@ -5,7 +5,7 @@ import {
 	setTerminalName,
 	setTerminalTitle,
 	setTmuxWindowName,
-} from "../src/utils/terminal-title.js"
+} from "../src/utils/terminal-title"
 
 describe("terminal-title", () => {
 	describe("isInsideTmux", () => {

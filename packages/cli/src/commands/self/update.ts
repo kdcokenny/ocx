@@ -20,23 +20,23 @@ import {
 	type CheckFailure,
 	checkForUpdate,
 	EXPLICIT_UPDATE_TIMEOUT_MS,
-} from "../../self-update/check.js"
+} from "../../self-update/check"
 import {
 	detectInstallMethod,
 	type InstallMethod,
 	parseInstallMethod,
-} from "../../self-update/detect-method.js"
+} from "../../self-update/detect-method"
 import {
 	atomicReplace,
 	cleanupTempFile,
 	downloadToTemp,
 	getDownloadUrl,
-} from "../../self-update/download.js"
-import { notifyUpdated, notifyUpToDate } from "../../self-update/notify.js"
-import { fetchChecksums, verifyChecksum } from "../../self-update/verify.js"
-import { SelfUpdateError } from "../../utils/errors.js"
-import { wrapAction } from "../../utils/handle-error.js"
-import { createSpinner } from "../../utils/spinner.js"
+} from "../../self-update/download"
+import { notifyUpdated, notifyUpToDate } from "../../self-update/notify"
+import { fetchChecksums, verifyChecksum } from "../../self-update/verify"
+import { SelfUpdateError } from "../../utils/errors"
+import { wrapAction } from "../../utils/handle-error"
+import { createSpinner } from "../../utils/spinner"
 
 // =============================================================================
 // CONSTANTS

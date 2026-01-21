@@ -10,7 +10,7 @@
  */
 
 import kleur from "kleur"
-import { logger } from "./logger.js"
+import { logger } from "./logger"
 
 /**
  * Result of a version compatibility check

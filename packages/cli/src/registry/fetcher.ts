@@ -3,13 +3,9 @@
  * Based on: https://github.com/shadcn-ui/ui/blob/main/packages/shadcn/src/registry/fetcher.ts
  */
 
-import type { ComponentManifest, McpServer, RegistryIndex } from "../schemas/registry.js"
-import {
-	componentManifestSchema,
-	packumentSchema,
-	registryIndexSchema,
-} from "../schemas/registry.js"
-import { NetworkError, NotFoundError, ValidationError } from "../utils/errors.js"
+import type { ComponentManifest, McpServer, RegistryIndex } from "../schemas/registry"
+import { componentManifestSchema, packumentSchema, registryIndexSchema } from "../schemas/registry"
+import { NetworkError, NotFoundError, ValidationError } from "../utils/errors"
 
 // In-memory cache for deduplication
 const cache = new Map<string, Promise<unknown>>()

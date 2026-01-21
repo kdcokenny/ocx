@@ -6,9 +6,9 @@
  */
 
 import type { Command } from "commander"
-import { ProfileManager } from "../../profile/manager.js"
-import { getProfileOcxConfig } from "../../profile/paths.js"
-import { handleError } from "../../utils/handle-error.js"
+import { ProfileManager } from "../../profile/manager"
+import { getProfileOcxConfig } from "../../profile/paths"
+import { handleError } from "../../utils/handle-error"
 
 export function registerProfileConfigCommand(parent: Command): void {
 	parent

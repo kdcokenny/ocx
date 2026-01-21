@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
-import { detectGitRepo, getBranch, getGitInfo, getRepoName } from "../src/utils/git-context.js"
+import { detectGitRepo, getBranch, getGitInfo, getRepoName } from "../src/utils/git-context"
 
 /**
  * Create a clean environment for git commands.

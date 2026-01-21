@@ -9,8 +9,8 @@
  */
 
 import path from "node:path"
-import { isTTY } from "./env.js"
-import type { GitInfo } from "./git-context.js"
+import { isTTY } from "./env"
+import type { GitInfo } from "./git-context"
 
 const MAX_BRANCH_LENGTH = 20
 

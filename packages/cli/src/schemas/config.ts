@@ -10,7 +10,7 @@ import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
 import { z } from "zod"
-import { qualifiedComponentSchema } from "./registry.js"
+import { qualifiedComponentSchema } from "./registry"
 
 // =============================================================================
 // OCX CONFIG SCHEMA (ocx.jsonc)

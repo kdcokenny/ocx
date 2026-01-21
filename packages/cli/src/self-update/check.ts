@@ -11,10 +11,10 @@
  * - Intentional Naming: Self-documenting function names
  */
 
-import { NetworkError } from "../utils/errors.js"
-import { fetchPackageVersion } from "../utils/npm-registry.js"
-import type { VersionProvider } from "./types.js"
-import { defaultVersionProvider } from "./version-provider.js"
+import { NetworkError } from "../utils/errors"
+import { fetchPackageVersion } from "../utils/npm-registry"
+import type { VersionProvider } from "./types"
+import { defaultVersionProvider } from "./version-provider"
 
 // =============================================================================
 // TYPES
@@ -42,7 +42,7 @@ export type CheckResult =
 export type CheckFailure = Extract<CheckResult, { ok: false }>
 
 // Re-export for convenience
-export type { VersionProvider } from "./types.js"
+export type { VersionProvider } from "./types"
 
 // =============================================================================
 // CONSTANTS

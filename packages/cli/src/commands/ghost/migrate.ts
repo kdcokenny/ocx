@@ -8,8 +8,8 @@
 import { copyFileSync, existsSync, lstatSync, readdirSync, renameSync, unlinkSync } from "node:fs"
 import path from "node:path"
 import type { Command } from "commander"
-import { getProfilesDir, OCX_CONFIG_FILE } from "../../profile/paths.js"
-import { handleError } from "../../utils/handle-error.js"
+import { getProfilesDir, OCX_CONFIG_FILE } from "../../profile/paths"
+import { handleError } from "../../utils/handle-error"
 
 /** Legacy ghost config file name */
 const GHOST_CONFIG_FILE = "ghost.jsonc"

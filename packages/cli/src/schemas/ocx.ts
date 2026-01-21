@@ -10,8 +10,8 @@
 
 import { Glob } from "bun"
 import { z } from "zod"
-import { safeRelativePathSchema } from "./common.js"
-import { registryConfigSchema } from "./config.js"
+import { safeRelativePathSchema } from "./common"
+import { registryConfigSchema } from "./config"
 
 /**
  * Validates that a string is a valid glob pattern.

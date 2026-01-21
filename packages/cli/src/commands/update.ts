@@ -9,16 +9,16 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
 import type { Command } from "commander"
-import { type ConfigProvider, LocalConfigProvider } from "../config/provider.js"
-import { fetchComponentVersion, fetchFileContent } from "../registry/fetcher.js"
-import { findOcxLock, type OcxLock, readOcxLock, writeOcxLock } from "../schemas/config.js"
+import { type ConfigProvider, LocalConfigProvider } from "../config/provider"
+import { fetchComponentVersion, fetchFileContent } from "../registry/fetcher"
+import { findOcxLock, type OcxLock, readOcxLock, writeOcxLock } from "../schemas/config"
 import {
 	type ComponentFileObject,
 	normalizeComponentManifest,
 	parseQualifiedComponent,
-} from "../schemas/registry.js"
-import { ConfigError, NotFoundError, ValidationError } from "../utils/errors.js"
-import { createSpinner, handleError, logger } from "../utils/index.js"
+} from "../schemas/registry"
+import { ConfigError, NotFoundError, ValidationError } from "../utils/errors"
+import { createSpinner, handleError, logger } from "../utils/index"
 
 // =============================================================================
 // TYPES

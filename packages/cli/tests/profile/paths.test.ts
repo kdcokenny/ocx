@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
-import { findLocalConfigDir, getGlobalConfig } from "../../src/profile/paths.js"
+import { findLocalConfigDir, getGlobalConfig } from "../../src/profile/paths"
 
 describe("findLocalConfigDir", () => {
 	let tempDir: string

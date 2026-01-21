@@ -7,10 +7,10 @@
 import type { Command } from "commander"
 import * as Diff from "diff"
 import kleur from "kleur"
-import { fetchComponent, fetchFileContent } from "../registry/fetcher.js"
-import { readOcxConfig, readOcxLock } from "../schemas/config.js"
-import { normalizeFile, parseQualifiedComponent } from "../schemas/registry.js"
-import { handleError, logger, outputJson } from "../utils/index.js"
+import { fetchComponent, fetchFileContent } from "../registry/fetcher"
+import { readOcxConfig, readOcxLock } from "../schemas/config"
+import { normalizeFile, parseQualifiedComponent } from "../schemas/registry"
+import { handleError, logger, outputJson } from "../utils/index"
 
 interface DiffOptions {
 	cwd: string

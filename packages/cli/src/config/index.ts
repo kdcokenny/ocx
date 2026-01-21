@@ -4,11 +4,11 @@
  * Exports configuration providers and utilities.
  */
 
-export { type ConfigProvider, LocalConfigProvider } from "./provider.js"
+export { type ConfigProvider, LocalConfigProvider } from "./provider"
 export type {
 	ConfigOrigin,
 	ConfigSource,
 	ResolvedConfig,
 	ResolvedConfigWithOrigin,
-} from "./resolver.js"
-export { ConfigResolver } from "./resolver.js"
+} from "./resolver"
+export { ConfigResolver } from "./resolver"

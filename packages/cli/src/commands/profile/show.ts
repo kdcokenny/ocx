@@ -6,14 +6,14 @@
  */
 
 import type { Command } from "commander"
-import { ProfileManager } from "../../profile/manager.js"
+import { ProfileManager } from "../../profile/manager"
 import {
 	getProfileAgents,
 	getProfileOcxConfig,
 	getProfileOpencodeConfig,
-} from "../../profile/paths.js"
-import { handleError } from "../../utils/handle-error.js"
-import { sharedOptions } from "../../utils/shared-options.js"
+} from "../../profile/paths"
+import { handleError } from "../../utils/handle-error"
+import { sharedOptions } from "../../utils/shared-options"
 
 interface ProfileShowOptions {
 	json?: boolean

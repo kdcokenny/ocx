@@ -9,9 +9,9 @@
  * Implementations parse config at construction; getters are sync and pure.
  */
 
-import { type OcxConfig, type RegistryConfig, readOcxConfig } from "../schemas/config.js"
-import { ConfigError } from "../utils/errors.js"
-import { getGlobalConfigPath, globalDirectoryExists } from "../utils/paths.js"
+import { type OcxConfig, type RegistryConfig, readOcxConfig } from "../schemas/config"
+import { ConfigError } from "../utils/errors"
+import { getGlobalConfigPath, globalDirectoryExists } from "../utils/paths"
 
 // =============================================================================
 // INTERFACE

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test"
-import type { NpmPackageVersion } from "../../src/utils/npm-registry.js"
+import type { NpmPackageVersion } from "../../src/utils/npm-registry"
 
 // =============================================================================
 // Test Utilities

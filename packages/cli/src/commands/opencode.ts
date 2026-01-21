@@ -8,19 +8,19 @@
 
 import { resolve } from "node:path"
 import type { Command } from "commander"
-import { ConfigResolver } from "../config/resolver.js"
-import { ProfileManager } from "../profile/manager.js"
-import { getProfileDir, getProfileOpencodeConfig } from "../profile/paths.js"
-import { ProfilesNotInitializedError } from "../utils/errors.js"
-import { getGitInfo } from "../utils/git-context.js"
-import { handleError, logger } from "../utils/index.js"
-import { sharedOptions } from "../utils/shared-options.js"
+import { ConfigResolver } from "../config/resolver"
+import { ProfileManager } from "../profile/manager"
+import { getProfileDir, getProfileOpencodeConfig } from "../profile/paths"
+import { ProfilesNotInitializedError } from "../utils/errors"
+import { getGitInfo } from "../utils/git-context"
+import { handleError, logger } from "../utils/index"
+import { sharedOptions } from "../utils/shared-options"
 import {
 	formatTerminalName,
 	restoreTerminalTitle,
 	saveTerminalTitle,
 	setTerminalName,
-} from "../utils/terminal-title.js"
+} from "../utils/terminal-title"
 
 interface OpencodeOptions {
 	profile?: string

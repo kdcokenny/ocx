@@ -15,9 +15,9 @@ import {
 	getGlobalConfig,
 	LOCAL_CONFIG_DIR,
 	OCX_CONFIG_FILE,
-} from "../../profile/paths.js"
-import { ConfigError } from "../../utils/errors.js"
-import { handleError, logger } from "../../utils/index.js"
+} from "../../profile/paths"
+import { ConfigError } from "../../utils/errors"
+import { handleError, logger } from "../../utils/index"
 
 interface ConfigEditOptions {
 	global?: boolean

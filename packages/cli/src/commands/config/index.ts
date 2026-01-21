@@ -5,8 +5,8 @@
  */
 
 import type { Command } from "commander"
-import { registerConfigEditCommand } from "./edit.js"
-import { registerConfigShowCommand } from "./show.js"
+import { registerConfigEditCommand } from "./edit"
+import { registerConfigShowCommand } from "./show"
 
 /**
  * Register the config command and all subcommands.

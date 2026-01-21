@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod"
-import { isAbsolutePath } from "../utils/path-helpers.js"
+import { isAbsolutePath } from "../utils/path-helpers"
 
 /**
  * Schema for a safe relative path that cannot escape the project root.

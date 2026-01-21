@@ -9,4 +9,4 @@ export {
 	type BuildRegistryOptions,
 	type BuildRegistryResult,
 	buildRegistry,
-} from "./build-registry.js"
+} from "./build-registry"

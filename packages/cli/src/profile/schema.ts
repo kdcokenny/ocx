@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { profileOcxConfigSchema } from "../schemas/ocx.js"
+import { profileOcxConfigSchema } from "../schemas/ocx"
 
 /**
  * Profile name validation schema.

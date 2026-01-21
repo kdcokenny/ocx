@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { VersionProvider } from "./types.js"
+import type { VersionProvider } from "./types"
 
 // =============================================================================
 // BUILD-TIME VERSION

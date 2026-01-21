@@ -1,2 +1,2 @@
-export * from "./fetcher.js"
-export * from "./resolver.js"
+export * from "./fetcher"
+export * from "./resolver"

@@ -19,15 +19,15 @@ import { existsSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { Glob } from "bun"
 import { parse as parseJsonc } from "jsonc-parser"
-import { ProfileManager } from "../profile/manager.js"
+import { ProfileManager } from "../profile/manager"
 import {
 	findLocalConfigDir,
 	LOCAL_CONFIG_DIR,
 	OCX_CONFIG_FILE,
 	OPENCODE_CONFIG_FILE,
-} from "../profile/paths.js"
-import type { Profile } from "../profile/schema.js"
-import type { RegistryConfig } from "../schemas/config.js"
+} from "../profile/paths"
+import type { Profile } from "../profile/schema"
+import type { RegistryConfig } from "../schemas/config"
 
 // =============================================================================
 // TYPES

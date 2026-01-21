@@ -5,7 +5,7 @@
  */
 
 // Common schemas (reusable validation patterns)
-export { safeRelativePathSchema } from "./common.js"
+export { safeRelativePathSchema } from "./common"
 
 // Config & lockfile schemas + I/O helpers
 export {
@@ -24,10 +24,10 @@ export {
 	registryConfigSchema,
 	writeOcxConfig,
 	writeOcxLock,
-} from "./config.js"
+} from "./config"
 
 // OCX profile schemas
-export { type ProfileOcxConfig, profileOcxConfigSchema } from "./ocx.js"
+export { type ProfileOcxConfig, profileOcxConfigSchema } from "./ocx"
 
 // Registry & component schemas
 export {
@@ -74,4 +74,4 @@ export {
 	// Registry schemas
 	registrySchema,
 	targetPathSchema,
-} from "./registry.js"
+} from "./registry"

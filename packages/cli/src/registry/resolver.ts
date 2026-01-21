@@ -3,7 +3,7 @@
  * Based on: https://github.com/shadcn-ui/ui/blob/main/packages/shadcn/src/registry/resolver.ts
  */
 
-import type { RegistryConfig } from "../schemas/config.js"
+import type { RegistryConfig } from "../schemas/config"
 import {
 	type ComponentManifest,
 	createQualifiedComponent,
@@ -12,10 +12,10 @@ import {
 	normalizeComponentManifest,
 	type OpencodeConfig,
 	parseQualifiedComponent,
-} from "../schemas/registry.js"
-import { ConfigError, OCXError, ValidationError } from "../utils/errors.js"
-import { fetchComponent } from "./fetcher.js"
-import { mergeOpencodeConfig } from "./merge.js"
+} from "../schemas/registry"
+import { ConfigError, OCXError, ValidationError } from "../utils/errors"
+import { fetchComponent } from "./fetcher"
+import { mergeOpencodeConfig } from "./merge"
 
 /**
  * Parse a component reference into namespace and component name.

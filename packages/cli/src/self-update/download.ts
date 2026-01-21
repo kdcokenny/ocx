@@ -11,9 +11,9 @@
  */
 
 import { chmodSync, existsSync, renameSync, unlinkSync } from "node:fs"
-import { SelfUpdateError } from "../utils/errors.js"
-import { createSpinner } from "../utils/spinner.js"
-import { getExecutablePath } from "./detect-method.js"
+import { SelfUpdateError } from "../utils/errors"
+import { createSpinner } from "../utils/spinner"
+import { getExecutablePath } from "./detect-method"
 
 // =============================================================================
 // CONSTANTS

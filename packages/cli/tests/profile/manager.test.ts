@@ -11,14 +11,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { mkdir, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
-import { ProfileManager } from "../../src/profile/manager.js"
-import { getProfileDir, getProfilesDir } from "../../src/profile/paths.js"
+import { ProfileManager } from "../../src/profile/manager"
+import { getProfileDir, getProfilesDir } from "../../src/profile/paths"
 import {
 	InvalidProfileNameError,
 	ProfileExistsError,
 	ProfileNotFoundError,
 	ProfilesNotInitializedError,
-} from "../../src/utils/errors.js"
+} from "../../src/utils/errors"
 
 // =============================================================================
 // HELPERS

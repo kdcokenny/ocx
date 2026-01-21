@@ -7,7 +7,7 @@
  */
 
 import { mergeDeep } from "remeda"
-import type { NormalizedOpencodeConfig } from "../schemas/registry.js"
+import type { NormalizedOpencodeConfig } from "../schemas/registry"
 
 /**
  * Merge two OpenCode config objects with special array handling.

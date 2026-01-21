@@ -7,20 +7,20 @@
  */
 
 import { Command } from "commander"
-import { registerAddCommand } from "./commands/add.js"
-import { registerBuildCommand } from "./commands/build.js"
-import { registerConfigCommand } from "./commands/config/index.js"
-import { registerDiffCommand } from "./commands/diff.js"
-import { registerGhostCommand } from "./commands/ghost/index.js"
-import { registerInitCommand } from "./commands/init.js"
-import { registerOpencodeCommand } from "./commands/opencode.js"
-import { registerProfileCommand } from "./commands/profile/index.js"
-import { registerRegistryCommand } from "./commands/registry.js"
-import { registerSearchCommand } from "./commands/search.js"
-import { registerSelfCommand } from "./commands/self/index.js"
-import { registerUpdateCommand } from "./commands/update.js"
-import { registerUpdateCheckHook } from "./self-update/index.js"
-import { handleError } from "./utils/index.js"
+import { registerAddCommand } from "./commands/add"
+import { registerBuildCommand } from "./commands/build"
+import { registerConfigCommand } from "./commands/config/index"
+import { registerDiffCommand } from "./commands/diff"
+import { registerGhostCommand } from "./commands/ghost/index"
+import { registerInitCommand } from "./commands/init"
+import { registerOpencodeCommand } from "./commands/opencode"
+import { registerProfileCommand } from "./commands/profile/index"
+import { registerRegistryCommand } from "./commands/registry"
+import { registerSearchCommand } from "./commands/search"
+import { registerSelfCommand } from "./commands/self/index"
+import { registerUpdateCommand } from "./commands/update"
+import { registerUpdateCheckHook } from "./self-update/index"
+import { handleError } from "./utils/index"
 
 // Version injected at build time
 declare const __VERSION__: string
@@ -65,7 +65,7 @@ if (import.meta.main) {
 }
 
 // Library exports - for programmatic use
-export { type BuildRegistryOptions, type BuildRegistryResult, buildRegistry } from "./lib/index.js"
+export { type BuildRegistryOptions, type BuildRegistryResult, buildRegistry } from "./lib/index"
 
 // Schema exports - for validation
 export {
@@ -81,4 +81,4 @@ export {
 	type Registry,
 	// Registry schemas
 	registrySchema,
-} from "./schemas/index.js"
+} from "./schemas/index"

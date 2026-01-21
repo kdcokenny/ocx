@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { lstat, mkdir, readlink, rm, stat, symlink } from "node:fs/promises"
 import { join } from "node:path"
-import { atomicSymlink, atomicWrite } from "../../src/profile/atomic.js"
+import { atomicSymlink, atomicWrite } from "../../src/profile/atomic"
 
 // =============================================================================
 // HELPERS

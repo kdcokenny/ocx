@@ -7,9 +7,9 @@
 
 import type { Command } from "commander"
 import kleur from "kleur"
-import { ConfigResolver } from "../../config/resolver.js"
-import { handleError } from "../../utils/handle-error.js"
-import { sharedOptions } from "../../utils/shared-options.js"
+import { ConfigResolver } from "../../config/resolver"
+import { handleError } from "../../utils/handle-error"
+import { sharedOptions } from "../../utils/shared-options"
 
 interface ConfigShowOptions {
 	json?: boolean

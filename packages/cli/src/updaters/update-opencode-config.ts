@@ -14,7 +14,7 @@ import { existsSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { applyEdits, type ModificationOptions, modify, parse as parseJsonc } from "jsonc-parser"
-import type { OpencodeConfig } from "../schemas/registry.js"
+import type { OpencodeConfig } from "../schemas/registry"
 
 const LOCAL_CONFIG_DIR = ".opencode"
 

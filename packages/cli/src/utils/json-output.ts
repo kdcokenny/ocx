@@ -3,7 +3,7 @@
  * Following GitHub CLI patterns for consistent --json flag handling
  */
 
-import type { ErrorCode } from "./errors.js"
+import type { ErrorCode } from "./errors"
 
 // JSON response envelope
 export interface JsonResponse<T = unknown> {

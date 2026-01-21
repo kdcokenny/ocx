@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
-import { safeRelativePathSchema } from "../src/schemas/common.js"
-import { ValidationError } from "../src/utils/errors.js"
-import { assertPathInside, isPathInside } from "../src/utils/path-safety.js"
+import { safeRelativePathSchema } from "../src/schemas/common"
+import { ValidationError } from "../src/utils/errors"
+import { assertPathInside, isPathInside } from "../src/utils/path-safety"
 
 describe("isPathInside", () => {
 	it("returns true for path inside parent", () => {

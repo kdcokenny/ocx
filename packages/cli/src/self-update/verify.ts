@@ -10,7 +10,7 @@
  */
 
 import { createHash } from "node:crypto"
-import { IntegrityError, SelfUpdateError } from "../utils/errors.js"
+import { IntegrityError, SelfUpdateError } from "../utils/errors"
 
 const GITHUB_REPO = "kdcokenny/ocx"
 

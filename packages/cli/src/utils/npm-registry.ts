@@ -8,7 +8,7 @@
  * - Fail Fast: Throw immediately on invalid input
  */
 
-import { NetworkError, NotFoundError, ValidationError } from "./errors.js"
+import { NetworkError, NotFoundError, ValidationError } from "./errors"
 
 // =============================================================================
 // TYPES

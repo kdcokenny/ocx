@@ -12,8 +12,8 @@
  */
 
 import path from "node:path"
-import { ValidationError } from "./errors.js"
-import { isAbsolutePath } from "./path-helpers.js"
+import { ValidationError } from "./errors"
+import { isAbsolutePath } from "./path-helpers"
 
 /**
  * Check if a resolved path is inside the allowed parent directory.

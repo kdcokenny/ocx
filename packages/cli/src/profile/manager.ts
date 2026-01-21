@@ -1,24 +1,24 @@
 import { mkdir, readdir, rm, stat } from "node:fs/promises"
 import { parse } from "jsonc-parser"
-import type { ProfileOcxConfig } from "../schemas/ocx.js"
-import { profileOcxConfigSchema } from "../schemas/ocx.js"
+import type { ProfileOcxConfig } from "../schemas/ocx"
+import { profileOcxConfigSchema } from "../schemas/ocx"
 import {
 	InvalidProfileNameError,
 	OcxConfigError,
 	ProfileExistsError,
 	ProfileNotFoundError,
 	ProfilesNotInitializedError,
-} from "../utils/errors.js"
-import { atomicWrite } from "./atomic.js"
+} from "../utils/errors"
+import { atomicWrite } from "./atomic"
 import {
 	getProfileAgents,
 	getProfileDir,
 	getProfileOcxConfig,
 	getProfileOpencodeConfig,
 	getProfilesDir,
-} from "./paths.js"
-import type { Profile } from "./schema.js"
-import { profileNameSchema } from "./schema.js"
+} from "./paths"
+import type { Profile } from "./schema"
+import { profileNameSchema } from "./schema"
 
 /**
  * Default ocx.jsonc template for new profiles.

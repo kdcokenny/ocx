@@ -6,9 +6,9 @@
  */
 
 import type { Command } from "commander"
-import { ProfileManager } from "../../profile/manager.js"
-import { ProfileNotFoundError } from "../../utils/errors.js"
-import { handleError, logger } from "../../utils/index.js"
+import { ProfileManager } from "../../profile/manager"
+import { ProfileNotFoundError } from "../../utils/errors"
+import { handleError, logger } from "../../utils/index"
 
 export function registerProfileRemoveCommand(parent: Command): void {
 	parent

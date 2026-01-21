@@ -7,18 +7,13 @@ import { existsSync } from "node:fs"
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { Command } from "commander"
-import { OCX_SCHEMA_URL } from "../constants.js"
-import { ProfileManager } from "../profile/manager.js"
-import { getProfileOcxConfig, getProfilesDir } from "../profile/paths.js"
-import { findOcxConfig, ocxConfigSchema } from "../schemas/config.js"
-import { ensureOpencodeConfig } from "../updaters/update-opencode-config.js"
-import {
-	ConflictError,
-	NetworkError,
-	ProfileExistsError,
-	ValidationError,
-} from "../utils/errors.js"
-import { createSpinner, handleError, logger } from "../utils/index.js"
+import { OCX_SCHEMA_URL } from "../constants"
+import { ProfileManager } from "../profile/manager"
+import { getProfileOcxConfig, getProfilesDir } from "../profile/paths"
+import { findOcxConfig, ocxConfigSchema } from "../schemas/config"
+import { ensureOpencodeConfig } from "../updaters/update-opencode-config"
+import { ConflictError, NetworkError, ProfileExistsError, ValidationError } from "../utils/errors"
+import { createSpinner, handleError, logger } from "../utils/index"
 
 const TEMPLATE_REPO = "kdcokenny/ocx"
 const TEMPLATE_PATH = "examples/registry-starter"

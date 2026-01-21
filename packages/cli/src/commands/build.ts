@@ -7,8 +7,8 @@
 import { join, relative } from "node:path"
 import type { Command } from "commander"
 import kleur from "kleur"
-import { BuildRegistryError, buildRegistry } from "../lib/build-registry.js"
-import { createSpinner, handleError, logger, outputJson } from "../utils/index.js"
+import { BuildRegistryError, buildRegistry } from "../lib/build-registry"
+import { createSpinner, handleError, logger, outputJson } from "../utils/index"
 
 interface BuildOptions {
 	cwd: string

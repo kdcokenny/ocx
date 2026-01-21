@@ -9,22 +9,22 @@ import { mkdir, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
 import type { Command } from "commander"
-import type { ConfigProvider } from "../config/provider.js"
-import { GlobalConfigProvider, LocalConfigProvider } from "../config/provider.js"
-import { ConfigResolver } from "../config/resolver.js"
-import { CLI_VERSION, GITHUB_REPO } from "../constants.js"
-import { fetchFileContent, fetchRegistryIndex } from "../registry/fetcher.js"
-import type { ResolvedComponent } from "../registry/resolver.js"
-import { type ResolvedDependencies, resolveDependencies } from "../registry/resolver.js"
-import { findOcxLock, type OcxLock, readOcxLock, writeOcxLock } from "../schemas/config.js"
-import type { ComponentFileObject, RegistryIndex } from "../schemas/registry.js"
-import { parseQualifiedComponent } from "../schemas/registry.js"
+import type { ConfigProvider } from "../config/provider"
+import { GlobalConfigProvider, LocalConfigProvider } from "../config/provider"
+import { ConfigResolver } from "../config/resolver"
+import { CLI_VERSION, GITHUB_REPO } from "../constants"
+import { fetchFileContent, fetchRegistryIndex } from "../registry/fetcher"
+import type { ResolvedComponent } from "../registry/resolver"
+import { type ResolvedDependencies, resolveDependencies } from "../registry/resolver"
+import { findOcxLock, type OcxLock, readOcxLock, writeOcxLock } from "../schemas/config"
+import type { ComponentFileObject, RegistryIndex } from "../schemas/registry"
+import { parseQualifiedComponent } from "../schemas/registry"
 import {
 	readOpencodeJsonConfig,
 	updateOpencodeJsonConfig,
-} from "../updaters/update-opencode-config.js"
-import { isContentIdentical } from "../utils/content.js"
-import { ConfigError, ConflictError, IntegrityError, ValidationError } from "../utils/errors.js"
+} from "../updaters/update-opencode-config"
+import { isContentIdentical } from "../utils/content"
+import { ConfigError, ConflictError, IntegrityError, ValidationError } from "../utils/errors"
 import {
 	assertPathInside,
 	collectCompatIssues,
@@ -32,7 +32,7 @@ import {
 	handleError,
 	logger,
 	warnCompatIssues,
-} from "../utils/index.js"
+} from "../utils/index"
 import {
 	extractPackageName,
 	fetchPackageVersion,
@@ -41,14 +41,14 @@ import {
 	parseNpmSpecifier,
 	validateNpmPackage,
 	validateOpenCodePlugin,
-} from "../utils/npm-registry.js"
-import { resolveTargetPath } from "../utils/paths.js"
+} from "../utils/npm-registry"
+import { resolveTargetPath } from "../utils/paths"
 import {
 	addCommonOptions,
 	addForceOption,
 	addGlobalOption,
 	addVerboseOption,
-} from "../utils/shared-options.js"
+} from "../utils/shared-options"
 
 // =============================================================================
 // ADD INPUT TYPES (Discriminated Union)

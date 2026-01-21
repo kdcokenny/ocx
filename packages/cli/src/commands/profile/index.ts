@@ -8,11 +8,11 @@
  */
 
 import type { Command } from "commander"
-import { registerProfileAddCommand } from "./add.js"
-import { registerProfileConfigCommand } from "./config.js"
-import { registerProfileListCommand } from "./list.js"
-import { registerProfileRemoveCommand } from "./remove.js"
-import { registerProfileShowCommand } from "./show.js"
+import { registerProfileAddCommand } from "./add"
+import { registerProfileConfigCommand } from "./config"
+import { registerProfileListCommand } from "./list"
+import { registerProfileRemoveCommand } from "./remove"
+import { registerProfileShowCommand } from "./show"
 
 /**
  * Register the profile command and all subcommands.

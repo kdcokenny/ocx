@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { ValidationError } from "../src/utils/errors.js"
+import { ValidationError } from "../src/utils/errors"
 import {
 	extractPackageName,
 	formatPluginEntry,
 	isNpmSpecifier,
 	parseNpmSpecifier,
-} from "../src/utils/npm-registry.js"
+} from "../src/utils/npm-registry"
 import { cleanupTempDir, createTempDir, parseJsonc, runCLI } from "./helpers"
 
 // =============================================================================

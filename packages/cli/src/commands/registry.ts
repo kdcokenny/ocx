@@ -6,10 +6,10 @@
 
 import type { Command } from "commander"
 import kleur from "kleur"
-import type { RegistryConfig } from "../schemas/config.js"
-import { findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config.js"
-import { handleError, logger, outputJson } from "../utils/index.js"
-import { addCommonOptions } from "../utils/shared-options.js"
+import type { RegistryConfig } from "../schemas/config"
+import { findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config"
+import { handleError, logger, outputJson } from "../utils/index"
+import { addCommonOptions } from "../utils/shared-options"
 
 export interface RegistryOptions {
 	cwd: string

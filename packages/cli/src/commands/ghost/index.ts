@@ -6,7 +6,7 @@
  */
 
 import type { Command } from "commander"
-import { registerGhostMigrateCommand } from "./migrate.js"
+import { registerGhostMigrateCommand } from "./migrate"
 
 /**
  * Register the ghost command and all subcommands.

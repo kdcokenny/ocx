@@ -11,9 +11,9 @@
  */
 
 import type { Command } from "commander"
-import { parseEnvBool } from "../utils/env.js"
-import { checkForUpdate } from "./check.js"
-import { notifyUpdate } from "./notify.js"
+import { parseEnvBool } from "../utils/env"
+import { checkForUpdate } from "./check"
+import { notifyUpdate } from "./notify"
 
 // =============================================================================
 // UPDATE CHECK CONDITIONS
@@ -76,9 +76,9 @@ export function registerUpdateCheckHook(program: Command): void {
 // RE-EXPORTS
 // =============================================================================
 
-export type { CheckFailure, CheckResult, VersionCheckResult, VersionProvider } from "./check.js"
-export { checkForUpdate, EXPLICIT_UPDATE_TIMEOUT_MS } from "./check.js"
-export { getDownloadBaseUrl, getDownloadUrl } from "./download.js"
-export { notifyUpdate, notifyUpdated, notifyUpToDate } from "./notify.js"
-export type { VersionProvider as IVersionProvider } from "./types.js"
-export { BuildTimeVersionProvider, defaultVersionProvider } from "./version-provider.js"
+export type { CheckFailure, CheckResult, VersionCheckResult, VersionProvider } from "./check"
+export { checkForUpdate, EXPLICIT_UPDATE_TIMEOUT_MS } from "./check"
+export { getDownloadBaseUrl, getDownloadUrl } from "./download"
+export { notifyUpdate, notifyUpdated, notifyUpToDate } from "./notify"
+export type { VersionProvider as IVersionProvider } from "./types"
+export { BuildTimeVersionProvider, defaultVersionProvider } from "./version-provider"

@@ -6,10 +6,10 @@
  */
 
 import type { Command } from "commander"
-import { atomicWrite } from "../../profile/atomic.js"
-import { ProfileManager } from "../../profile/manager.js"
-import { getProfileOcxConfig } from "../../profile/paths.js"
-import { handleError, logger } from "../../utils/index.js"
+import { atomicWrite } from "../../profile/atomic"
+import { ProfileManager } from "../../profile/manager"
+import { getProfileOcxConfig } from "../../profile/paths"
+import { handleError, logger } from "../../utils/index"
 
 interface ProfileAddOptions {
 	from?: string

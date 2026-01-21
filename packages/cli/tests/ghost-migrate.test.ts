@@ -20,8 +20,8 @@ import {
 } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { getProfilesDir } from "../src/profile/paths.js"
-import { cleanupTempDir, runCLI } from "./helpers.js"
+import { getProfilesDir } from "../src/profile/paths"
+import { cleanupTempDir, runCLI } from "./helpers"
 
 // =============================================================================
 // HELPERS

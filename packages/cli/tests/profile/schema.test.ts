@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from "bun:test"
-import { profileNameSchema } from "../../src/profile/schema.js"
+import { profileNameSchema } from "../../src/profile/schema"
 
 // =============================================================================
 // VALID PROFILE NAMES

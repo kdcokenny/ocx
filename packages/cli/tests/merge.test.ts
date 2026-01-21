@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from "bun:test"
-import { mergeOpencodeConfig } from "../src/registry/merge.js"
-import type { NormalizedOpencodeConfig } from "../src/schemas/registry.js"
+import { mergeOpencodeConfig } from "../src/registry/merge"
+import type { NormalizedOpencodeConfig } from "../src/schemas/registry"
 
 describe("mergeOpencodeConfig", () => {
 	describe("mcp", () => {

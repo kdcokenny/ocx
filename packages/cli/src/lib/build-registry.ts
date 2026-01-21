@@ -8,7 +8,7 @@
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
-import { normalizeFile, registrySchema } from "../schemas/registry.js"
+import { normalizeFile, registrySchema } from "../schemas/registry"
 
 export interface BuildRegistryOptions {
 	/** Source directory containing registry.jsonc (or registry.json) and files/ */

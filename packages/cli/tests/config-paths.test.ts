@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { findOcxConfig, findOcxLock } from "../src/schemas/config.js"
-import { findOpencodeConfig } from "../src/updaters/update-opencode-config.js"
+import { findOcxConfig, findOcxLock } from "../src/schemas/config"
+import { findOpencodeConfig } from "../src/updaters/update-opencode-config"
 
 describe("config path discovery", () => {
 	let testDir: string
