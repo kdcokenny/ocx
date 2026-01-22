@@ -12,11 +12,36 @@
 
 import { existsSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
+import { homedir } from "node:os"
 import path from "node:path"
 import { applyEdits, type ModificationOptions, modify, parse as parseJsonc } from "jsonc-parser"
 import type { OpencodeConfig } from "../schemas/registry"
 
 const LOCAL_CONFIG_DIR = ".opencode"
+
+/**
+ * Check if cwd is inside the global config directory (or is the directory itself).
+ * When true, configs should be at the root (flattened), not in .opencode/
+ *
+ * This handles:
+ * - ~/.config/opencode/ itself
+ * - ~/.config/opencode/profiles/<name>/ (profile directories)
+ * - Any other subdirectory under ~/.config/opencode/
+ */
+function isGlobalConfigPath(cwd: string): boolean {
+	const base = process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config")
+	const globalConfigDir = path.resolve(base, "opencode")
+	const resolvedCwd = path.resolve(cwd)
+
+	// Check if cwd is the global dir itself, or a subdirectory of it
+	if (resolvedCwd === globalConfigDir) {
+		return true
+	}
+
+	const relative = path.relative(globalConfigDir, resolvedCwd)
+	// Inside if: relative path doesn't start with ".." and isn't absolute
+	return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+}
 
 // =============================================================================
 // TYPES
@@ -71,11 +96,28 @@ const OPENCODE_CONFIG_TEMPLATE = `{
 
 /**
  * Find opencode config file path.
- * Checks .opencode/ first, then root. Returns first found or default to .opencode/
+ * For global config paths (inside ~/.config/opencode/), configs live at root.
+ * For local projects, checks .opencode/ first, then root. Defaults to .opencode/
  * @returns Object with path and whether it exists
  */
 export function findOpencodeConfig(cwd: string): { path: string; exists: boolean } {
-	// Check .opencode/ first (preferred location)
+	// Global config paths use flattened structure (no .opencode/ subdirectory)
+	if (isGlobalConfigPath(cwd)) {
+		const rootJsonc = path.join(cwd, "opencode.jsonc")
+		const rootJson = path.join(cwd, "opencode.json")
+
+		if (existsSync(rootJsonc)) {
+			return { path: rootJsonc, exists: true }
+		}
+		if (existsSync(rootJson)) {
+			return { path: rootJson, exists: true }
+		}
+
+		// Default to root for global paths
+		return { path: rootJsonc, exists: false }
+	}
+
+	// Local projects: check .opencode/ first (preferred location)
 	const dotOpencodeJsonc = path.join(cwd, LOCAL_CONFIG_DIR, "opencode.jsonc")
 	const dotOpencodeJson = path.join(cwd, LOCAL_CONFIG_DIR, "opencode.json")
 
@@ -245,7 +287,10 @@ export async function updateOpencodeJsonConfig(
 		// Create new config with schema
 		const config: OpencodeJsonConfig = { $schema: "https://opencode.ai/config.json" }
 		content = JSON.stringify(config, null, "\t")
-		configPath = path.join(cwd, LOCAL_CONFIG_DIR, "opencode.jsonc")
+		// Global paths use root, local paths use .opencode/
+		configPath = isGlobalConfigPath(cwd)
+			? path.join(cwd, "opencode.jsonc")
+			: path.join(cwd, LOCAL_CONFIG_DIR, "opencode.jsonc")
 		// Ensure directory exists for new files
 		await mkdir(path.dirname(configPath), { recursive: true })
 		created = true
