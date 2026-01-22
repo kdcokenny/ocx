@@ -721,3 +721,243 @@ describe("ghost migrate - backup and rollback", () => {
 		expect(existsSync(join(profilesDir, "default", "ghost.jsonc.bak"))).toBe(false)
 	})
 })
+
+// =============================================================================
+// FLATTEN .OPENCODE DIRECTORY TESTS
+// =============================================================================
+
+describe("ghost migrate - flatten .opencode directories", () => {
+	let testDir: string
+	const originalXdgConfigHome = process.env.XDG_CONFIG_HOME
+
+	beforeEach(async () => {
+		testDir = await createTempConfigDir("ghost-migrate-flatten")
+		process.env.XDG_CONFIG_HOME = testDir
+	})
+
+	afterEach(async () => {
+		if (originalXdgConfigHome === undefined) {
+			delete process.env.XDG_CONFIG_HOME
+		} else {
+			process.env.XDG_CONFIG_HOME = originalXdgConfigHome
+		}
+		await cleanupTempDir(testDir)
+	})
+
+	it("should flatten .opencode/plugin to profile root", async () => {
+		const profilesDir = getProfilesDir()
+		const profileDir = join(profilesDir, "default")
+		const dotOpencode = join(profileDir, ".opencode")
+		const pluginDir = join(dotOpencode, "plugin")
+
+		// Create .opencode/plugin with a file
+		mkdirSync(pluginDir, { recursive: true })
+		writeFileSync(join(pluginDir, "test.ts"), "export const test = 1")
+
+		// Also need ghost.jsonc to trigger migration
+		writeFileSync(join(profileDir, "ghost.jsonc"), "{}")
+
+		const { exitCode, output } = await runGhostMigrate(testDir)
+
+		expect(exitCode).toBe(0)
+		expect(output).toContain(".opencode/plugin")
+		expect(output).toContain("plugin/")
+
+		// Verify plugin moved to root
+		expect(existsSync(join(profileDir, "plugin", "test.ts"))).toBe(true)
+		expect(readFileSync(join(profileDir, "plugin", "test.ts"), "utf-8")).toBe(
+			"export const test = 1",
+		)
+
+		// Verify .opencode/plugin is gone
+		expect(existsSync(join(dotOpencode, "plugin"))).toBe(false)
+	})
+
+	it("should flatten all 4 directories preserving nested structure", async () => {
+		const profilesDir = getProfilesDir()
+		const profileDir = join(profilesDir, "default")
+		const dotOpencode = join(profileDir, ".opencode")
+
+		// Create all 4 directories with content
+		for (const dir of ["plugin", "agent", "skill", "command"]) {
+			const dirPath = join(dotOpencode, dir)
+			mkdirSync(dirPath, { recursive: true })
+			writeFileSync(join(dirPath, `${dir}-file.md`), `# ${dir}`)
+		}
+
+		// Create nested structure in skill
+		const skillSubdir = join(dotOpencode, "skill", "my-skill")
+		mkdirSync(skillSubdir, { recursive: true })
+		writeFileSync(join(skillSubdir, "SKILL.md"), "# My Skill")
+
+		// Need ghost.jsonc to trigger migration
+		writeFileSync(join(profileDir, "ghost.jsonc"), "{}")
+
+		const { exitCode } = await runGhostMigrate(testDir)
+
+		expect(exitCode).toBe(0)
+
+		// Verify all moved to root
+		for (const dir of ["plugin", "agent", "skill", "command"]) {
+			expect(existsSync(join(profileDir, dir, `${dir}-file.md`))).toBe(true)
+		}
+
+		// Verify nested structure preserved
+		expect(existsSync(join(profileDir, "skill", "my-skill", "SKILL.md"))).toBe(true)
+		expect(readFileSync(join(profileDir, "skill", "my-skill", "SKILL.md"), "utf-8")).toBe(
+			"# My Skill",
+		)
+	})
+
+	it("should show flatten plan in dry-run without making changes", async () => {
+		const profilesDir = getProfilesDir()
+		const profileDir = join(profilesDir, "default")
+		const dotOpencode = join(profileDir, ".opencode")
+		const pluginDir = join(dotOpencode, "plugin")
+
+		mkdirSync(pluginDir, { recursive: true })
+		writeFileSync(join(pluginDir, "test.ts"), "export const test = 1")
+		writeFileSync(join(profileDir, "ghost.jsonc"), "{}")
+
+		const { exitCode, output } = await runGhostMigrate(testDir, ["--dry-run"])
+
+		expect(exitCode).toBe(0)
+		expect(output).toContain("[DRY-RUN]")
+		expect(output).toContain(".opencode/plugin")
+
+		// Verify no changes made
+		expect(existsSync(join(dotOpencode, "plugin", "test.ts"))).toBe(true)
+		expect(existsSync(join(profileDir, "plugin"))).toBe(false)
+
+		// Verify no backup created
+		expect(existsSync(join(dotOpencode, "plugin.bak"))).toBe(false)
+	})
+
+	it("should skip when destination already exists", async () => {
+		const profilesDir = getProfilesDir()
+		const profileDir = join(profilesDir, "default")
+		const dotOpencode = join(profileDir, ".opencode")
+
+		// Create both .opencode/plugin and plugin/ (conflict)
+		mkdirSync(join(dotOpencode, "plugin"), { recursive: true })
+		writeFileSync(join(dotOpencode, "plugin", "source.ts"), "source")
+		mkdirSync(join(profileDir, "plugin"), { recursive: true })
+		writeFileSync(join(profileDir, "plugin", "existing.ts"), "existing")
+
+		writeFileSync(join(profileDir, "ghost.jsonc"), "{}")
+
+		const { exitCode, output } = await runGhostMigrate(testDir)
+
+		expect(exitCode).toBe(0)
+		expect(output).toContain("skipped")
+		expect(output).toContain("plugin")
+
+		// Verify both unchanged
+		expect(existsSync(join(dotOpencode, "plugin", "source.ts"))).toBe(true)
+		expect(existsSync(join(profileDir, "plugin", "existing.ts"))).toBe(true)
+	})
+
+	it("should skip when source is not a directory", async () => {
+		const profilesDir = getProfilesDir()
+		const profileDir = join(profilesDir, "default")
+		const dotOpencode = join(profileDir, ".opencode")
+
+		// Create .opencode/plugin as a FILE, not directory
+		mkdirSync(dotOpencode, { recursive: true })
+		writeFileSync(join(dotOpencode, "plugin"), "this is a file")
+
+		writeFileSync(join(profileDir, "ghost.jsonc"), "{}")
+
+		const { exitCode, output } = await runGhostMigrate(testDir)
+
+		expect(exitCode).toBe(0)
+		expect(output).toContain("skipped")
+		expect(output).toContain("not a directory")
+
+		// Verify file unchanged
+		expect(existsSync(join(dotOpencode, "plugin"))).toBe(true)
+		expect(lstatSync(join(dotOpencode, "plugin")).isFile()).toBe(true)
+	})
+
+	it("should skip when backup already exists", async () => {
+		const profilesDir = getProfilesDir()
+		const profileDir = join(profilesDir, "default")
+		const dotOpencode = join(profileDir, ".opencode")
+		const pluginDir = join(dotOpencode, "plugin")
+
+		// Create .opencode/plugin and .opencode/plugin.bak
+		mkdirSync(pluginDir, { recursive: true })
+		writeFileSync(join(pluginDir, "test.ts"), "content")
+		mkdirSync(join(dotOpencode, "plugin.bak"), { recursive: true })
+		writeFileSync(join(dotOpencode, "plugin.bak", "old.ts"), "old backup")
+
+		writeFileSync(join(profileDir, "ghost.jsonc"), "{}")
+
+		const { exitCode, output } = await runGhostMigrate(testDir)
+
+		expect(exitCode).toBe(0)
+		expect(output).toContain("skipped")
+		expect(output).toContain("backup")
+
+		// Verify nothing moved
+		expect(existsSync(join(dotOpencode, "plugin", "test.ts"))).toBe(true)
+		expect(existsSync(join(profileDir, "plugin"))).toBe(false)
+	})
+
+	it("should handle partial migrations (some move, some skip)", async () => {
+		const profilesDir = getProfilesDir()
+		const profileDir = join(profilesDir, "default")
+		const dotOpencode = join(profileDir, ".opencode")
+
+		// plugin: can be moved
+		mkdirSync(join(dotOpencode, "plugin"), { recursive: true })
+		writeFileSync(join(dotOpencode, "plugin", "movable.ts"), "movable")
+
+		// agent: conflict (destination exists)
+		mkdirSync(join(dotOpencode, "agent"), { recursive: true })
+		writeFileSync(join(dotOpencode, "agent", "source.md"), "source")
+		mkdirSync(join(profileDir, "agent"), { recursive: true })
+		writeFileSync(join(profileDir, "agent", "existing.md"), "existing")
+
+		writeFileSync(join(profileDir, "ghost.jsonc"), "{}")
+
+		const { exitCode } = await runGhostMigrate(testDir)
+
+		expect(exitCode).toBe(0)
+
+		// plugin should be moved
+		expect(existsSync(join(profileDir, "plugin", "movable.ts"))).toBe(true)
+		expect(existsSync(join(dotOpencode, "plugin"))).toBe(false)
+
+		// agent should be skipped (both unchanged)
+		expect(existsSync(join(dotOpencode, "agent", "source.md"))).toBe(true)
+		expect(existsSync(join(profileDir, "agent", "existing.md"))).toBe(true)
+	})
+
+	it("should rename ghost.jsonc and flatten directories in same run", async () => {
+		const profilesDir = getProfilesDir()
+		const profileDir = join(profilesDir, "default")
+		const dotOpencode = join(profileDir, ".opencode")
+
+		// Create ghost.jsonc and .opencode/plugin
+		mkdirSync(profileDir, { recursive: true })
+		writeFileSync(join(profileDir, "ghost.jsonc"), '{ "bin": "opencode" }')
+		mkdirSync(join(dotOpencode, "plugin"), { recursive: true })
+		writeFileSync(join(dotOpencode, "plugin", "test.ts"), "content")
+
+		const { exitCode, output } = await runGhostMigrate(testDir)
+
+		expect(exitCode).toBe(0)
+
+		// Both should be in output
+		expect(output).toContain("ghost.jsonc")
+		expect(output).toContain("ocx.jsonc")
+		expect(output).toContain(".opencode/plugin")
+
+		// Verify both migrations happened
+		expect(existsSync(join(profileDir, "ocx.jsonc"))).toBe(true)
+		expect(existsSync(join(profileDir, "ghost.jsonc"))).toBe(false)
+		expect(existsSync(join(profileDir, "plugin", "test.ts"))).toBe(true)
+		expect(existsSync(join(dotOpencode, "plugin"))).toBe(false)
+	})
+})

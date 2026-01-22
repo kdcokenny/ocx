@@ -1,6 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync } from "node:fs"
-import { readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, parseJsonc, runCLI } from "./helpers"
 import { type MockRegistry, startMockRegistry } from "./mock-registry"
@@ -250,5 +250,153 @@ describe("ocx add", () => {
 		expect(exitCode).not.toBe(0)
 		expect(output).toContain("Integrity verification failed")
 		expect(output).toContain("The registry content has changed since this component was locked")
+	})
+})
+
+describe("ocx add --profile", () => {
+	let testDir: string
+	let profileDir: string
+	let registry: MockRegistry
+	const originalXdgConfigHome = process.env.XDG_CONFIG_HOME
+
+	beforeAll(() => {
+		registry = startMockRegistry()
+	})
+
+	afterAll(() => {
+		registry.stop()
+	})
+
+	beforeEach(async () => {
+		// Create temp directory for XDG_CONFIG_HOME
+		testDir = await createTempDir("add-profile")
+		process.env.XDG_CONFIG_HOME = testDir
+
+		// Create profile directory with ocx.jsonc containing registry
+		profileDir = join(testDir, "opencode", "profiles", "test-profile")
+		await mkdir(profileDir, { recursive: true })
+
+		const ocxConfig = {
+			registries: {
+				kdco: { url: registry.url },
+			},
+		}
+		await writeFile(join(profileDir, "ocx.jsonc"), JSON.stringify(ocxConfig, null, 2))
+	})
+
+	afterEach(async () => {
+		if (originalXdgConfigHome === undefined) {
+			delete process.env.XDG_CONFIG_HOME
+		} else {
+			process.env.XDG_CONFIG_HOME = originalXdgConfigHome
+		}
+		await cleanupTempDir(testDir)
+	})
+
+	it("should install to flattened paths in profile directory", async () => {
+		// Create a working directory (separate from profile)
+		const workDir = join(testDir, "workspace")
+		await mkdir(workDir, { recursive: true })
+
+		const { exitCode, output } = await runCLI(
+			["add", "kdco/test-plugin", "--profile", "test-profile", "--force"],
+			workDir,
+		)
+
+		if (exitCode !== 0) {
+			console.log(output)
+		}
+		expect(exitCode).toBe(0)
+
+		// Verify file installed to flattened path (plugin/, not .opencode/plugin/)
+		expect(existsSync(join(profileDir, "plugin", "test-plugin.ts"))).toBe(true)
+
+		// Verify NOT installed to nested .opencode/ path
+		expect(existsSync(join(profileDir, ".opencode", "plugin", "test-plugin.ts"))).toBe(false)
+	})
+
+	it("should install component with dependencies to flattened paths", async () => {
+		const workDir = join(testDir, "workspace")
+		await mkdir(workDir, { recursive: true })
+
+		// Install agent which depends on skill which depends on plugin
+		const { exitCode, output } = await runCLI(
+			["add", "kdco/test-agent", "--profile", "test-profile", "--force"],
+			workDir,
+		)
+
+		if (exitCode !== 0) {
+			console.log(output)
+		}
+		expect(exitCode).toBe(0)
+
+		// Verify all installed to flattened paths
+		expect(existsSync(join(profileDir, "agent", "test-agent.md"))).toBe(true)
+		expect(existsSync(join(profileDir, "skill", "test-skill", "SKILL.md"))).toBe(true)
+		expect(existsSync(join(profileDir, "plugin", "test-plugin.ts"))).toBe(true)
+
+		// Verify lock file at profile root
+		expect(existsSync(join(profileDir, "ocx.lock"))).toBe(true)
+	})
+
+	it("should place package.json at profile root, not in .opencode/", async () => {
+		const workDir = join(testDir, "workspace")
+		await mkdir(workDir, { recursive: true })
+
+		const { exitCode } = await runCLI(
+			["add", "kdco/test-plugin", "--profile", "test-profile", "--force"],
+			workDir,
+		)
+
+		expect(exitCode).toBe(0)
+
+		// package.json should be at profile root
+		expect(existsSync(join(profileDir, "package.json"))).toBe(true)
+
+		// NOT in .opencode/
+		expect(existsSync(join(profileDir, ".opencode", "package.json"))).toBe(false)
+	})
+
+	it("should work without local init when --profile is provided", async () => {
+		// Create workspace with NO .opencode/ directory (not initialized)
+		const workDir = join(testDir, "uninitialized-project")
+		await mkdir(workDir, { recursive: true })
+
+		// Should NOT have .opencode
+		expect(existsSync(join(workDir, ".opencode"))).toBe(false)
+
+		const { exitCode, output } = await runCLI(
+			["add", "kdco/test-plugin", "--profile", "test-profile", "--force"],
+			workDir,
+		)
+
+		// Should succeed without "Run 'ocx init' first" error
+		expect(exitCode).toBe(0)
+		expect(output).not.toContain("Run 'ocx init' first")
+
+		// Component installed to profile, not workDir
+		expect(existsSync(join(profileDir, "plugin", "test-plugin.ts"))).toBe(true)
+		expect(existsSync(join(workDir, ".opencode"))).toBe(false)
+	})
+
+	it("should detect conflicts at flattened paths", async () => {
+		const workDir = join(testDir, "workspace")
+		await mkdir(workDir, { recursive: true })
+
+		// First install
+		await runCLI(["add", "kdco/test-plugin", "--profile", "test-profile", "--force"], workDir)
+
+		// Modify the file to create a conflict
+		const filePath = join(profileDir, "plugin", "test-plugin.ts")
+		await writeFile(filePath, "// Modified by user")
+
+		// Try to reinstall WITHOUT --force
+		const { exitCode, output } = await runCLI(
+			["add", "kdco/test-plugin", "--profile", "test-profile"],
+			workDir,
+		)
+
+		expect(exitCode).not.toBe(0)
+		expect(output).toContain("conflict")
 	})
 })

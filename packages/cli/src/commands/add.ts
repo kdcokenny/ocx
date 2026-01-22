@@ -13,6 +13,7 @@ import type { ConfigProvider } from "../config/provider"
 import { GlobalConfigProvider, LocalConfigProvider } from "../config/provider"
 import { ConfigResolver } from "../config/resolver"
 import { CLI_VERSION, GITHUB_REPO } from "../constants"
+import { getProfileDir } from "../profile/paths"
 import { fetchFileContent, fetchRegistryIndex } from "../registry/fetcher"
 import type { ResolvedComponent } from "../registry/resolver"
 import { type ResolvedDependencies, resolveDependencies } from "../registry/resolver"
@@ -136,12 +137,14 @@ export function registerAddCommand(program: Command): void {
 			let provider: ConfigProvider
 
 			if (options.profile) {
-				// Use ConfigResolver with profile
+				// Use ConfigResolver with profile - cwd is the profile directory
 				const resolver = await ConfigResolver.create(options.cwd ?? process.cwd(), {
 					profile: options.profile,
 				})
+				// Profile mode: install to profile directory, not working directory
+				const profileDir = getProfileDir(options.profile)
 				provider = {
-					cwd: resolver.getCwd(),
+					cwd: profileDir,
 					getRegistries: () => resolver.getRegistries(),
 					getComponentPath: () => resolver.getComponentPath(),
 				}
@@ -343,12 +346,14 @@ async function runRegistryAddCore(
 	provider: ConfigProvider,
 ): Promise<void> {
 	const cwd = provider.cwd
-	const { path: lockPath } = findOcxLock(cwd)
+	// Use flattened paths for global/profile mode (no .opencode/ prefix)
+	const isFlattened = !!options.global || !!options.profile
+	const { path: lockPath } = findOcxLock(cwd, { isFlattened })
 	const registries = provider.getRegistries()
 
 	// Load or create lock
 	let lock: OcxLock = { lockVersion: 1, installed: {} }
-	const existingLock = await readOcxLock(cwd)
+	const existingLock = await readOcxLock(cwd, { isFlattened })
 	if (existingLock) {
 		lock = existingLock
 	}
@@ -428,7 +433,10 @@ async function runRegistryAddCore(
 
 			// Layer 2 path safety: Verify all target paths are inside cwd (runtime containment)
 			for (const file of component.files) {
-				const targetPath = join(cwd, resolveTargetPath(file.target, !!options.global))
+				const targetPath = join(
+					cwd,
+					resolveTargetPath(file.target, !!options.global, !!options.profile),
+				)
 				assertPathInside(targetPath, cwd)
 			}
 
@@ -441,7 +449,7 @@ async function runRegistryAddCore(
 
 			// Check for file conflicts with components from other namespaces
 			for (const file of component.files) {
-				const resolvedTarget = resolveTargetPath(file.target, !!options.global)
+				const resolvedTarget = resolveTargetPath(file.target, !!options.global, !!options.profile)
 				const targetPath = join(cwd, resolvedTarget)
 				if (existsSync(targetPath)) {
 					// File exists - check if it's from the same component (re-install) or different (conflict)
@@ -473,7 +481,11 @@ async function runRegistryAddCore(
 				const componentFile = component.files.find((f: ComponentFileObject) => f.path === file.path)
 				if (!componentFile) continue
 
-				const resolvedTarget = resolveTargetPath(componentFile.target, !!options.global)
+				const resolvedTarget = resolveTargetPath(
+					componentFile.target,
+					!!options.global,
+					!!options.profile,
+				)
 				const targetPath = join(cwd, resolvedTarget)
 				if (existsSync(targetPath)) {
 					const existingContent = await Bun.file(targetPath).text()
@@ -511,6 +523,7 @@ async function runRegistryAddCore(
 				force: options.force,
 				verbose: options.verbose,
 				isGlobal: options.global,
+				isProfile: !!options.profile,
 			})
 
 			// Log results in verbose mode
@@ -540,7 +553,9 @@ async function runRegistryAddCore(
 				registry: component.registryName,
 				version: index.version,
 				hash: computedHash,
-				files: component.files.map((f) => resolveTargetPath(f.target, !!options.global)),
+				files: component.files.map((f) =>
+					resolveTargetPath(f.target, !!options.global, !!options.profile),
+				),
 				installedAt: new Date().toISOString(),
 			}
 		}
@@ -561,13 +576,14 @@ async function runRegistryAddCore(
 		}
 
 		// Update package.json with npm dependencies
-		// Global mode: writes to cwd/package.json
+		// Global or profile mode: writes to cwd/package.json
 		// Local mode: writes to .opencode/package.json
 		const hasNpmDeps = resolved.npmDependencies.length > 0
 		const hasNpmDevDeps = resolved.npmDevDependencies.length > 0
-		const packageJsonPath = options.global
-			? join(cwd, "package.json")
-			: join(cwd, ".opencode/package.json")
+		const packageJsonPath =
+			options.global || options.profile
+				? join(cwd, "package.json")
+				: join(cwd, ".opencode/package.json")
 
 		if (hasNpmDeps || hasNpmDevDeps) {
 			const npmSpin = options.quiet
@@ -580,7 +596,7 @@ async function runRegistryAddCore(
 					cwd,
 					resolved.npmDependencies,
 					resolved.npmDevDependencies,
-					{ isGlobal: options.global },
+					{ isGlobal: options.global, isProfile: !!options.profile },
 				)
 				const totalDeps = resolved.npmDependencies.length + resolved.npmDevDependencies.length
 				npmSpin?.succeed(`Added ${totalDeps} dependencies to ${packageJsonPath}`)
@@ -630,7 +646,7 @@ async function installComponent(
 	component: ResolvedComponent,
 	files: { path: string; content: Buffer }[],
 	cwd: string,
-	options: { force?: boolean; verbose?: boolean; isGlobal?: boolean },
+	options: { force?: boolean; verbose?: boolean; isGlobal?: boolean; isProfile?: boolean },
 ): Promise<{ written: string[]; skipped: string[]; overwritten: string[] }> {
 	const result = {
 		written: [] as string[],
@@ -642,7 +658,11 @@ async function installComponent(
 		const componentFile = component.files.find((f: ComponentFileObject) => f.path === file.path)
 		if (!componentFile) continue
 
-		const resolvedTarget = resolveTargetPath(componentFile.target, !!options.isGlobal)
+		const resolvedTarget = resolveTargetPath(
+			componentFile.target,
+			!!options.isGlobal,
+			!!options.isProfile,
+		)
 		const targetPath = join(cwd, resolvedTarget)
 		const targetDir = dirname(targetPath)
 
@@ -792,7 +812,7 @@ function mergeDevDependencies(
 }
 
 /**
- * Reads .opencode/package.json or returns default structure if missing.
+ * Reads package.json from the given directory, or returns default structure if missing.
  */
 async function readOpencodePackageJson(opencodeDir: string): Promise<OpencodePackageJson> {
 	const pkgPath = join(opencodeDir, "package.json")
@@ -808,7 +828,7 @@ async function readOpencodePackageJson(opencodeDir: string): Promise<OpencodePac
 		return JSON.parse(content) as OpencodePackageJson
 	} catch (e) {
 		const message = e instanceof Error ? e.message : String(e)
-		throw new ConfigError(`Invalid .opencode/package.json: ${message}`)
+		throw new ConfigError(`Invalid ${pkgPath}: ${message}`)
 	}
 }
 
@@ -847,21 +867,21 @@ async function ensureManifestFilesAreTracked(opencodeDir: string): Promise<void>
 /**
  * Updates package.json with new devDependencies.
  * For local mode: writes to .opencode/package.json and ensures git tracking.
- * For global mode: writes directly to cwd/package.json (no .opencode prefix).
+ * For global or profile mode: writes directly to cwd/package.json.
  */
 async function updateOpencodeDevDependencies(
 	cwd: string,
 	npmDeps: string[],
 	npmDevDeps: string[],
-	options: { isGlobal?: boolean } = {},
+	options: { isGlobal?: boolean; isProfile?: boolean } = {},
 ): Promise<void> {
 	// Guard: no deps to process
 	const allDepSpecs = [...npmDeps, ...npmDevDeps]
 	if (allDepSpecs.length === 0) return
 
-	// Global mode: write directly to cwd, no .opencode prefix
+	// Global or profile mode: write directly to cwd, no .opencode prefix
 	// Local mode: write to .opencode subdirectory
-	const packageDir = options.isGlobal ? cwd : join(cwd, ".opencode")
+	const packageDir = options.isGlobal || options.isProfile ? cwd : join(cwd, ".opencode")
 
 	// Ensure directory exists
 	await mkdir(packageDir, { recursive: true })
@@ -875,7 +895,7 @@ async function updateOpencodeDevDependencies(
 	await Bun.write(join(packageDir, "package.json"), `${JSON.stringify(updated, null, 2)}\n`)
 
 	// Ensure manifest files are tracked by git (only for local mode)
-	if (!options.isGlobal) {
+	if (!options.isGlobal && !options.isProfile) {
 		await ensureManifestFilesAreTracked(packageDir)
 	}
 }

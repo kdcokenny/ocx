@@ -86,5 +86,9 @@ describe("global utilities", () => {
 			const result = resolveTargetPath(".opencode/components/ui/button.tsx", true)
 			expect(result).toBe("components/ui/button.tsx")
 		})
+
+		it("strips .opencode/ prefix when isProfile is true", () => {
+			expect(resolveTargetPath(".opencode/plugin/test.ts", false, true)).toBe("plugin/test.ts")
+		})
 	})
 })

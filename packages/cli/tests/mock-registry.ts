@@ -20,6 +20,7 @@ export function startMockRegistry(): MockRegistry {
 			description: "A test plugin",
 			files: [{ path: "index.ts", target: ".opencode/plugin/test-plugin.ts" }],
 			dependencies: [],
+			npmDependencies: ["lodash@^4.17.21"],
 		},
 		"test-skill": {
 			name: "test-skill",

@@ -5,7 +5,18 @@
  * Will be removed in the next minor version.
  */
 
-import { copyFileSync, existsSync, lstatSync, readdirSync, renameSync, unlinkSync } from "node:fs"
+import {
+	copyFileSync,
+	cpSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	renameSync,
+	rmdirSync,
+	rmSync,
+	unlinkSync,
+} from "node:fs"
 import path from "node:path"
 import type { Command } from "commander"
 import { getProfilesDir, OCX_CONFIG_FILE } from "../../profile/paths"
@@ -17,13 +28,43 @@ const GHOST_CONFIG_FILE = "ghost.jsonc"
 const BACKUP_EXT = ".bak"
 /** Legacy symlink for stateful profile selection */
 const CURRENT_SYMLINK = "current"
+/** Directories to flatten from .opencode/ to profile root */
+const FLATTEN_DIRS = ["plugin", "agent", "skill", "command"] as const
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+/**
+ * Move a file or directory atomically, with cross-device (EXDEV) fallback.
+ * On same filesystem: uses fast rename.
+ * On cross-device: copies then removes source.
+ */
+function moveAtomically(source: string, destination: string, isDir: boolean): void {
+	try {
+		renameSync(source, destination)
+	} catch (err: unknown) {
+		if (err instanceof Error && "code" in err && err.code === "EXDEV") {
+			// Cross-device: copy then remove
+			if (isDir) {
+				cpSync(source, destination, { recursive: true })
+				rmSync(source, { recursive: true, force: true })
+			} else {
+				copyFileSync(source, destination)
+				unlinkSync(source)
+			}
+		} else {
+			throw err
+		}
+	}
+}
 
 // =============================================================================
 // TYPES
 // =============================================================================
 
 interface ProfileAction {
-	type: "rename"
+	type: "rename" | "move-dir"
 	profileName: string
 	source: string
 	destination: string
@@ -110,6 +151,67 @@ function planMigration(): MigrationPlan {
 		})
 	}
 
+	// Plan .opencode/ flattening for each profile
+	for (const entry of entries) {
+		if (!entry.isDirectory() || entry.name === CURRENT_SYMLINK) continue
+
+		const profileName = entry.name
+		const profileDir = path.join(profilesDir, profileName)
+		const dotOpencode = path.join(profileDir, ".opencode")
+
+		// Skip if no .opencode directory
+		if (!existsSync(dotOpencode)) continue
+
+		for (const dir of FLATTEN_DIRS) {
+			const source = path.join(dotOpencode, dir)
+			const destination = path.join(profileDir, dir)
+
+			// Skip if source doesn't exist
+			if (!existsSync(source)) continue
+
+			// Verify source is actually a directory
+			try {
+				const stat = lstatSync(source)
+				if (!stat.isDirectory()) {
+					plan.skipped.push({
+						profileName,
+						reason: `.opencode/${dir} is not a directory`,
+					})
+					continue
+				}
+			} catch {
+				continue // Can't stat, skip
+			}
+
+			// Check for conflict: destination already exists
+			if (existsSync(destination)) {
+				plan.skipped.push({
+					profileName,
+					reason: `${dir}/ exists in both .opencode/ and profile root`,
+				})
+				continue
+			}
+
+			// Check for backup conflict
+			const backupPath = source + BACKUP_EXT
+			if (existsSync(backupPath)) {
+				plan.skipped.push({
+					profileName,
+					reason: `backup already exists: .opencode/${dir}${BACKUP_EXT}`,
+				})
+				continue
+			}
+
+			plan.profiles.push({
+				type: "move-dir",
+				profileName,
+				source,
+				destination,
+				backup: backupPath,
+			})
+		}
+	}
+
 	// Check profiles/current symlink
 	const currentPath = path.join(profilesDir, CURRENT_SYMLINK)
 	if (existsSync(currentPath)) {
@@ -149,23 +251,34 @@ function planMigration(): MigrationPlan {
  * 5. On failure: rollback everything
  */
 function executeMigration(plan: MigrationPlan): void {
-	const completedBackups: string[] = []
-	const completedRenames: { source: string; destination: string; backup: string }[] = []
+	const completedBackups: { path: string; isDir: boolean }[] = []
+	const completedRenames: {
+		source: string
+		destination: string
+		backup: string
+		isDir: boolean
+	}[] = []
 
 	try {
 		// Step 1: Create backups first (copy, not move)
 		for (const action of plan.profiles) {
-			copyFileSync(action.source, action.backup)
-			completedBackups.push(action.backup)
+			if (action.type === "rename") {
+				copyFileSync(action.source, action.backup)
+			} else {
+				// move-dir: recursive copy for directories
+				cpSync(action.source, action.backup, { recursive: true })
+			}
+			completedBackups.push({ path: action.backup, isDir: action.type === "move-dir" })
 		}
 
-		// Step 2: Rename originals to destinations
+		// Step 2: Move originals to destinations (handles cross-device)
 		for (const action of plan.profiles) {
-			renameSync(action.source, action.destination)
+			moveAtomically(action.source, action.destination, action.type === "move-dir")
 			completedRenames.push({
 				source: action.source,
 				destination: action.destination,
 				backup: action.backup,
+				isDir: action.type === "move-dir",
 			})
 		}
 
@@ -184,7 +297,11 @@ function executeMigration(plan: MigrationPlan): void {
 		// Step 4: Success! Delete backups
 		for (const backup of completedBackups) {
 			try {
-				unlinkSync(backup)
+				if (backup.isDir) {
+					rmSync(backup.path, { recursive: true, force: true })
+				} else {
+					unlinkSync(backup.path)
+				}
 			} catch {
 				// Best effort cleanup, ignore errors
 			}
@@ -193,27 +310,38 @@ function executeMigration(plan: MigrationPlan): void {
 		// Rollback: restore from backups
 		for (const rename of completedRenames) {
 			try {
-				// Move destination back to source
+				// Remove destination if it exists
 				if (existsSync(rename.destination)) {
-					renameSync(rename.destination, rename.source)
+					if (rename.isDir) {
+						rmSync(rename.destination, { recursive: true, force: true })
+					} else {
+						unlinkSync(rename.destination)
+					}
 				}
-			} catch {
-				// If rename-back fails, try copying from backup
-				try {
-					if (existsSync(rename.backup)) {
+				// Ensure parent directory exists before restoring
+				mkdirSync(path.dirname(rename.source), { recursive: true })
+				// Restore from backup
+				if (existsSync(rename.backup)) {
+					if (rename.isDir) {
+						cpSync(rename.backup, rename.source, { recursive: true })
+					} else {
 						copyFileSync(rename.backup, rename.source)
 					}
-				} catch {
-					// Best effort rollback
 				}
+			} catch {
+				// Best effort rollback
 			}
 		}
 
 		// Clean up any remaining backups
 		for (const backup of completedBackups) {
 			try {
-				if (existsSync(backup)) {
-					unlinkSync(backup)
+				if (existsSync(backup.path)) {
+					if (backup.isDir) {
+						rmSync(backup.path, { recursive: true, force: true })
+					} else {
+						unlinkSync(backup.path)
+					}
 				}
 			} catch {
 				// Best effort cleanup
@@ -221,6 +349,32 @@ function executeMigration(plan: MigrationPlan): void {
 		}
 
 		throw error
+	}
+
+	// Step 5: Best-effort cleanup of empty .opencode/ directories
+	// Runs AFTER backups are deleted to avoid triggering rollback on cleanup failure
+	try {
+		const processedProfiles = new Set(
+			plan.profiles.filter((a) => a.type === "move-dir").map((a) => a.profileName),
+		)
+		for (const profileName of processedProfiles) {
+			const profileDir = path.join(getProfilesDir(), profileName)
+			const dotOpencode = path.join(profileDir, ".opencode")
+
+			if (existsSync(dotOpencode)) {
+				const remaining = readdirSync(dotOpencode)
+				// Remove only if empty
+				if (remaining.length === 0) {
+					try {
+						rmdirSync(dotOpencode)
+					} catch {
+						// Best effort
+					}
+				}
+			}
+		}
+	} catch {
+		// Best effort cleanup - don't fail the migration for cleanup issues
 	}
 }
 
@@ -251,7 +405,13 @@ function printPlan(plan: MigrationPlan, dryRun: boolean): void {
 	if (plan.profiles.length > 0 || plan.skipped.length > 0) {
 		console.log("Profiles:")
 		for (const action of plan.profiles) {
-			console.log(`  ✓ ${action.profileName}: ${GHOST_CONFIG_FILE} → ${OCX_CONFIG_FILE}`)
+			if (action.type === "rename") {
+				console.log(`  ✓ ${action.profileName}: ${GHOST_CONFIG_FILE} → ${OCX_CONFIG_FILE}`)
+			} else {
+				// move-dir
+				const dirName = path.basename(action.source)
+				console.log(`  ✓ ${action.profileName}: .opencode/${dirName}/ → ${dirName}/`)
+			}
 		}
 		for (const skipped of plan.skipped) {
 			console.log(`  ⚠ ${skipped.profileName}: skipped (${skipped.reason})`)
