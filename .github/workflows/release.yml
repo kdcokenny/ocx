@@ -17,13 +17,13 @@ jobs:
     # Guards: only run on main repo, skip prereleases (v1.4.0-rc.1)
     if: github.repository == 'kdcokenny/ocx' && !contains(github.ref_name, '-')
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # Required for git-cliff to access full history
 
       - name: Generate changelog
         id: changelog
-        uses: orhun/git-cliff-action@4a4a951bc43fafe41cd2348d181853f52356bee7 # v4.4.2
+        uses: orhun/git-cliff-action@v4
         with:
           config: cliff.toml
           args: --latest --strip all
@@ -31,12 +31,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Node 24+ ships with npm 11.5.1+ which supports tokenless OIDC publishing
-      - uses: actions/setup-node@49933ea5288caeca8642195f932660723b8f9f0e # v4.4.0
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
-      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
 
@@ -67,7 +67,7 @@ jobs:
           sha256sum ocx-* | grep -v '\.sha256' > SHA256SUMS.txt
 
       - name: Release
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             packages/cli/dist/bin/ocx-*
