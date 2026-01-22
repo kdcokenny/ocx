@@ -9,12 +9,14 @@ import kleur from "kleur"
 import type { RegistryConfig } from "../schemas/config"
 import { findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config"
 import { handleError, logger, outputJson } from "../utils/index"
-import { addCommonOptions } from "../utils/shared-options"
+import { getGlobalConfigPath } from "../utils/paths"
+import { addCommonOptions, addGlobalOption } from "../utils/shared-options"
 
 export interface RegistryOptions {
 	cwd: string
 	json?: boolean
 	quiet?: boolean
+	global?: boolean
 }
 
 export interface RegistryAddOptions extends RegistryOptions {
@@ -122,34 +124,63 @@ export function registerRegistryCommand(program: Command): void {
 		.option("--name <name>", "Registry alias (defaults to hostname)")
 		.option("--version <version>", "Pin to specific version")
 
+	addGlobalOption(addCmd)
 	addCommonOptions(addCmd)
 
-	addCmd.action(async (url: string, options: RegistryAddOptions) => {
+	addCmd.action(async (url: string, options: RegistryAddOptions, command: Command) => {
 		try {
-			const cwd = options.cwd ?? process.cwd()
-			const { path: configPath } = findOcxConfig(cwd)
-			const config = await readOcxConfig(cwd)
-			if (!config) {
-				logger.error("No ocx.jsonc found. Run 'ocx init' first.")
+			// Check if --cwd was explicitly provided (not just defaulted)
+			const cwdExplicitlyProvided = command.getOptionValueSource("cwd") === "cli"
+
+			if (options.global && cwdExplicitlyProvided) {
+				logger.error("Cannot use --global with --cwd. They are mutually exclusive.")
 				process.exit(1)
 			}
+
+			// Determine config location
+			let configDir: string
+			let configPath: string
+			const config = await (async () => {
+				if (options.global) {
+					configDir = getGlobalConfigPath()
+					const found = findOcxConfig(configDir)
+					configPath = found.path
+					const cfg = await readOcxConfig(configDir)
+					if (!cfg) {
+						logger.error("Global config not found. Run 'opencode' once to initialize.")
+						process.exit(1)
+					}
+					return cfg
+				} else {
+					configDir = options.cwd ?? process.cwd()
+					const found = findOcxConfig(configDir)
+					configPath = found.path
+					const cfg = await readOcxConfig(configDir)
+					if (!cfg) {
+						logger.error("No ocx.jsonc found. Run 'ocx init' first.")
+						process.exit(1)
+					}
+					return cfg
+				}
+			})()
 
 			const result = await runRegistryAddCore(url, options, {
 				getRegistries: () => config.registries,
 				isLocked: () => config.lockRegistries ?? false,
 				setRegistry: async (name, regConfig) => {
 					config.registries[name] = regConfig
-					await writeOcxConfig(cwd, config, configPath)
+					await writeOcxConfig(configDir, config, configPath)
 				},
 			})
 
 			if (options.json) {
 				outputJson({ success: true, data: result })
 			} else if (!options.quiet) {
+				const location = options.global ? "global config" : "local config"
 				if (result.updated) {
-					logger.success(`Updated registry: ${result.name} -> ${result.url}`)
+					logger.success(`Updated registry in ${location}: ${result.name} -> ${result.url}`)
 				} else {
-					logger.success(`Added registry: ${result.name} -> ${result.url}`)
+					logger.success(`Added registry to ${location}: ${result.name} -> ${result.url}`)
 				}
 			}
 		} catch (error) {
@@ -163,31 +194,60 @@ export function registerRegistryCommand(program: Command): void {
 		.description("Remove a registry")
 		.argument("<name>", "Registry name")
 
+	addGlobalOption(removeCmd)
 	addCommonOptions(removeCmd)
 
-	removeCmd.action(async (name: string, options: RegistryOptions) => {
+	removeCmd.action(async (name: string, options: RegistryOptions, command: Command) => {
 		try {
-			const cwd = options.cwd ?? process.cwd()
-			const { path: configPath } = findOcxConfig(cwd)
-			const config = await readOcxConfig(cwd)
-			if (!config) {
-				logger.error("No ocx.jsonc found. Run 'ocx init' first.")
+			// Check if --cwd was explicitly provided (not just defaulted)
+			const cwdExplicitlyProvided = command.getOptionValueSource("cwd") === "cli"
+
+			if (options.global && cwdExplicitlyProvided) {
+				logger.error("Cannot use --global with --cwd. They are mutually exclusive.")
 				process.exit(1)
 			}
+
+			// Determine config location
+			let configDir: string
+			let configPath: string
+			const config = await (async () => {
+				if (options.global) {
+					configDir = getGlobalConfigPath()
+					const found = findOcxConfig(configDir)
+					configPath = found.path
+					const cfg = await readOcxConfig(configDir)
+					if (!cfg) {
+						logger.error("Global config not found. Run 'opencode' once to initialize.")
+						process.exit(1)
+					}
+					return cfg
+				} else {
+					configDir = options.cwd ?? process.cwd()
+					const found = findOcxConfig(configDir)
+					configPath = found.path
+					const cfg = await readOcxConfig(configDir)
+					if (!cfg) {
+						logger.error("No ocx.jsonc found. Run 'ocx init' first.")
+						process.exit(1)
+					}
+					return cfg
+				}
+			})()
 
 			const result = await runRegistryRemoveCore(name, {
 				getRegistries: () => config.registries,
 				isLocked: () => config.lockRegistries ?? false,
 				removeRegistry: async (regName) => {
 					delete config.registries[regName]
-					await writeOcxConfig(cwd, config, configPath)
+					await writeOcxConfig(configDir, config, configPath)
 				},
 			})
 
 			if (options.json) {
 				outputJson({ success: true, data: result })
 			} else if (!options.quiet) {
-				logger.success(`Removed registry: ${result.removed}`)
+				const location = options.global ? "global config" : "local config"
+				logger.success(`Removed registry from ${location}: ${result.removed}`)
 			}
 		} catch (error) {
 			handleError(error, { json: options.json })
@@ -197,16 +257,42 @@ export function registerRegistryCommand(program: Command): void {
 	// registry list
 	const listCmd = registry.command("list").description("List configured registries")
 
+	addGlobalOption(listCmd)
 	addCommonOptions(listCmd)
 
-	listCmd.action(async (options: RegistryOptions) => {
+	listCmd.action(async (options: RegistryOptions, command: Command) => {
 		try {
-			const cwd = options.cwd ?? process.cwd()
-			const config = await readOcxConfig(cwd)
-			if (!config) {
-				logger.warn("No ocx.jsonc found. Run 'ocx init' first.")
-				return
+			// Check if --cwd was explicitly provided (not just defaulted)
+			const cwdExplicitlyProvided = command.getOptionValueSource("cwd") === "cli"
+
+			if (options.global && cwdExplicitlyProvided) {
+				logger.error("Cannot use --global with --cwd. They are mutually exclusive.")
+				process.exit(1)
 			}
+
+			// Determine config location
+			let configDir: string
+			const config = await (async () => {
+				if (options.global) {
+					configDir = getGlobalConfigPath()
+					const cfg = await readOcxConfig(configDir)
+					if (!cfg) {
+						logger.warn("Global config not found. Run 'opencode' once to initialize.")
+						return null
+					}
+					return cfg
+				} else {
+					configDir = options.cwd ?? process.cwd()
+					const cfg = await readOcxConfig(configDir)
+					if (!cfg) {
+						logger.warn("No ocx.jsonc found. Run 'ocx init' first.")
+						return null
+					}
+					return cfg
+				}
+			})()
+
+			if (!config) return
 
 			const result = runRegistryListCore({
 				getRegistries: () => config.registries,
@@ -219,7 +305,9 @@ export function registerRegistryCommand(program: Command): void {
 				if (result.registries.length === 0) {
 					logger.info("No registries configured.")
 				} else {
-					logger.info(`Configured registries${result.locked ? kleur.yellow(" (locked)") : ""}:`)
+					logger.info(
+						`Configured registries${options.global ? " (global)" : ""}${result.locked ? kleur.yellow(" (locked)") : ""}:`,
+					)
 					for (const reg of result.registries) {
 						console.log(`  ${kleur.cyan(reg.name)}: ${reg.url} ${kleur.dim(`(${reg.version})`)}`)
 					}

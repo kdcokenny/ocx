@@ -9,11 +9,20 @@ export interface CLIResult {
 	exitCode: number
 }
 
+export interface RunCLIOptions {
+	/** Custom environment variables to merge with defaults */
+	env?: Record<string, string | undefined>
+}
+
 /**
  * Run the CLI with the given arguments.
  * Uses Bun.spawn with explicit argument array for reliable parsing.
  */
-export async function runCLI(args: string[], cwd: string): Promise<CLIResult> {
+export async function runCLI(
+	args: string[],
+	cwd: string,
+	options?: RunCLIOptions,
+): Promise<CLIResult> {
 	const indexPath = join(import.meta.dir, "..", "src/index.ts")
 
 	// Ensure cwd exists
@@ -22,7 +31,7 @@ export async function runCLI(args: string[], cwd: string): Promise<CLIResult> {
 	// Use Bun.spawn with explicit argument array (not shell string interpolation)
 	const proc = Bun.spawn(["bun", "run", indexPath, ...args], {
 		cwd,
-		env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
+		env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", ...options?.env },
 		stdout: "pipe",
 		stderr: "pipe",
 	})
