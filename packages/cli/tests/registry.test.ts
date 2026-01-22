@@ -136,7 +136,7 @@ describe("ocx registry --global", () => {
 		// Verify correct data written to global config
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
 		expect(globalConfig).not.toBeNull()
-		expect(globalConfig?.registries["test-global"]).toEqual({ url: registry.url })
+		expect(globalConfig!.registries["test-global"]).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created/modified
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -185,7 +185,8 @@ describe("ocx registry --global", () => {
 
 		// Verify it was added
 		let globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
-		expect(globalConfig?.registries["test-remove"]).toBeDefined()
+		expect(globalConfig).not.toBeNull()
+		expect(globalConfig!.registries["test-remove"]).toBeDefined()
 
 		// Now remove it
 		const result = await runCLI(["registry", "remove", "--global", "test-remove"], testDir, { env })
@@ -194,7 +195,8 @@ describe("ocx registry --global", () => {
 
 		// Verify it was ACTUALLY removed from file
 		globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
-		expect(globalConfig?.registries["test-remove"]).toBeUndefined()
+		expect(globalConfig).not.toBeNull()
+		expect(globalConfig!.registries["test-remove"]).toBeUndefined()
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -271,7 +273,8 @@ describe("ocx registry --global", () => {
 
 		// Verify data was actually written
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
-		expect(globalConfig?.registries.order1).toEqual({ url: registry.url })
+		expect(globalConfig).not.toBeNull()
+		expect(globalConfig!.registries.order1).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -288,7 +291,8 @@ describe("ocx registry --global", () => {
 
 		// Verify data was actually written
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
-		expect(globalConfig?.registries.order2).toEqual({ url: registry.url })
+		expect(globalConfig).not.toBeNull()
+		expect(globalConfig!.registries.order2).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -305,7 +309,8 @@ describe("ocx registry --global", () => {
 
 		// Verify data was actually written
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
-		expect(globalConfig?.registries.order3).toEqual({ url: registry.url })
+		expect(globalConfig).not.toBeNull()
+		expect(globalConfig!.registries.order3).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -345,13 +350,14 @@ describe("ocx registry --global", () => {
 
 		// Verify auto-generated name was written
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
-		const keys = Object.keys(globalConfig?.registries)
+		expect(globalConfig).not.toBeNull()
+		const keys = Object.keys(globalConfig!.registries)
 		expect(keys).toHaveLength(1)
 
 		// Name should be derived from hostname (localhost or 127-0-0-1 depending on registry.url)
 		const generatedName = keys[0]
 		expect(generatedName).toMatch(/^(localhost|127-0-0-1)$/)
-		expect(globalConfig?.registries[generatedName]).toEqual({ url: registry.url })
+		expect(globalConfig!.registries[generatedName]).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
