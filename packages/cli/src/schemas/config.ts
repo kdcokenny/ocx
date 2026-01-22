@@ -149,6 +149,15 @@ export function findOcxLock(
 	const dotOpencodePath = path.join(cwd, LOCAL_CONFIG_DIR, LOCK_FILE)
 	const rootPath = path.join(cwd, LOCK_FILE)
 
+	if (options?.isFlattened) {
+		// Flattened mode (global/profile): prefer root, ignore .opencode/
+		if (existsSync(rootPath)) {
+			return { path: rootPath, exists: true }
+		}
+		return { path: rootPath, exists: false }
+	}
+
+	// Local mode: prefer .opencode/, fallback to root
 	if (existsSync(dotOpencodePath)) {
 		return { path: dotOpencodePath, exists: true }
 	}
@@ -157,10 +166,7 @@ export function findOcxLock(
 		return { path: rootPath, exists: true }
 	}
 
-	// Neither exists - default based on mode
-	// Global/profile mode uses root, local mode uses .opencode/
-	const defaultPath = options?.isFlattened ? rootPath : dotOpencodePath
-	return { path: defaultPath, exists: false }
+	return { path: dotOpencodePath, exists: false }
 }
 
 /**
