@@ -7,7 +7,6 @@
  */
 
 import { Option } from "commander"
-import { ValidationError } from "./errors"
 
 // =============================================================================
 // OPTION FACTORIES
@@ -107,17 +106,4 @@ export function addOutputOptions<T extends { addOption: (opt: Option) => T }>(cm
  */
 export function addGlobalOption<T extends { addOption: (opt: Option) => T }>(cmd: T): T {
 	return cmd.addOption(sharedOptions.global)
-}
-
-/**
- * Validates that --global and --profile are not used together.
- * @throws ValidationError if both flags are set
- */
-export function assertNoGlobalProfileConflict(
-	global: boolean | undefined,
-	profile: string | undefined,
-): void {
-	if (global && profile) {
-		throw new ValidationError("Using --global with --profile is not supported.")
-	}
 }

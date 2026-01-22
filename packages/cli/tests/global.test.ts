@@ -67,28 +67,24 @@ describe("global utilities", () => {
 	})
 
 	describe("resolveTargetPath", () => {
-		it("strips .opencode/ prefix when global", () => {
+		it("strips .opencode/ prefix when isFlattened is true", () => {
 			const result = resolveTargetPath(".opencode/plugin/foo.ts", true)
 			expect(result).toBe("plugin/foo.ts")
 		})
 
-		it("preserves path when local", () => {
+		it("preserves .opencode/ prefix when isFlattened is false", () => {
 			const result = resolveTargetPath(".opencode/plugin/foo.ts", false)
 			expect(result).toBe(".opencode/plugin/foo.ts")
 		})
 
-		it("preserves path without .opencode/ prefix even when global", () => {
+		it("preserves path without .opencode/ prefix even when isFlattened", () => {
 			const result = resolveTargetPath("other/path.ts", true)
 			expect(result).toBe("other/path.ts")
 		})
 
-		it("handles nested paths correctly", () => {
+		it("handles nested paths correctly when isFlattened", () => {
 			const result = resolveTargetPath(".opencode/components/ui/button.tsx", true)
 			expect(result).toBe("components/ui/button.tsx")
-		})
-
-		it("strips .opencode/ prefix when isProfile is true", () => {
-			expect(resolveTargetPath(".opencode/plugin/test.ts", false, true)).toBe("plugin/test.ts")
 		})
 	})
 })

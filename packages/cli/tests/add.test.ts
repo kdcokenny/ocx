@@ -290,7 +290,9 @@ describe("ocx add --profile", () => {
 		} else {
 			process.env.XDG_CONFIG_HOME = originalXdgConfigHome
 		}
-		await cleanupTempDir(testDir)
+		if (testDir) {
+			await cleanupTempDir(testDir)
+		}
 	})
 
 	it("should install to flattened paths in profile directory", async () => {

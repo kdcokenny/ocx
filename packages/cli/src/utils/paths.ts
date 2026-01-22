@@ -26,16 +26,16 @@ export async function globalDirectoryExists(): Promise<boolean> {
 }
 
 /**
- * Resolves a component target path for global, local, or profile mode.
- * Registry targets start with ".opencode/" which should be stripped for global and profile installs.
+ * Resolves a component target path for flattened or nested mode.
+ * Registry targets start with ".opencode/" which should be stripped for flattened installs
+ * (global or profile mode).
  *
  * @param target - The target path from registry (e.g., ".opencode/plugin/foo.ts")
- * @param isGlobal - Whether installing globally
- * @param isProfile - Whether installing to a profile (optional)
- * @returns Resolved path (e.g., "plugin/foo.ts" for global/profile, unchanged for local)
+ * @param isFlattened - Whether to strip the .opencode/ prefix (true for global/profile mode)
+ * @returns Resolved path (e.g., "plugin/foo.ts" for flattened, unchanged for local)
  */
-export function resolveTargetPath(target: string, isGlobal: boolean, isProfile?: boolean): string {
-	if ((isGlobal || isProfile) && target.startsWith(".opencode/")) {
+export function resolveTargetPath(target: string, isFlattened: boolean): string {
+	if (isFlattened && target.startsWith(".opencode/")) {
 		return target.slice(".opencode/".length)
 	}
 	return target

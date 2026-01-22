@@ -433,10 +433,7 @@ async function runRegistryAddCore(
 
 			// Layer 2 path safety: Verify all target paths are inside cwd (runtime containment)
 			for (const file of component.files) {
-				const targetPath = join(
-					cwd,
-					resolveTargetPath(file.target, !!options.global, !!options.profile),
-				)
+				const targetPath = join(cwd, resolveTargetPath(file.target, isFlattened))
 				assertPathInside(targetPath, cwd)
 			}
 
@@ -449,7 +446,7 @@ async function runRegistryAddCore(
 
 			// Check for file conflicts with components from other namespaces
 			for (const file of component.files) {
-				const resolvedTarget = resolveTargetPath(file.target, !!options.global, !!options.profile)
+				const resolvedTarget = resolveTargetPath(file.target, isFlattened)
 				const targetPath = join(cwd, resolvedTarget)
 				if (existsSync(targetPath)) {
 					// File exists - check if it's from the same component (re-install) or different (conflict)
@@ -481,11 +478,7 @@ async function runRegistryAddCore(
 				const componentFile = component.files.find((f: ComponentFileObject) => f.path === file.path)
 				if (!componentFile) continue
 
-				const resolvedTarget = resolveTargetPath(
-					componentFile.target,
-					!!options.global,
-					!!options.profile,
-				)
+				const resolvedTarget = resolveTargetPath(componentFile.target, isFlattened)
 				const targetPath = join(cwd, resolvedTarget)
 				if (existsSync(targetPath)) {
 					const existingContent = await Bun.file(targetPath).text()
@@ -522,8 +515,7 @@ async function runRegistryAddCore(
 			const installResult = await installComponent(component, files, cwd, {
 				force: options.force,
 				verbose: options.verbose,
-				isGlobal: options.global,
-				isProfile: !!options.profile,
+				isFlattened,
 			})
 
 			// Log results in verbose mode
@@ -553,9 +545,7 @@ async function runRegistryAddCore(
 				registry: component.registryName,
 				version: index.version,
 				hash: computedHash,
-				files: component.files.map((f) =>
-					resolveTargetPath(f.target, !!options.global, !!options.profile),
-				),
+				files: component.files.map((f) => resolveTargetPath(f.target, isFlattened)),
 				installedAt: new Date().toISOString(),
 			}
 		}
@@ -596,7 +586,7 @@ async function runRegistryAddCore(
 					cwd,
 					resolved.npmDependencies,
 					resolved.npmDevDependencies,
-					{ isGlobal: options.global, isProfile: !!options.profile },
+					{ isFlattened },
 				)
 				const totalDeps = resolved.npmDependencies.length + resolved.npmDevDependencies.length
 				npmSpin?.succeed(`Added ${totalDeps} dependencies to ${packageJsonPath}`)
@@ -646,7 +636,7 @@ async function installComponent(
 	component: ResolvedComponent,
 	files: { path: string; content: Buffer }[],
 	cwd: string,
-	options: { force?: boolean; verbose?: boolean; isGlobal?: boolean; isProfile?: boolean },
+	options: { force?: boolean; verbose?: boolean; isFlattened?: boolean },
 ): Promise<{ written: string[]; skipped: string[]; overwritten: string[] }> {
 	const result = {
 		written: [] as string[],
@@ -658,11 +648,7 @@ async function installComponent(
 		const componentFile = component.files.find((f: ComponentFileObject) => f.path === file.path)
 		if (!componentFile) continue
 
-		const resolvedTarget = resolveTargetPath(
-			componentFile.target,
-			!!options.isGlobal,
-			!!options.isProfile,
-		)
+		const resolvedTarget = resolveTargetPath(componentFile.target, !!options.isFlattened)
 		const targetPath = join(cwd, resolvedTarget)
 		const targetDir = dirname(targetPath)
 
@@ -867,21 +853,21 @@ async function ensureManifestFilesAreTracked(opencodeDir: string): Promise<void>
 /**
  * Updates package.json with new devDependencies.
  * For local mode: writes to .opencode/package.json and ensures git tracking.
- * For global or profile mode: writes directly to cwd/package.json.
+ * For flattened mode (global or profile): writes directly to cwd/package.json.
  */
 async function updateOpencodeDevDependencies(
 	cwd: string,
 	npmDeps: string[],
 	npmDevDeps: string[],
-	options: { isGlobal?: boolean; isProfile?: boolean } = {},
+	options: { isFlattened?: boolean } = {},
 ): Promise<void> {
 	// Guard: no deps to process
 	const allDepSpecs = [...npmDeps, ...npmDevDeps]
 	if (allDepSpecs.length === 0) return
 
-	// Global or profile mode: write directly to cwd, no .opencode prefix
+	// Flattened mode: write directly to cwd, no .opencode prefix
 	// Local mode: write to .opencode subdirectory
-	const packageDir = options.isGlobal || options.isProfile ? cwd : join(cwd, ".opencode")
+	const packageDir = options.isFlattened ? cwd : join(cwd, ".opencode")
 
 	// Ensure directory exists
 	await mkdir(packageDir, { recursive: true })
@@ -895,7 +881,7 @@ async function updateOpencodeDevDependencies(
 	await Bun.write(join(packageDir, "package.json"), `${JSON.stringify(updated, null, 2)}\n`)
 
 	// Ensure manifest files are tracked by git (only for local mode)
-	if (!options.isGlobal && !options.isProfile) {
+	if (!options.isFlattened) {
 		await ensureManifestFilesAreTracked(packageDir)
 	}
 }
