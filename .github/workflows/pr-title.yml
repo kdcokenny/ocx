@@ -17,8 +17,7 @@ jobs:
     if: github.repository == 'kdcokenny/ocx'
     timeout-minutes: 2
     steps:
-      # Pinned to SHA for security (pull_request_target runs with elevated permissions)
-      - uses: amannn/action-semantic-pull-request@0723d8574fba920b731904c2100393fee6cb61a5  # v6.0.0
+      - uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
