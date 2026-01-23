@@ -7,6 +7,7 @@
  */
 
 import { Option } from "commander"
+import { InvalidProfileNameError } from "./errors"
 
 // =============================================================================
 // OPTION FACTORIES
@@ -25,6 +26,9 @@ export const sharedOptions = {
 
 	/** Output as JSON */
 	json: () => new Option("--json", "Output as JSON"),
+
+	/** Target a specific profile's config */
+	profile: () => new Option("-p, --profile <name>", "Target a specific profile's config"),
 
 	/** Skip confirmation prompts */
 	force: () => new Option("-f, --force", "Skip confirmation prompts"),
@@ -106,4 +110,40 @@ export function addOutputOptions<T extends { addOption: (opt: Option) => T }>(cm
  */
 export function addGlobalOption<T extends { addOption: (opt: Option) => T }>(cmd: T): T {
 	return cmd.addOption(sharedOptions.global)
+}
+
+/**
+ * Adds the --profile option to a command.
+ */
+export function addProfileOption<T extends { addOption: (opt: Option) => T }>(cmd: T): T {
+	return cmd.addOption(sharedOptions.profile())
+}
+
+// =============================================================================
+// VALIDATION HELPERS
+// =============================================================================
+
+/**
+ * Validates a profile name and throws if invalid.
+ * Profile names must:
+ * - Be non-empty
+ * - Be 32 characters or less
+ * - Start with a letter
+ * - Contain only letters, numbers, dots, underscores, or hyphens
+ *
+ * @throws InvalidProfileNameError if validation fails
+ */
+export function validateProfileName(name: string): void {
+	if (!name || name.length === 0) {
+		throw new InvalidProfileNameError(name, "cannot be empty")
+	}
+	if (name.length > 32) {
+		throw new InvalidProfileNameError(name, "must be 32 characters or less")
+	}
+	if (!/^[a-zA-Z][a-zA-Z0-9._-]*$/.test(name)) {
+		throw new InvalidProfileNameError(
+			name,
+			"must start with a letter and contain only alphanumeric characters, dots, underscores, or hyphens",
+		)
+	}
 }

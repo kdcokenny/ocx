@@ -218,7 +218,7 @@ describe("ocx registry --global", () => {
 			{ env },
 		)
 		expect(result.exitCode).toBe(1)
-		expect(result.stderr).toContain("Cannot use --global with --cwd")
+		expect(result.stderr).toContain("Cannot use both --global and --cwd")
 
 		// Verify NO side effects - global config unchanged
 		expect(await Bun.file(join(globalConfigDir, "ocx.jsonc")).text()).toBe(originalGlobalConfig)
@@ -237,7 +237,7 @@ describe("ocx registry --global", () => {
 
 		const result = await runCLI(["registry", "add", "--global", registry.url], testDir, { env })
 		expect(result.exitCode).toBe(1)
-		expect(result.stderr).toContain("Global config not found")
+		expect(result.stderr).toContain("global config not found")
 
 		// Verify global config was NOT created as side effect
 		await assertFileNotExists(join(globalConfigDir, "ocx.jsonc"))
@@ -252,7 +252,7 @@ describe("ocx registry --global", () => {
 
 		const result = await runCLI(["registry", "list", "--global"], testDir, { env })
 		expect(result.exitCode).toBe(0) // Should NOT error, just warn
-		expect(result.stderr).toContain("Global config not found")
+		expect(result.stderr).toContain("global config not found")
 
 		// Verify global config was NOT created
 		await assertFileNotExists(join(globalConfigDir, "ocx.jsonc"))
@@ -362,5 +362,264 @@ describe("ocx registry --global", () => {
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
 		await assertFileNotExists(join(testDir, "ocx.jsonc"))
+	})
+})
+
+describe("registry commands with --profile", () => {
+	let testDir: string
+	let globalTestDir: string
+
+	/** Type for parsed ocx config in tests */
+	interface ProfileTestOcxConfig {
+		registries: Record<string, { url: string }>
+	}
+
+	beforeEach(async () => {
+		testDir = await createTempDir("registry-profile")
+		globalTestDir = await createTempDir("registry-profile-global")
+
+		// Create a test profile with empty registries
+		const profileDir = join(globalTestDir, "opencode", "profiles", "test-profile")
+		await mkdir(profileDir, { recursive: true })
+		await Bun.write(join(profileDir, "ocx.jsonc"), JSON.stringify({ registries: {} }, null, 2))
+	})
+
+	afterEach(async () => {
+		await cleanupTempDir(testDir)
+		await cleanupTempDir(globalTestDir)
+	})
+
+	it("should add registry to specific profile", async () => {
+		const result = await runCLI(
+			[
+				"registry",
+				"add",
+				"https://test.registry",
+				"--name",
+				"test-reg",
+				"--profile",
+				"test-profile",
+			],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+		expect(result.exitCode).toBe(0)
+
+		// Verify registry was added to profile config
+		const profileConfig = await Bun.file(
+			join(globalTestDir, "opencode", "profiles", "test-profile", "ocx.jsonc"),
+		).text()
+		const config = JSON.parse(profileConfig) as ProfileTestOcxConfig
+		expect(config.registries["test-reg"]).toBeDefined()
+		expect(config.registries["test-reg"].url).toBe("https://test.registry")
+	})
+
+	it("should list registries from specific profile", async () => {
+		// First add a registry to profile
+		await runCLI(
+			[
+				"registry",
+				"add",
+				"https://test.registry",
+				"--name",
+				"profile-reg",
+				"--profile",
+				"test-profile",
+			],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+
+		// Then list
+		const result = await runCLI(
+			["registry", "list", "--profile", "test-profile", "--json"],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+		expect(result.exitCode).toBe(0)
+		const output = JSON.parse(result.stdout)
+		// JSON output: { success: true, data: { registries: [{ name, url, version }], locked } }
+		const profileReg = output.data.registries.find(
+			(r: { name: string }) => r.name === "profile-reg",
+		)
+		expect(profileReg).toBeDefined()
+		expect(profileReg.url).toBe("https://test.registry")
+	})
+
+	it("should remove registry from specific profile", async () => {
+		// First add a registry
+		await runCLI(
+			[
+				"registry",
+				"add",
+				"https://test.registry",
+				"--name",
+				"to-remove",
+				"--profile",
+				"test-profile",
+			],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+
+		// Then remove it
+		const result = await runCLI(
+			["registry", "remove", "to-remove", "--profile", "test-profile"],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+		expect(result.exitCode).toBe(0)
+
+		// Verify it's gone
+		const profileConfig = await Bun.file(
+			join(globalTestDir, "opencode", "profiles", "test-profile", "ocx.jsonc"),
+		).text()
+		const config = JSON.parse(profileConfig) as ProfileTestOcxConfig
+		expect(config.registries["to-remove"]).toBeUndefined()
+	})
+
+	it("should error when using both --global and --profile", async () => {
+		const result = await runCLI(
+			[
+				"registry",
+				"add",
+				"https://test.registry",
+				"--name",
+				"test",
+				"--global",
+				"--profile",
+				"test-profile",
+			],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+		expect(result.exitCode).not.toBe(0)
+		expect(result.stderr).toContain("Cannot use both --global and --profile")
+	})
+
+	it("should error when using both --cwd and --profile", async () => {
+		const result = await runCLI(
+			[
+				"registry",
+				"add",
+				"https://test.registry",
+				"--name",
+				"test",
+				"--cwd",
+				testDir,
+				"--profile",
+				"test-profile",
+			],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+		expect(result.exitCode).not.toBe(0)
+		expect(result.stderr).toContain("Cannot use both --cwd and --profile")
+	})
+
+	it("should error when profile does not exist", async () => {
+		const result = await runCLI(
+			["registry", "add", "https://test.registry", "--name", "test", "--profile", "nonexistent"],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+		expect(result.exitCode).not.toBe(0)
+		expect(result.stderr).toContain("not found")
+	})
+
+	it("should error when profiles directory not initialized", async () => {
+		// Use a fresh temp dir with no profiles directory
+		const emptyGlobalDir = await createTempDir("registry-profile-empty")
+
+		const result = await runCLI(
+			["registry", "add", "https://test.registry", "--name", "test", "--profile", "any-profile"],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: emptyGlobalDir } },
+		)
+		expect(result.exitCode).not.toBe(0)
+		expect(result.stderr).toContain("Profiles not initialized")
+
+		await cleanupTempDir(emptyGlobalDir)
+	})
+
+	it("should error when profile exists but ocx.jsonc missing", async () => {
+		// Create profile directory without ocx.jsonc
+		const profileDir = join(globalTestDir, "opencode", "profiles", "no-config-profile")
+		await mkdir(profileDir, { recursive: true })
+		// Don't create ocx.jsonc
+
+		const result = await runCLI(
+			[
+				"registry",
+				"add",
+				"https://test.registry",
+				"--name",
+				"test",
+				"--profile",
+				"no-config-profile",
+			],
+			testDir,
+			{ env: { XDG_CONFIG_HOME: globalTestDir } },
+		)
+		expect(result.exitCode).not.toBe(0)
+		expect(result.stderr).toContain("has no ocx.jsonc")
+	})
+
+	it("should error on invalid profile name", async () => {
+		// Note: Empty string "" is handled by Commander and falls back to local scope,
+		// so we skip it here. This tests the validateProfileName function.
+		const invalidNames = [
+			"../malicious",
+			"foo/bar",
+			".hidden",
+			"-starts-dash",
+			"1starts-digit", // Must start with letter, not digit
+			"a".repeat(33), // 33 chars exceeds 32 char limit
+			"has space",
+		]
+
+		for (const name of invalidNames) {
+			const result = await runCLI(["registry", "list", "--profile", name], testDir, {
+				env: { XDG_CONFIG_HOME: globalTestDir },
+			})
+			expect(result.exitCode).not.toBe(0)
+			expect(result.stderr).toContain("Invalid profile name")
+		}
+	})
+
+	it("should ignore OCX_PROFILE env var", async () => {
+		// Setup: local has "local-reg", profile has "profile-reg"
+		await mkdir(join(testDir, ".opencode"), { recursive: true })
+		await Bun.write(
+			join(testDir, ".opencode", "ocx.jsonc"),
+			JSON.stringify({ registries: { "local-reg": { url: "https://local.test" } } }),
+		)
+
+		const envProfileDir = join(globalTestDir, "opencode", "profiles", "env-test-profile")
+		await mkdir(envProfileDir, { recursive: true })
+		await Bun.write(
+			join(envProfileDir, "ocx.jsonc"),
+			JSON.stringify({ registries: { "profile-reg": { url: "https://profile.test" } } }),
+		)
+
+		// Run with OCX_PROFILE set but NO --profile flag
+		const result = await runCLI(["registry", "list", "--json"], testDir, {
+			env: { XDG_CONFIG_HOME: globalTestDir, OCX_PROFILE: "env-test-profile" },
+		})
+
+		expect(result.exitCode).toBe(0)
+		const output = JSON.parse(result.stdout)
+
+		// JSON output: { success: true, data: { registries: [{ name, url, version }], locked } }
+		const localReg = output.data.registries.find((r: { name: string }) => r.name === "local-reg")
+		const profileReg = output.data.registries.find(
+			(r: { name: string }) => r.name === "profile-reg",
+		)
+
+		// Assert: local registry IS present (proves local scope used)
+		expect(localReg).toBeDefined()
+
+		// Assert: profile registry is NOT present (proves env var ignored)
+		expect(profileReg).toBeUndefined()
 	})
 })
