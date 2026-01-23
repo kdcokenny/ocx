@@ -29,9 +29,16 @@ export async function runCLI(
 	await mkdir(cwd, { recursive: true })
 
 	// Use Bun.spawn with explicit argument array (not shell string interpolation)
+	// BUNV_AUTO_INSTALL=1 prevents bunv version manager from prompting in non-TTY
 	const proc = Bun.spawn(["bun", "run", indexPath, ...args], {
 		cwd,
-		env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", ...options?.env },
+		env: {
+			...process.env,
+			NO_COLOR: "1",
+			FORCE_COLOR: "0",
+			BUNV_AUTO_INSTALL: "1",
+			...options?.env,
+		},
 		stdout: "pipe",
 		stderr: "pipe",
 	})

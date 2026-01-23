@@ -18,6 +18,7 @@ import { registerProfileCommand } from "./commands/profile/index"
 import { registerRegistryCommand } from "./commands/registry"
 import { registerSearchCommand } from "./commands/search"
 import { registerSelfCommand } from "./commands/self/index"
+import { registerUninstallCommand } from "./commands/uninstall"
 import { registerUpdateCommand } from "./commands/update"
 import { registerUpdateCheckHook } from "./self-update/index"
 import { handleError } from "./utils/index"
@@ -49,6 +50,9 @@ async function main() {
 
 	// Migration command (temporary - remove in next minor version)
 	registerGhostCommand(program)
+
+	// Uninstall command
+	registerUninstallCommand(program)
 
 	// Register update check hook (runs after each command)
 	registerUpdateCheckHook(program)

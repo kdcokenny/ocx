@@ -404,6 +404,42 @@ Use profile commands to manage multiple configurations:
 
 **Note:** The ghost command group is temporary and will be removed in the next minor version. It helps users migrate from the legacy "ghost mode" configuration format (`ghost.jsonc`) to the unified profile system (`ocx.jsonc`).
 
+#### Uninstall Command
+
+| Command | Description |
+|---------|-------------|
+| `ocx uninstall` | Remove global OCX configs (~/.config/opencode/) |
+| `ocx uninstall --local` | Remove local .opencode/ only |
+| `ocx uninstall --all` | Remove both global and local configs |
+| `ocx uninstall --dry-run` | Preview what would be removed |
+
+**Exit Codes:**
+- `0` - Success (all items removed or already missing)
+- `1` - Partial failure (some items could not be removed)
+- `2` - Validation error (invalid flag combination)
+- `3` - Safety error (containment violation)
+
+**Examples:**
+```bash
+# Remove global configs (profiles and ocx.jsonc)
+ocx uninstall
+
+# Preview what would be removed
+ocx uninstall --dry-run
+
+# Remove only local project config
+ocx uninstall --local
+
+# Remove everything (global + local)
+ocx uninstall --all
+```
+
+**Safety:**
+- Only removes OCX-managed files (profiles/, ocx.jsonc)
+- Global root directory only deleted if empty after cleanup
+- Symlinks are unlinked, not followed
+- Missing files are silently skipped
+
 #### Command Examples
 
 ```bash
