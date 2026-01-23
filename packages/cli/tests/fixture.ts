@@ -32,7 +32,7 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>): Promise<{
 	extra: T
 	[Symbol.asyncDispose]: () => Promise<void>
 }> {
-	const dirpath = path.join(os.tmpdir(), "ocx-test-" + Math.random().toString(36).slice(2))
+	const dirpath = path.join(os.tmpdir(), `ocx-test-${Math.random().toString(36).slice(2)}`)
 	await fs.mkdir(dirpath, { recursive: true })
 
 	// Git setup

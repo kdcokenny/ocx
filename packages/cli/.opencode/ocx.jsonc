@@ -1,0 +1,13 @@
+{
+	"$schema": "https://ocx.kdco.dev/schemas/ocx.json",
+	"registries": {
+		"example": {
+			"url": "https://example.com"
+		},
+		"test": {
+			"url": "https://example.com"
+		}
+	},
+	"lockRegistries": false,
+	"skipCompatCheck": false
+}

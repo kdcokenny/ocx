@@ -180,18 +180,18 @@ describe("registry add --force", () => {
 describe("registry add --force with --global", () => {
 	let testDir: string
 	let globalTestDir: string
-	let globalConfigDir: string
 	let registry: MockRegistry
 	let env: Record<string, string>
 
 	beforeEach(async () => {
 		globalTestDir = await mkdtemp(join(tmpdir(), "registry-force-global-"))
 		testDir = await createTempDir("registry-force-global-local")
-		globalConfigDir = join(globalTestDir, "opencode")
-		await mkdir(globalConfigDir, { recursive: true })
-		await Bun.write(join(globalConfigDir, "ocx.jsonc"), JSON.stringify({ registries: {} }, null, 2))
-		registry = startMockRegistry()
 		env = { XDG_CONFIG_HOME: globalTestDir }
+
+		// Use CLI to create global config (belt-and-suspenders approach)
+		await runCLI(["init", "--global"], testDir, { env })
+
+		registry = startMockRegistry()
 	})
 
 	afterEach(async () => {
@@ -223,11 +223,11 @@ describe("registry add --force with --profile", () => {
 	beforeEach(async () => {
 		testDir = await createTempDir("registry-force-profile")
 		globalTestDir = await createTempDir("registry-force-profile-global")
+		const env = { XDG_CONFIG_HOME: globalTestDir }
 
-		// Create test profile with empty registries
-		const profileDir = join(globalTestDir, "opencode", "profiles", "test-profile")
-		await mkdir(profileDir, { recursive: true })
-		await Bun.write(join(profileDir, "ocx.jsonc"), JSON.stringify({ registries: {} }, null, 2))
+		// Use CLI to create global config and profile (belt-and-suspenders approach)
+		await runCLI(["init", "--global"], testDir, { env })
+		await runCLI(["profile", "add", "test-profile"], testDir, { env })
 	})
 
 	afterEach(async () => {
@@ -287,14 +287,13 @@ describe("ocx registry --global", () => {
 	beforeEach(async () => {
 		globalTestDir = await mkdtemp(join(tmpdir(), "registry-global-"))
 		testDir = await createTempDir("registry-global-local")
+		env = { XDG_CONFIG_HOME: globalTestDir }
 
-		// Create global config directory and file
+		// Use CLI to create global config (belt-and-suspenders approach)
+		await runCLI(["init", "--global"], testDir, { env })
 		globalConfigDir = join(globalTestDir, "opencode")
-		await mkdir(globalConfigDir, { recursive: true })
-		await Bun.write(join(globalConfigDir, "ocx.jsonc"), JSON.stringify({ registries: {} }, null, 2))
 
 		registry = startMockRegistry()
-		env = { XDG_CONFIG_HOME: globalTestDir }
 	})
 
 	afterEach(async () => {
@@ -316,7 +315,7 @@ describe("ocx registry --global", () => {
 		// Verify correct data written to global config
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
 		expect(globalConfig).not.toBeNull()
-		expect(globalConfig!.registries["test-global"]).toEqual({ url: registry.url })
+		expect(globalConfig?.registries["test-global"]).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created/modified
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -366,7 +365,7 @@ describe("ocx registry --global", () => {
 		// Verify it was added
 		let globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
 		expect(globalConfig).not.toBeNull()
-		expect(globalConfig!.registries["test-remove"]).toBeDefined()
+		expect(globalConfig?.registries["test-remove"]).toBeDefined()
 
 		// Now remove it
 		const result = await runCLI(["registry", "remove", "--global", "test-remove"], testDir, { env })
@@ -376,7 +375,7 @@ describe("ocx registry --global", () => {
 		// Verify it was ACTUALLY removed from file
 		globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
 		expect(globalConfig).not.toBeNull()
-		expect(globalConfig!.registries["test-remove"]).toBeUndefined()
+		expect(globalConfig?.registries["test-remove"]).toBeUndefined()
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -454,7 +453,7 @@ describe("ocx registry --global", () => {
 		// Verify data was actually written
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
 		expect(globalConfig).not.toBeNull()
-		expect(globalConfig!.registries.order1).toEqual({ url: registry.url })
+		expect(globalConfig?.registries.order1).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -472,7 +471,7 @@ describe("ocx registry --global", () => {
 		// Verify data was actually written
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
 		expect(globalConfig).not.toBeNull()
-		expect(globalConfig!.registries.order2).toEqual({ url: registry.url })
+		expect(globalConfig?.registries.order2).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -490,7 +489,7 @@ describe("ocx registry --global", () => {
 		// Verify data was actually written
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
 		expect(globalConfig).not.toBeNull()
-		expect(globalConfig!.registries.order3).toEqual({ url: registry.url })
+		expect(globalConfig?.registries.order3).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -531,13 +530,13 @@ describe("ocx registry --global", () => {
 		// Verify auto-generated name was written
 		const globalConfig = await readConfig(join(globalConfigDir, "ocx.jsonc"))
 		expect(globalConfig).not.toBeNull()
-		const keys = Object.keys(globalConfig!.registries)
+		const keys = Object.keys(globalConfig?.registries)
 		expect(keys).toHaveLength(1)
 
 		// Name should be derived from hostname (localhost or 127-0-0-1 depending on registry.url)
 		const generatedName = keys[0]
 		expect(generatedName).toMatch(/^(localhost|127-0-0-1)$/)
-		expect(globalConfig!.registries[generatedName]).toEqual({ url: registry.url })
+		expect(globalConfig?.registries[generatedName]).toEqual({ url: registry.url })
 
 		// Verify local config was NOT created as side effect
 		await assertFileNotExists(join(testDir, ".opencode", "ocx.jsonc"))
@@ -557,11 +556,11 @@ describe("registry commands with --profile", () => {
 	beforeEach(async () => {
 		testDir = await createTempDir("registry-profile")
 		globalTestDir = await createTempDir("registry-profile-global")
+		const env = { XDG_CONFIG_HOME: globalTestDir }
 
-		// Create a test profile with empty registries
-		const profileDir = join(globalTestDir, "opencode", "profiles", "test-profile")
-		await mkdir(profileDir, { recursive: true })
-		await Bun.write(join(profileDir, "ocx.jsonc"), JSON.stringify({ registries: {} }, null, 2))
+		// Use CLI to create global config and profile (belt-and-suspenders approach)
+		await runCLI(["init", "--global"], testDir, { env })
+		await runCLI(["profile", "add", "test-profile"], testDir, { env })
 	})
 
 	afterEach(async () => {

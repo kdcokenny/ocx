@@ -4,20 +4,19 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-const dir = path.join(os.tmpdir(), "ocx-test-data-" + process.pid)
+const dir = path.join(os.tmpdir(), `ocx-test-data-${process.pid}`)
 await fs.mkdir(dir, { recursive: true })
 
 afterAll(() => {
 	fsSync.rmSync(dir, { recursive: true, force: true })
 })
 
-// Set test home directory
-const testHome = path.join(dir, "home")
-await fs.mkdir(testHome, { recursive: true })
-process.env["HOME"] = testHome
+// NOTE: We do NOT override HOME because it breaks bun version manager (bunv).
+// Subprocesses would fail with "Bun v1.3.5 is not installed".
+// XDG directories provide sufficient isolation for test purposes.
 
 // Set XDG directories for complete isolation
-process.env["XDG_CONFIG_HOME"] = path.join(dir, "config")
-process.env["XDG_DATA_HOME"] = path.join(dir, "share")
-process.env["XDG_CACHE_HOME"] = path.join(dir, "cache")
-process.env["XDG_STATE_HOME"] = path.join(dir, "state")
+process.env.XDG_CONFIG_HOME = path.join(dir, "config")
+process.env.XDG_DATA_HOME = path.join(dir, "share")
+process.env.XDG_CACHE_HOME = path.join(dir, "cache")
+process.env.XDG_STATE_HOME = path.join(dir, "state")
