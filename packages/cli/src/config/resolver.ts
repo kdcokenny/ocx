@@ -343,10 +343,6 @@ export class ConfigResolver {
 			const localOcxConfig = this.loadLocalOcxConfig()
 			if (localOcxConfig) {
 				const localOcxPath = join(this.localConfigDir, OCX_CONFIG_FILE)
-				// Replace, don't merge - clear any existing first
-				for (const key of Object.keys(registries)) {
-					delete registries[key]
-				}
 				for (const [key, value] of Object.entries(localOcxConfig.registries)) {
 					registries[key] = value
 					origins.set(`registries.${key}`, { path: localOcxPath, source: "local-config" })
