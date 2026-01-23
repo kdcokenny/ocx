@@ -2,8 +2,9 @@
  * OpenCode Command
  *
  * Launch OpenCode with resolved configuration.
- * Uses ConfigResolver to merge global profile and local configs,
- * then spawns OpenCode with the merged configuration.
+ * Uses ConfigResolver with registry isolation (profile OR local, not merged).
+ * OpenCode config and instructions are additively merged when not excluded.
+ * Spawns OpenCode with the resolved configuration.
  */
 
 import { resolve } from "node:path"

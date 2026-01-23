@@ -171,7 +171,7 @@ This config applies to ALL profiles and may include:
 - Agent model assignments  
 - MCP servers that apply globally
 
-**For AI Agents**: Always check this file if you see unexpected behavior or settings that don't match your profile config. The global config merges with profile-specific configs.
+**For AI Agents**: Always check this file if you see unexpected behavior or settings that don't match your profile config. The global OpenCode config at `~/.config/opencode/opencode.jsonc` is separate from OCX profiles and only applies when no profile is active (or is merged by OpenCode itself, not OCX).
 
 ### Registry Tests
 

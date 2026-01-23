@@ -239,7 +239,7 @@ Users can add your registry using:
 ocx registry add https://example.com/registry --name my
 ```
 
-> **Tip:** Use `--global` to add the registry to your global config (`~/.config/opencode/ocx.jsonc`) so it's available across all projects:
+> **Tip:** Use `--global` to add the registry to your global config. Global registries are used when no profile is active, or can be explicitly included in profile configs:
 > ```bash
 > ocx registry add https://example.com --name my --global
 > ```

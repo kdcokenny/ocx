@@ -2,7 +2,8 @@
  * Config Show Command
  *
  * Display the resolved configuration for the current directory.
- * Uses ConfigResolver to merge global profile and local configs.
+ * Uses ConfigResolver with registry isolation (profile OR local, not merged).
+ * OpenCode config and instructions are additively merged when not excluded.
  */
 
 import type { Command } from "commander"

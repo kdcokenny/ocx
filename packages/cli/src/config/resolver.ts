@@ -1,11 +1,15 @@
 /**
- * ConfigResolver - Unified Configuration Resolution
+ * ConfigResolver - Scope-Isolated Configuration Resolution
  *
- * Handles the full configuration cascade:
- * 1. Global profile ocx.jsonc + opencode.jsonc (if resolved)
- * 2. Apply exclude/include patterns from profile
- * 3. Local .opencode/ocx.jsonc (if not excluded)
- * 4. Local .opencode/opencode.jsonc (if not excluded)
+ * OCX configs (ocx.jsonc) are ISOLATED per scope - they do NOT merge:
+ * - Profile mode: ONLY profile's registries are available
+ * - Local mode (no profile): ONLY local project's registries are available
+ *
+ * OpenCode configs (opencode.jsonc) DO merge: profile → local
+ * This is controlled by exclude/include patterns from the profile.
+ *
+ * Security: This isolation prevents global registries from injecting
+ * components into all projects.
  *
  * Follows the 5 Laws of Elegant Defense:
  * - Law 1 (Early Exit): Guard clauses handle edge cases at top
@@ -37,7 +41,7 @@ import type { RegistryConfig } from "../schemas/config"
  * The fully resolved configuration from all sources.
  */
 export interface ResolvedConfig {
-	/** Merged registries from all sources */
+	/** Registries from active scope (profile OR local, never merged) */
 	registries: Record<string, RegistryConfig>
 	/** Component installation path */
 	componentPath: string
@@ -167,7 +171,10 @@ function filterByPatterns(files: string[], exclude: string[], include: string[])
 // =============================================================================
 
 /**
- * Unified configuration resolver that handles the full cascade.
+ * Configuration resolver with scope-isolated registries.
+ *
+ * Registries are scoped: profile registries OR local registries, never merged.
+ * OpenCode config and instructions use additive merging across scopes.
  *
  * Use the static `create()` factory to construct; it parses at the boundary
  * so that `resolve()` and getter methods can be synchronous and pure.
@@ -228,7 +235,10 @@ export class ConfigResolver {
 	}
 
 	/**
-	 * Resolve the merged configuration.
+	 * Resolve configuration with registry isolation.
+	 *
+	 * Registries: Uses profile's OR local's (isolated, not merged)
+	 * OpenCode config: Additively merged (profile + local if not excluded)
 	 *
 	 * Uses memoization - first call computes, subsequent calls return cached result.
 	 * Pure function (Law 3: Atomic Predictability) - same instance always returns same result.
@@ -258,21 +268,23 @@ export class ConfigResolver {
 		// 3. Check exclude/include patterns
 		const shouldLoadLocal = this.shouldLoadLocalConfig()
 
-		// 4. Apply local config if not excluded
-		if (shouldLoadLocal && this.localConfigDir) {
+		// 4. Apply local OCX registries ONLY when no profile active (isolation)
+		if (!this.profile && shouldLoadLocal && this.localConfigDir) {
 			const localOcxConfig = this.loadLocalOcxConfig()
 			if (localOcxConfig) {
-				registries = { ...registries, ...localOcxConfig.registries }
-				// Local componentPath does NOT override profile (profile wins)
+				registries = localOcxConfig.registries
 			}
+		}
 
+		// 5. Apply local OpenCode config (DOES merge with profile)
+		if (shouldLoadLocal && this.localConfigDir) {
 			const localOpencodeConfig = this.loadLocalOpencodeConfig()
 			if (localOpencodeConfig) {
 				opencode = this.deepMerge(opencode, localOpencodeConfig)
 			}
 		}
 
-		// 5. Discover instruction files
+		// 6. Discover instruction files
 		const instructions = this.discoverInstructions()
 
 		this.cachedConfig = {
@@ -326,17 +338,24 @@ export class ConfigResolver {
 		// 3. Check exclude/include patterns
 		const shouldLoadLocal = this.shouldLoadLocalConfig()
 
-		// 4. Apply local config if not excluded
-		if (shouldLoadLocal && this.localConfigDir) {
+		// 4. Apply local OCX registries ONLY when no profile active (isolation)
+		if (!this.profile && shouldLoadLocal && this.localConfigDir) {
 			const localOcxConfig = this.loadLocalOcxConfig()
 			if (localOcxConfig) {
 				const localOcxPath = join(this.localConfigDir, OCX_CONFIG_FILE)
+				// Replace, don't merge - clear any existing first
+				for (const key of Object.keys(registries)) {
+					delete registries[key]
+				}
 				for (const [key, value] of Object.entries(localOcxConfig.registries)) {
 					registries[key] = value
 					origins.set(`registries.${key}`, { path: localOcxPath, source: "local-config" })
 				}
 			}
+		}
 
+		// 5. Apply local OpenCode config (DOES merge with profile)
+		if (shouldLoadLocal && this.localConfigDir) {
 			const localOpencodeConfig = this.loadLocalOpencodeConfig()
 			if (localOpencodeConfig) {
 				opencode = this.deepMerge(opencode, localOpencodeConfig)
@@ -347,7 +366,7 @@ export class ConfigResolver {
 			}
 		}
 
-		// 5. Discover instruction files
+		// 6. Discover instruction files
 		const instructions = this.discoverInstructions()
 
 		return {
@@ -512,7 +531,10 @@ export class ConfigResolver {
 	// =========================================================================
 
 	/**
-	 * Get merged registries from all sources.
+	 * Get registries from the active scope (profile OR local, not merged).
+	 *
+	 * When a profile is active: returns ONLY profile's registries
+	 * When no profile: returns ONLY local registries
 	 */
 	getRegistries(): Record<string, RegistryConfig> {
 		return this.resolve().registries

@@ -227,7 +227,7 @@ packages/cli/          # Main CLI tool (@ocx/cli)
       build.ts         # Build components
       diff.ts          # Component diff
       ghost/           # [TEMPORARY] Ghost mode migration
-    config/            # Config providers and merging
+    config/            # Config providers and resolution
     profile/           # Profile management (manager, paths)
     registry/          # Registry fetching/resolution
     schemas/           # Zod schemas and config parsing
@@ -252,7 +252,7 @@ OCX provides a global profile system for managing multiple OpenCode configuratio
 |-----------|----------|---------|
 | `ProfileManager` | `src/profile/manager.ts` | Static factory for profile CRUD operations |
 | `profile/paths.ts` | `src/profile/paths.ts` | Path constants and helpers for profile directories |
-| `ConfigProvider` | `src/config/provider.ts` | Merges configs from multiple sources |
+| `ConfigProvider` | `src/config/provider.ts` | Provides config from a single isolated scope |
 | Profile commands | `src/commands/profile/` | list, add, remove, show, config |
 | Config commands | `src/commands/config/` | show, edit |
 | OpenCode commands | `src/commands/opencode/` | Launch OpenCode with merged config |
@@ -288,22 +288,25 @@ Profiles are resolved in this order:
 3. `default` profile (if it exists)
 4. No profile (base configs only)
 
-### Configuration Cascade
+### Configuration Isolation
 
-Configurations are merged in this order (later sources override earlier ones):
+OCX configs (`ocx.jsonc`) are **ISOLATED per scope** - they do NOT merge.
 
-1. **Global ocx.jsonc** - Always applied if it exists
-2. **Global profile configs** - If a profile is resolved:
-   - Profile's `ocx.jsonc` settings
-   - Profile's `opencode.jsonc` configuration
-3. **Apply exclude/include patterns** - Filter which local configs to load
-4. **Local .opencode/ocx.jsonc** - Project-specific config (if not excluded)
-5. **Local .opencode/opencode.jsonc** - Project OpenCode config (if not excluded)
+**Registry Isolation (Security Model):**
+- **Global registries** (in `~/.config/opencode/ocx.jsonc`) - ONLY used for downloading global settings like profiles
+- **Profile registries** (in profile's `ocx.jsonc`) - ONLY available when using that profile
+- **Local registries** (in `.opencode/ocx.jsonc`) - ONLY for that project
+
+This prevents global registries from injecting components into all projects.
+
+**What DOES merge:**
+- OpenCode config files (`opencode.jsonc`) merge: profile → local (if not excluded by patterns)
+- Profile's exclude/include patterns control which project files OpenCode can see
 
 ### How `ocx opencode` Works
 
 1. **Profile resolution**: Uses priority order (flag > env var > default > none)
-2. **Config merging**: Follows the cascade above to build final configuration
+2. **Config isolation**: Uses registries from ACTIVE SCOPE ONLY (profile or local, not both)
 3. **Instruction file discovery**:
    - Walks UP from project directory to git root
    - Finds AGENTS.md, CLAUDE.md, CONTEXT.md at each level
@@ -373,7 +376,7 @@ Use profile commands to manage multiple configurations:
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `ocx config show` | - | Show merged config |
+| `ocx config show` | - | Show config from current scope |
 | `ocx config show --origin` | - | Show config with sources |
 | `ocx config edit` | - | Edit local config |
 | `ocx config edit --global` | - | Edit global config |
@@ -427,7 +430,7 @@ OCX_PROFILE=work ocx opencode
 # Clone settings from existing profile
 ocx profile add client-x --from work
 
-# View merged configuration
+# View configuration from current scope
 ocx config show
 ocx config show --origin  # See where each setting comes from
 

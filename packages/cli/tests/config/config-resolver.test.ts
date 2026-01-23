@@ -179,38 +179,5 @@ describe("ConfigResolver", () => {
 			expect(nested.shared).toBe("local-value") // Local wins
 			expect(config.opencode.topLevel).toBe("local") // Local wins
 		})
-
-		it("merges registries from profile and local (local overrides)", async () => {
-			await using tmp = await tmpdir({
-				git: true,
-				profile: {
-					name: "default",
-					ocxConfig: {
-						registries: {
-							shadcn: { url: "https://ui.shadcn.com" },
-							profile: { url: "https://profile.example.com" },
-						},
-						exclude: [],
-						include: [],
-					},
-				},
-				ocxConfig: {
-					registries: {
-						shadcn: { url: "https://custom.shadcn.com" }, // Override
-						local: { url: "https://local.example.com" }, // New
-					},
-				},
-			})
-
-			const resolver = await ConfigResolver.create(tmp.path)
-			const config = resolver.resolve()
-
-			// Local overrides profile for "shadcn"
-			expect(config.registries.shadcn?.url).toBe("https://custom.shadcn.com")
-			// Profile's "profile" registry preserved
-			expect(config.registries.profile?.url).toBe("https://profile.example.com")
-			// Local's "local" registry added
-			expect(config.registries.local?.url).toBe("https://local.example.com")
-		})
 	})
 })

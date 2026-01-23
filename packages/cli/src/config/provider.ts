@@ -25,7 +25,7 @@ export interface ConfigProvider {
 	/** Working directory for this config context */
 	readonly cwd: string
 
-	/** Get registries (sync - data already parsed at construction) */
+	/** Get registries for this scope (sync - data already parsed at construction) */
 	getRegistries(): Record<string, RegistryConfig>
 
 	/** Get component installation path */

@@ -74,7 +74,7 @@ See [examples/registry-starter](./examples/registry-starter) for the full templa
 
 - **npm Dependencies** — Plugins need packages? Installed automatically. No manual `package.json` editing.
 - **MCP Servers** — Registered to your config with one command. No manual JSON.
-- **Config Merging** — Components bring settings that merge safely with yours.
+- **Config Isolation** — Registries are isolated per scope for security. OpenCode settings merge safely.
 - **Lockfiles** — Track versions, verify integrity with SHA-256 hashes.
 - **Dependency Resolution** — Component A needs B? Both installed in correct order.
 - **Own Your Code** — Everything lives in `.opencode/`. Customize freely.
@@ -179,7 +179,7 @@ Profiles keep your configurations isolated and portable:
 
 | Command | Description |
 |---------|-------------|
-| `ocx config show` | Show merged configuration |
+| `ocx config show` | Show configuration from current scope |
 | `ocx config show --origin` | Show config with source annotations |
 | `ocx config edit` | Edit local .opencode/ocx.jsonc |
 | `ocx config edit --global` | Edit global ocx.jsonc |
@@ -198,11 +198,11 @@ Profiles keep your configurations isolated and portable:
 | `ocx init` | Initialize local .opencode/ directory |
 | `ocx init --global` | Initialize global profiles directory |
 
-> **How it works:** The profile system provides configuration isolation:
-> - Global profiles override local project configs by default
+> **How it works:** The profile system provides scope isolation:
+> - **Registry isolation**: Profile registries are ONLY available when using that profile (local registries are ignored)
+> - **OpenCode config merging**: Profile's `opencode.jsonc` merges with local (if not excluded)
 > - Uses `exclude`/`include` patterns to control which project instruction files are visible
-> - Profile instructions take priority over project files
-> - Configuration cascades from global → profile → local (with filtering)
+> - This prevents global registries from injecting into all projects (security)
 
 #### Config Location
 
@@ -240,7 +240,7 @@ Profile configurations are stored at `~/.config/opencode/profiles/<profile-name>
 
 #### Customizing File Visibility
 
-By default, profiles exclude all OpenCode project files (AGENTS.md, .opencode/, etc.) to provide isolation. OpenCode runs directly in the project directory with profile config passed via configuration merging. You can customize which files are included using glob patterns in your profile's ocx.jsonc:
+By default, profiles exclude all OpenCode project files (AGENTS.md, .opencode/, etc.) to provide isolation. OpenCode runs directly in the project directory with the profile's configuration. You can customize which files are included using glob patterns in your profile's ocx.jsonc:
 
 ```jsonc
 // ~/.config/opencode/profiles/default/ocx.jsonc
