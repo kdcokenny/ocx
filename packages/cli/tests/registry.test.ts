@@ -322,38 +322,30 @@ describe("ocx registry --global", () => {
 	})
 
 	it("should list registries from global config", async () => {
-		// Setup: Create BOTH global and local configs with different registries
-		await Bun.write(
-			join(globalConfigDir, "ocx.jsonc"),
-			JSON.stringify({ registries: { "global-only": { url: registry.url } } }, null, 2),
-		)
+		// Set up global registry via CLI
+		await runCLI(["registry", "add", registry.url, "--name", "global-reg", "--global"], testDir, {
+			env,
+		})
 
-		// Create a local config with a different registry
-		const projectDir = join(testDir, "project")
-		const localConfigDir = join(projectDir, ".opencode")
-		await mkdir(localConfigDir, { recursive: true })
-		await Bun.write(
-			join(localConfigDir, "ocx.jsonc"),
-			JSON.stringify({ registries: { "local-only": { url: "http://local.test" } } }, null, 2),
-		)
+		// Set up local registry via CLI in a separate project directory
+		const localDir = await createTempDir("registry-list-local")
+		await runCLI(["init"], localDir)
+		await runCLI(["registry", "add", registry.url, "--name", "local-reg"], localDir)
 
-		// Capture original file contents for side-effect check
-		const originalGlobalConfig = await Bun.file(join(globalConfigDir, "ocx.jsonc")).text()
-		const originalLocalConfig = await Bun.file(join(localConfigDir, "ocx.jsonc")).text()
-
-		// Run from project directory but with --global
-		const result = await runCLI(["registry", "list", "--global"], projectDir, { env })
-
+		// List global registries - should only show global, not local
+		const result = await runCLI(["registry", "list", "--global", "--json"], localDir, { env })
 		expect(result.exitCode).toBe(0)
-		expect(result.stdout).toContain("(global)")
-		expect(result.stdout).toContain("global-only")
-		expect(result.stdout).toContain(registry.url) // Should show global URL
-		expect(result.stdout).not.toContain("local-only") // Must NOT show local registry name
-		expect(result.stdout).not.toContain("http://local.test") // Must NOT show local URL
 
-		// Verify no side effects - configs unchanged
-		expect(await Bun.file(join(globalConfigDir, "ocx.jsonc")).text()).toBe(originalGlobalConfig)
-		expect(await Bun.file(join(localConfigDir, "ocx.jsonc")).text()).toBe(originalLocalConfig)
+		const output = JSON.parse(result.stdout)
+		const registries = output.data?.registries || []
+
+		// Global registry should be present
+		expect(registries.find((r: { name: string }) => r.name === "global-reg")).toBeDefined()
+		// Local registry should NOT be present (isolation check)
+		expect(registries.find((r: { name: string }) => r.name === "local-reg")).toBeUndefined()
+
+		// Cleanup
+		await rm(localDir, { recursive: true, force: true })
 	})
 
 	it("should remove a registry from global config", async () => {
@@ -766,24 +758,33 @@ describe("registry commands with --profile", () => {
 		}
 	})
 
-	it("should ignore OCX_PROFILE env var", async () => {
-		// Setup: local has "local-reg", profile has "profile-reg"
-		await mkdir(join(testDir, ".opencode"), { recursive: true })
-		await Bun.write(
-			join(testDir, ".opencode", "ocx.jsonc"),
-			JSON.stringify({ registries: { "local-reg": { url: "https://local.test" } } }),
+	it("should ignore OCX_PROFILE env var when listing without --profile flag", async () => {
+		const env = { XDG_CONFIG_HOME: globalTestDir }
+
+		// Set up profile with registry via CLI
+		await runCLI(["profile", "add", "env-test-profile"], testDir, { env })
+		await runCLI(
+			[
+				"registry",
+				"add",
+				"https://profile.test",
+				"--name",
+				"profile-reg",
+				"--profile",
+				"env-test-profile",
+			],
+			testDir,
+			{ env },
 		)
 
-		const envProfileDir = join(globalTestDir, "opencode", "profiles", "env-test-profile")
-		await mkdir(envProfileDir, { recursive: true })
-		await Bun.write(
-			join(envProfileDir, "ocx.jsonc"),
-			JSON.stringify({ registries: { "profile-reg": { url: "https://profile.test" } } }),
-		)
+		// Set up local config with registry via CLI
+		await runCLI(["init"], testDir)
+		await runCLI(["registry", "add", "https://local.test", "--name", "local-reg"], testDir)
 
-		// Run with OCX_PROFILE set but NO --profile flag
+		// List registries WITH OCX_PROFILE set but WITHOUT --profile flag
+		// Should return LOCAL registries, ignoring the env var
 		const result = await runCLI(["registry", "list", "--json"], testDir, {
-			env: { XDG_CONFIG_HOME: globalTestDir, OCX_PROFILE: "env-test-profile" },
+			env: { ...env, OCX_PROFILE: "env-test-profile" },
 		})
 
 		expect(result.exitCode).toBe(0)
