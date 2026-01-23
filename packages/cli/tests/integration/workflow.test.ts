@@ -65,8 +65,8 @@ describe("Integration: Global Workflow", () => {
 			env: { ...env, EDITOR: "echo", VISUAL: "echo" },
 		})
 		expect(edit.exitCode).toBe(0)
-		// Editor stub echoes the path - verify it contains opencode.jsonc or profile path
-		expect(edit.stdout).toContain("opencode")
+		// Editor stub echoes the path - verify it contains profile config path
+		expect(edit.stdout).toContain("ocx.jsonc")
 	})
 })
 

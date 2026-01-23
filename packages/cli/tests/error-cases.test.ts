@@ -82,7 +82,7 @@ describe("Error Cases", () => {
 				["registry", "add", "https://example.com", "--name", "test"],
 				testDir,
 			)
-			expect(result.exitCode).not.toBe(0)
+			expect(result.exitCode).toBe(1) // VALIDATION/GENERAL error
 			expect(result.stderr).toContain("Registries are locked")
 		})
 	})

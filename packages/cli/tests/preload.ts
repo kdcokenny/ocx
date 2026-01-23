@@ -20,3 +20,9 @@ process.env.XDG_CONFIG_HOME = path.join(dir, "config")
 process.env.XDG_DATA_HOME = path.join(dir, "share")
 process.env.XDG_CACHE_HOME = path.join(dir, "cache")
 process.env.XDG_STATE_HOME = path.join(dir, "state")
+
+// Create XDG directories to ensure they exist before tests run
+await fs.mkdir(process.env.XDG_CONFIG_HOME, { recursive: true })
+await fs.mkdir(process.env.XDG_DATA_HOME, { recursive: true })
+await fs.mkdir(process.env.XDG_CACHE_HOME, { recursive: true })
+await fs.mkdir(process.env.XDG_STATE_HOME, { recursive: true })
