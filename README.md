@@ -110,6 +110,8 @@ Like **Cargo**, OCX resolves dependencies, pins versions, and verifies integrity
 | `ocx update [component]` | Update to latest version |
 | `ocx diff [component]` | Show upstream changes |
 | `ocx registry add <url>` | Add a component registry (use `--global` for global config) |
+| `ocx self update` | Update OCX to the latest version |
+| `ocx self uninstall` | Remove OCX config and binary |
 
 [Full CLI Reference →](./docs/CLI.md)
 
