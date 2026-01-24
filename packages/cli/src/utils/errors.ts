@@ -42,9 +42,16 @@ export class NotFoundError extends OCXError {
 }
 
 export class NetworkError extends OCXError {
-	constructor(message: string) {
+	public readonly url?: string
+	public readonly status?: number
+	public readonly statusText?: string
+
+	constructor(message: string, options?: { url?: string; status?: number; statusText?: string }) {
 		super(message, "NETWORK_ERROR", EXIT_CODES.NETWORK)
 		this.name = "NetworkError"
+		this.url = options?.url
+		this.status = options?.status
+		this.statusText = options?.statusText
 	}
 }
 
@@ -70,7 +77,11 @@ export class ConflictError extends OCXError {
 }
 
 export class IntegrityError extends OCXError {
-	constructor(component: string, expected: string, found: string) {
+	constructor(
+		public readonly component: string,
+		public readonly expected: string,
+		public readonly found: string,
+	) {
 		const message =
 			`Integrity verification failed for "${component}"\n` +
 			`  Expected: ${expected}\n` +
@@ -101,16 +112,16 @@ export class OcxConfigError extends OCXError {
 // =============================================================================
 
 export class ProfileNotFoundError extends OCXError {
-	constructor(name: string) {
-		super(`Profile "${name}" not found`, "NOT_FOUND", EXIT_CODES.NOT_FOUND)
+	constructor(public readonly profile: string) {
+		super(`Profile "${profile}" not found`, "NOT_FOUND", EXIT_CODES.NOT_FOUND)
 		this.name = "ProfileNotFoundError"
 	}
 }
 
 export class ProfileExistsError extends OCXError {
-	constructor(name: string) {
+	constructor(public readonly profile: string) {
 		super(
-			`Profile "${name}" already exists. Use --force to overwrite.`,
+			`Profile "${profile}" already exists. Use --force to overwrite.`,
 			"CONFLICT",
 			EXIT_CODES.CONFLICT,
 		)
@@ -137,8 +148,11 @@ export class RegistryExistsError extends OCXError {
 }
 
 export class InvalidProfileNameError extends OCXError {
-	constructor(name: string, reason: string) {
-		super(`Invalid profile name "${name}": ${reason}`, "VALIDATION_ERROR", EXIT_CODES.GENERAL)
+	constructor(
+		public readonly profile: string,
+		public readonly reason: string,
+	) {
+		super(`Invalid profile name "${profile}": ${reason}`, "VALIDATION_ERROR", EXIT_CODES.GENERAL)
 		this.name = "InvalidProfileNameError"
 	}
 }

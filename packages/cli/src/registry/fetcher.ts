@@ -20,16 +20,37 @@ async function fetchWithCache<T>(url: string, parse: (data: unknown) => T): Prom
 	}
 
 	const promise = (async () => {
-		const response = await fetch(url)
+		let response: Response
+		try {
+			response = await fetch(url)
+		} catch (error) {
+			throw new NetworkError(
+				`Network request failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,
+				{ url },
+			)
+		}
 
 		if (!response.ok) {
 			if (response.status === 404) {
 				throw new NotFoundError(`Not found: ${url}`)
 			}
-			throw new NetworkError(`Failed to fetch ${url}: ${response.status} ${response.statusText}`)
+			throw new NetworkError(`Failed to fetch ${url}: ${response.status} ${response.statusText}`, {
+				url,
+				status: response.status,
+				statusText: response.statusText,
+			})
 		}
 
-		const data = await response.json()
+		let data: unknown
+		try {
+			data = await response.json()
+		} catch (error) {
+			throw new NetworkError(
+				`Invalid JSON response from ${url}: ${error instanceof Error ? error.message : String(error)}`,
+				{ url },
+			)
+		}
+
 		return parse(data)
 	})()
 
@@ -124,10 +145,20 @@ export async function fetchFileContent(
 ): Promise<string> {
 	const url = `${baseUrl.replace(/\/$/, "")}/components/${componentName}/${filePath}`
 
-	const response = await fetch(url)
+	let response: Response
+	try {
+		response = await fetch(url)
+	} catch (error) {
+		throw new NetworkError(
+			`Network request failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,
+			{ url },
+		)
+	}
+
 	if (!response.ok) {
 		throw new NetworkError(
-			`Failed to fetch file ${filePath} for ${componentName}: ${response.status} ${response.statusText}`,
+			`Failed to fetch file ${filePath} for ${componentName} from ${url}: ${response.status} ${response.statusText}`,
+			{ url, status: response.status, statusText: response.statusText },
 		)
 	}
 
@@ -136,3 +167,8 @@ export async function fetchFileContent(
 
 // Re-export types for convenience
 export type { ComponentManifest, RegistryIndex, McpServer }
+
+/** @internal Clear cache for testing purposes only */
+export function _clearFetcherCacheForTests(): void {
+	cache.clear()
+}

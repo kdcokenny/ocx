@@ -1,10 +1,21 @@
 import type { Server } from "bun"
 
+export interface RouteOverride {
+	status: number
+	body?: string
+	delay?: number
+	malformed?: boolean
+}
+
 export interface MockRegistry {
 	server: Server<unknown>
 	url: string
 	stop: () => void
 	setFileContent: (componentName: string, fileName: string, content: string) => void
+	setRouteError: (pathPattern: string, status: number, body?: string) => void
+	setRouteTimeout: (pathPattern: string, delayMs: number) => void
+	setRouteMalformed: (pathPattern: string) => void
+	clearRouteOverrides: () => void
 }
 
 /**
@@ -12,6 +23,7 @@ export interface MockRegistry {
  */
 export function startMockRegistry(): MockRegistry {
 	const customFiles = new Map<string, string>()
+	const routeOverrides = new Map<string, RouteOverride>()
 
 	const components = {
 		"test-plugin": {
@@ -106,9 +118,28 @@ export function startMockRegistry(): MockRegistry {
 
 	const server = Bun.serve({
 		port: 0, // Random port
-		fetch(req) {
+		async fetch(req) {
 			const url = new URL(req.url)
 			const path = url.pathname
+
+			// Check for route overrides first
+			for (const [pattern, override] of routeOverrides) {
+				if (path.includes(pattern) || path === pattern) {
+					if (override.delay) {
+						await Bun.sleep(override.delay)
+					}
+					if (override.malformed) {
+						return new Response("not valid json {{{", {
+							status: 200,
+							headers: { "content-type": "application/json" },
+						})
+					}
+					return new Response(override.body ?? "", {
+						status: override.status,
+						statusText: override.status >= 500 ? "Server Error" : "Error",
+					})
+				}
+			}
 
 			if (path === "/index.json") {
 				return Response.json({
@@ -173,6 +204,18 @@ export function startMockRegistry(): MockRegistry {
 		stop: () => server.stop(),
 		setFileContent: (componentName: string, fileName: string, content: string) => {
 			customFiles.set(`${componentName}:${fileName}`, content)
+		},
+		setRouteError: (pathPattern: string, status: number, body?: string) => {
+			routeOverrides.set(pathPattern, { status, body })
+		},
+		setRouteTimeout: (pathPattern: string, delayMs: number) => {
+			routeOverrides.set(pathPattern, { status: 200, delay: delayMs })
+		},
+		setRouteMalformed: (pathPattern: string) => {
+			routeOverrides.set(pathPattern, { status: 200, malformed: true })
+		},
+		clearRouteOverrides: () => {
+			routeOverrides.clear()
 		},
 	}
 }

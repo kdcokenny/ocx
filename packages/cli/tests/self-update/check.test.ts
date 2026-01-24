@@ -54,71 +54,41 @@ describe("checkForUpdate", () => {
 	})
 
 	describe("network failure handling", () => {
+		let mockFetchPackageVersion: ReturnType<typeof mock>
+
+		beforeEach(() => {
+			mockFetchPackageVersion = mock(() => Promise.reject(new Error("Network error")))
+			mock.module("../../src/utils/npm-registry.js", () => ({
+				fetchPackageVersion: mockFetchPackageVersion,
+			}))
+		})
+
+		afterEach(() => {
+			mock.restore()
+		})
+
 		it("returns { ok: false } on network error", async () => {
-			// Mock fetch to throw network error
-			fetchSpy.mockRejectedValue(new Error("Network error"))
-
-			// Import the module which uses fetchPackageVersion internally
 			const { checkForUpdate } = await importCheckModule()
-
-			// Since we're in dev mode, it returns dev-version before network call
-			// This test verifies the early exit behavior
-			const result = await checkForUpdate()
+			// Use injected version to bypass dev-mode early exit
+			const result = await checkForUpdate({ version: "1.0.0" })
 			expect(result.ok).toBe(false)
-			// Note: In dev mode it still returns dev-version before network call
-			if (!result.ok) expect(result.reason).toBe("dev-version")
+			if (!result.ok) expect(result.reason).toBe("invalid-response")
 		})
 
 		it("returns { ok: false } on timeout", async () => {
-			// Mock fetch to hang (never resolve)
-			fetchSpy.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 10000)))
-
+			mockFetchPackageVersion.mockImplementation(
+				(_name: string, _version: string | undefined, signal?: AbortSignal) =>
+					new Promise((_resolve, reject) => {
+						// Listen to abort signal to simulate real fetch behavior
+						signal?.addEventListener("abort", () => reject(signal.reason))
+					}),
+			)
 			const { checkForUpdate } = await importCheckModule()
-
-			// In dev mode, returns dev-version before attempting fetch
-			const result = await checkForUpdate()
+			// Use injected version with short timeout
+			const result = await checkForUpdate({ version: "1.0.0" }, 100)
 			expect(result.ok).toBe(false)
-			if (!result.ok) expect(result.reason).toBe("dev-version")
+			if (!result.ok) expect(result.reason).toBe("timeout")
 		})
-	})
-})
-
-// =============================================================================
-// Tests for version comparison logic (via exported checkForUpdate behavior)
-// Since the version utilities are not exported, we test them indirectly
-// =============================================================================
-
-describe("version comparison", () => {
-	// These tests verify the semver parsing logic by testing expected behavior
-	// Since parseVersion and compareSemver are internal, we can't test them directly
-
-	it("should handle standard semver format", () => {
-		// Test via the module's internal logic expectations
-		// Major.Minor.Patch parsing
-		const testCases = [
-			{ version: "1.0.0", expected: { major: 1, minor: 0, patch: 0 } },
-			{ version: "2.3.4", expected: { major: 2, minor: 3, patch: 4 } },
-			{ version: "10.20.30", expected: { major: 10, minor: 20, patch: 30 } },
-		]
-
-		// These are documentation tests - the actual parsing is internal
-		for (const tc of testCases) {
-			const [main] = tc.version.split("-")
-			const parts = main.split(".")
-			expect(parseInt(parts[0], 10)).toBe(tc.expected.major)
-			expect(parseInt(parts[1], 10)).toBe(tc.expected.minor)
-			expect(parseInt(parts[2], 10)).toBe(tc.expected.patch)
-		}
-	})
-
-	it("should ignore prerelease suffixes when comparing", () => {
-		// Per the code: parseVersion strips prerelease for comparison
-		const versionsWithPrerelease = ["1.0.0-alpha", "1.0.0-beta.1", "1.0.0-rc.1", "2.0.0-dev"]
-
-		for (const v of versionsWithPrerelease) {
-			const [main] = v.split("-")
-			expect(main).toMatch(/^\d+\.\d+\.\d+$/)
-		}
 	})
 })
 

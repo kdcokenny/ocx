@@ -13,7 +13,13 @@ import {
 	type OpencodeConfig,
 	parseQualifiedComponent,
 } from "../schemas/registry"
-import { ConfigError, OCXError, ValidationError } from "../utils/errors"
+import {
+	ConfigError,
+	NetworkError,
+	NotFoundError,
+	OCXError,
+	ValidationError,
+} from "../utils/errors"
 import { fetchComponent } from "./fetcher"
 import { mergeOpencodeConfig } from "./merge"
 
@@ -109,10 +115,25 @@ export async function resolveDependencies(
 		let component: ComponentManifest
 		try {
 			component = await fetchComponent(regConfig.url, componentName)
-		} catch (_err) {
-			throw new OCXError(
-				`Component '${componentName}' not found in registry '${componentNamespace}'.`,
-				"NOT_FOUND",
+		} catch (err) {
+			// Re-throw network errors as-is (preserves exit code 69)
+			if (err instanceof NetworkError) {
+				throw err
+			}
+			// Convert NotFoundError to friendly message
+			if (err instanceof NotFoundError) {
+				throw new NotFoundError(
+					`Component '${componentName}' not found in registry '${componentNamespace}'.`,
+				)
+			}
+			// Re-throw other OCXError subclasses as-is
+			if (err instanceof OCXError) {
+				throw err
+			}
+			// Wrap unknown errors as NetworkError (likely connectivity issue)
+			throw new NetworkError(
+				`Failed to fetch component '${componentName}' from registry '${componentNamespace}': ${err instanceof Error ? err.message : String(err)}`,
+				{ url: regConfig.url },
 			)
 		}
 

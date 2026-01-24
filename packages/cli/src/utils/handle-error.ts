@@ -5,7 +5,17 @@
 
 import { ZodError } from "zod"
 
-import { EXIT_CODES, OCXError, RegistryExistsError } from "./errors"
+import { BuildRegistryError } from "../lib/build-registry"
+import {
+	EXIT_CODES,
+	IntegrityError,
+	InvalidProfileNameError,
+	NetworkError,
+	OCXError,
+	ProfileExistsError,
+	ProfileNotFoundError,
+	RegistryExistsError,
+} from "./errors"
 import { logger } from "./logger"
 
 export interface HandleErrorOptions {
@@ -110,6 +120,114 @@ function formatErrorAsJson(error: unknown): JsonErrorOutput {
 		}
 	}
 
+	if (error instanceof IntegrityError) {
+		return {
+			success: false,
+			error: {
+				code: error.code,
+				message: error.message,
+				details: {
+					component: error.component,
+					expected: error.expected,
+					found: error.found,
+				},
+			},
+			exitCode: error.exitCode,
+			meta: {
+				timestamp: new Date().toISOString(),
+			},
+		}
+	}
+
+	if (error instanceof NetworkError) {
+		const details: Record<string, unknown> = {}
+		if (error.url) details.url = error.url
+		if (error.status !== undefined) details.status = error.status
+		if (error.statusText) details.statusText = error.statusText
+
+		return {
+			success: false,
+			error: {
+				code: error.code,
+				message: error.message,
+				...(Object.keys(details).length > 0 && { details }),
+			},
+			exitCode: error.exitCode,
+			meta: {
+				timestamp: new Date().toISOString(),
+			},
+		}
+	}
+
+	if (error instanceof ProfileNotFoundError) {
+		return {
+			success: false,
+			error: {
+				code: error.code,
+				message: error.message,
+				details: {
+					profile: error.profile,
+				},
+			},
+			exitCode: error.exitCode,
+			meta: {
+				timestamp: new Date().toISOString(),
+			},
+		}
+	}
+
+	if (error instanceof ProfileExistsError) {
+		return {
+			success: false,
+			error: {
+				code: error.code,
+				message: error.message,
+				details: {
+					profile: error.profile,
+				},
+			},
+			exitCode: error.exitCode,
+			meta: {
+				timestamp: new Date().toISOString(),
+			},
+		}
+	}
+
+	if (error instanceof InvalidProfileNameError) {
+		return {
+			success: false,
+			error: {
+				code: error.code,
+				message: error.message,
+				details: {
+					profile: error.profile,
+					reason: error.reason,
+				},
+			},
+			exitCode: error.exitCode,
+			meta: {
+				timestamp: new Date().toISOString(),
+			},
+		}
+	}
+
+	if (error instanceof BuildRegistryError) {
+		return {
+			success: false,
+			error: {
+				code: "BUILD_ERROR",
+				message: error.message,
+				details: {
+					errors: error.errors,
+				},
+			},
+			exitCode: EXIT_CODES.GENERAL,
+			meta: {
+				timestamp: new Date().toISOString(),
+			},
+		}
+	}
+
 	if (error instanceof OCXError) {
 		return {
 			success: false,
@@ -130,6 +248,13 @@ function formatErrorAsJson(error: unknown): JsonErrorOutput {
 			error: {
 				code: "VALIDATION_ERROR",
 				message: error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+				details: {
+					issues: error.issues.map((i) => ({
+						path: i.path.join("."),
+						message: i.message,
+						code: i.code,
+					})),
+				},
 			},
 			exitCode: EXIT_CODES.CONFIG,
 			meta: {
