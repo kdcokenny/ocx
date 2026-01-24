@@ -23,6 +23,7 @@ ocx <command>
 - [`ocx registry`](#ocx-registry) - Manage registries
 - [`ocx build`](#ocx-build) - Build a registry from source
 - [`ocx self update`](#ocx-self-update) - Update OCX to latest version
+- [`ocx self uninstall`](#ocx-self-uninstall) - Remove OCX configuration and binary
 - [`ocx profile`](#ocx-profile) - Manage global profiles
 - [`ocx config`](#ocx-config) - View and edit configuration
 - [`ocx opencode`](#ocx-opencode) - Launch OpenCode with resolved configuration
@@ -793,6 +794,54 @@ ocx self update --method npm --force
 - OCX automatically detects how it was installed and uses the appropriate update method
 - For curl-installed binaries, downloads from GitHub releases with SHA256 verification
 - For npm/pnpm/bun installs, uses the respective package manager's global install
+
+---
+
+## ocx self uninstall
+
+Remove OCX global configuration files and binary.
+
+```bash
+ocx self uninstall [options]
+```
+
+### Options
+
+| Option      | Description                   |
+| ----------- | ----------------------------- |
+| `--dry-run` | Preview what would be removed |
+
+### What Gets Removed
+
+- `~/.config/opencode/profiles/` - All profiles
+- `~/.config/opencode/ocx.jsonc` - Global OCX config
+- `~/.config/opencode/` - Root directory (only if empty after cleanup)
+- Binary executable (for curl installs only; package-managed prints command)
+
+### Exit Codes
+
+| Code | Meaning                                            |
+| ---- | -------------------------------------------------- |
+| 0    | Success (removed, already missing, or dry-run)     |
+| 1    | Error (package-managed install, permission denied) |
+| 2    | Safety error (symlink root, containment violation) |
+
+### Examples
+
+```bash
+# Preview what would be removed
+ocx self uninstall --dry-run
+
+# Remove OCX installation
+ocx self uninstall
+```
+
+### Notes
+
+- **Package-managed installs**: If installed via npm/pnpm/bun/yarn, the command removes config files but prints the package manager removal command instead of deleting the binary directly.
+- **Safety**: Only removes known OCX files (allowlist approach). Unexpected files in the config directory are left untouched.
+- **Symlinks**: Symlinks are unlinked without following. Symlink targets are preserved.
+- **Idempotent**: Safe to run multiple times. Returns success if already uninstalled.
 
 ---
 

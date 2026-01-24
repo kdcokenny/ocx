@@ -6,11 +6,13 @@
  */
 
 import type { Command } from "commander"
+import { registerSelfUninstallCommand } from "./uninstall"
 import { registerSelfUpdateCommand } from "./update"
 
 export function registerSelfCommand(program: Command): void {
 	const self = program.command("self").description("Manage the OCX CLI")
 
 	// Register subcommands
+	registerSelfUninstallCommand(self)
 	registerSelfUpdateCommand(self)
 }
