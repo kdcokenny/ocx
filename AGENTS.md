@@ -403,6 +403,31 @@ Use profile commands to manage multiple configurations:
 
 **Note:** The ghost command group is temporary and will be removed in the next minor version. It helps users migrate from the legacy "ghost mode" configuration format (`ghost.jsonc`) to the unified profile system (`ocx.jsonc`).
 
+#### Self Commands
+
+| Command | Description |
+|---------|-------------|
+| `ocx self uninstall` | Remove OCX config and binary |
+| `ocx self uninstall --dry-run` | Preview what would be removed |
+
+**What gets removed by `self uninstall`:**
+- `~/.config/opencode/profiles/` - All profiles
+- `~/.config/opencode/ocx.jsonc` - Global OCX config
+- `~/.config/opencode/` - Root directory (only if empty after cleanup)
+- Binary executable (for curl installs only; package-managed prints command)
+
+**Exit Codes:**
+- `0` - Success (all items removed, already missing, or dry-run)
+- `1` - Error (package-managed install detected, permission denied)
+- `2` - Safety error (containment violation, root is symlink)
+
+**Safety:**
+- Only removes OCX-managed files (allowlist approach)
+- Unexpected files in root directory are left untouched
+- Symlinks are unlinked, not followed
+- Root directory only deleted if empty after cleanup
+- Package-managed installs print removal command instead of deleting
+
 #### Command Examples
 
 ```bash
