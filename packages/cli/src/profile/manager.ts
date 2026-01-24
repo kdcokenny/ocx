@@ -252,23 +252,23 @@ export class ProfileManager {
 			)
 		}
 
-		// 3. Check for self-move (no-op)
-		if (oldName === newName) {
-			return { warnActiveProfile: false }
-		}
-
-		// 4. Ensure profiles are initialized
+		// 3. Ensure profiles are initialized
 		await this.ensureInitialized()
 
-		// 5. Check source exists
+		// 4. Check source exists
 		if (!(await this.exists(oldName))) {
 			throw new ProfileNotFoundError(oldName)
+		}
+
+		// 5. Check for self-move (no-op) - safe now that we know source exists
+		if (oldName === newName) {
+			return { warnActiveProfile: false }
 		}
 
 		// 6. Check target doesn't exist
 		if (await this.exists(newName)) {
 			throw new ConflictError(
-				`Cannot move: profile "${newName}" already exists. Remove it first with 'ocx profile rm ${newName}'.`,
+				`Cannot move: profile "${newName}" already exists. Remove it first with 'ocx p rm ${newName}'.`,
 			)
 		}
 
@@ -286,7 +286,7 @@ export class ProfileManager {
 				const code = (error as NodeJS.ErrnoException).code
 				if (code === "EEXIST" || code === "ENOTEMPTY") {
 					throw new ConflictError(
-						`Cannot move: profile "${newName}" already exists. Remove it first with 'ocx profile rm ${newName}'.`,
+						`Cannot move: profile "${newName}" already exists. Remove it first with 'ocx p rm ${newName}'.`,
 					)
 				}
 				if (code === "ENOENT") {

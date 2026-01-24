@@ -11,10 +11,10 @@ import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runCLI } from "./helpers"
 
-// Sentinel values - unique componentPath per profile to prove correct selection
-const SENTINEL_FOO = "components/foo-12345"
-const SENTINEL_BAR = "components/bar-67890"
-const SENTINEL_DEFAULT = "components/default-ABCDE"
+// Exact content strings for byte-equal verification
+const FOO_CONTENT = '{ "componentPath": "SENTINEL_FOO" }'
+const BAR_CONTENT = '{ "componentPath": "SENTINEL_BAR" }'
+const DEFAULT_CONTENT = '{ "componentPath": "SENTINEL_DEFAULT" }'
 
 // Snapshot only the keys we touch
 const ENV_KEYS = ["XDG_CONFIG_HOME", "OCX_PROFILE"] as const
@@ -37,15 +37,9 @@ beforeEach(async () => {
 	// Global config
 	await Bun.write(join(configDir, "ocx.jsonc"), JSON.stringify({ registries: {} }, null, 2))
 
-	// Profile configs with UNIQUE componentPath values as sentinels
-	await Bun.write(
-		join(configDir, "profiles", "default", "ocx.jsonc"),
-		JSON.stringify({ componentPath: SENTINEL_DEFAULT }, null, 2),
-	)
-	await Bun.write(
-		join(configDir, "profiles", "foo", "ocx.jsonc"),
-		JSON.stringify({ componentPath: SENTINEL_FOO }, null, 2),
-	)
+	// Profile configs with EXACT content for byte-equal verification
+	await Bun.write(join(configDir, "profiles", "default", "ocx.jsonc"), DEFAULT_CONTENT)
+	await Bun.write(join(configDir, "profiles", "foo", "ocx.jsonc"), FOO_CONTENT)
 })
 
 afterEach(async () => {
@@ -76,60 +70,71 @@ describe("ocx profile move", () => {
 
 		const { exitCode, output } = await runCLI(["profile", "move", "foo", "bar"], testDir)
 
+		// Exact exit code assertion
 		expect(exitCode).toBe(0)
 		expect(output).toContain("Moved")
 		expect(output).toContain("foo")
 		expect(output).toContain("bar")
 
-		// Postcondition: old gone, new exists
+		// Negative assertion: no warning when not moving active profile
+		expect(output).not.toContain("Warning")
+		expect(output).not.toContain("warn")
+		expect(output).not.toContain("OCX_PROFILE")
+
+		// Atomicity assertions: old gone AND new exists
 		expect(existsSync(oldDir)).toBe(false)
 		expect(existsSync(newDir)).toBe(true)
 
-		// Content preserved (check sentinel value)
-		const configFile = Bun.file(join(newDir, "ocx.jsonc"))
-		const content = await configFile.text()
-		expect(content).toContain(SENTINEL_FOO)
+		// Byte-equal content verification
+		const newContent = await Bun.file(join(newDir, "ocx.jsonc")).text()
+		expect(newContent).toBe(FOO_CONTENT)
 	})
 
 	it("should fail with invalid old name containing path traversal", async () => {
 		const { exitCode, output } = await runCLI(["profile", "move", "../evil", "bar"], testDir)
 
-		expect(exitCode).not.toBe(0)
-		expect(output).toContain("Invalid profile name")
+		// Invalid name = validation error = exit 1
+		expect(exitCode).toBe(1)
+		expect(output).toContain('Invalid profile name "../evil"')
 	})
 
 	it("should fail with invalid new name containing path separator", async () => {
 		const { exitCode, output } = await runCLI(["profile", "move", "foo", "bad/path"], testDir)
 
-		expect(exitCode).not.toBe(0)
-		expect(output).toContain("Invalid profile name")
+		// Invalid name = validation error = exit 1
+		expect(exitCode).toBe(1)
+		expect(output).toContain('Invalid profile name "bad/path"')
 	})
 
 	it("should fail when source profile not found", async () => {
 		const { exitCode, output } = await runCLI(["profile", "move", "nonexistent", "bar"], testDir)
 
-		expect(exitCode).not.toBe(0)
-		expect(output).toContain("not found")
+		// Not found = exit 66
+		expect(exitCode).toBe(66)
+		expect(output).toContain('Profile "nonexistent" not found')
 	})
 
 	it("should fail when target profile already exists", async () => {
-		// Create target profile
+		// Create target profile with known content
 		const configDir = join(testDir, "opencode")
-		await mkdir(join(configDir, "profiles", "bar"), { recursive: true })
-		await Bun.write(
-			join(configDir, "profiles", "bar", "ocx.jsonc"),
-			JSON.stringify({ componentPath: SENTINEL_BAR }, null, 2),
-		)
+		const fooDir = join(configDir, "profiles", "foo")
+		const barDir = join(configDir, "profiles", "bar")
+		await mkdir(barDir, { recursive: true })
+		await Bun.write(join(barDir, "ocx.jsonc"), BAR_CONTENT)
 
 		const { exitCode, output } = await runCLI(["profile", "move", "foo", "bar"], testDir)
 
-		expect(exitCode).not.toBe(0)
-		expect(output).toContain("already exists")
-		expect(output).toContain("Remove it first")
+		// Conflict = exit 6
+		expect(exitCode).toBe(6)
+		expect(output).toContain(
+			`Cannot move: profile "bar" already exists. Remove it first with 'ocx p rm bar'.`,
+		)
 
-		// Both profiles should still exist
-		expect(existsSync(join(configDir, "profiles", "foo"))).toBe(true)
-		expect(existsSync(join(configDir, "profiles", "bar"))).toBe(true)
+		// Atomicity: BOTH dirs still exist with UNCHANGED content
+		expect(existsSync(fooDir)).toBe(true)
+		expect(existsSync(barDir)).toBe(true)
+		expect(await Bun.file(join(fooDir, "ocx.jsonc")).text()).toBe(FOO_CONTENT)
+		expect(await Bun.file(join(barDir, "ocx.jsonc")).text()).toBe(BAR_CONTENT)
 	})
 
 	it("should work with mv alias", async () => {
@@ -150,7 +155,7 @@ describe("ocx profile move", () => {
 		expect(existsSync(newDir)).toBe(true)
 	})
 
-	it("should handle self-move as no-op", async () => {
+	it("should handle self-move as no-op when profile exists", async () => {
 		const configDir = join(testDir, "opencode")
 		const profileDir = join(configDir, "profiles", "foo")
 
@@ -159,6 +164,7 @@ describe("ocx profile move", () => {
 
 		const { exitCode, output } = await runCLI(["profile", "move", "foo", "foo"], testDir)
 
+		// Exact exit code: success
 		expect(exitCode).toBe(0)
 		// Should still output success message
 		expect(output).toContain("Moved")
@@ -166,10 +172,20 @@ describe("ocx profile move", () => {
 		// Profile should still exist
 		expect(existsSync(profileDir)).toBe(true)
 
-		// Content preserved
-		const configFile = Bun.file(join(profileDir, "ocx.jsonc"))
-		const content = await configFile.text()
-		expect(content).toContain(SENTINEL_FOO)
+		// Byte-equal content preserved
+		const content = await Bun.file(join(profileDir, "ocx.jsonc")).text()
+		expect(content).toBe(FOO_CONTENT)
+	})
+
+	it("should fail self-move when profile does not exist", async () => {
+		const { exitCode, output } = await runCLI(
+			["profile", "move", "nonexistent", "nonexistent"],
+			testDir,
+		)
+
+		// Not found = exit 66 (source checked before self-move optimization)
+		expect(exitCode).toBe(66)
+		expect(output).toContain('Profile "nonexistent" not found')
 	})
 
 	it("should allow moving the default profile", async () => {
@@ -182,19 +198,19 @@ describe("ocx profile move", () => {
 
 		const { exitCode, output } = await runCLI(["profile", "move", "default", "primary"], testDir)
 
+		// Exact exit code
 		expect(exitCode).toBe(0)
 		expect(output).toContain("Moved")
 		expect(output).toContain("default")
 		expect(output).toContain("primary")
 
-		// Postcondition: old gone, new exists
+		// Atomicity: old gone AND new exists
 		expect(existsSync(oldDir)).toBe(false)
 		expect(existsSync(newDir)).toBe(true)
 
-		// Content preserved (check sentinel value)
-		const configFile = Bun.file(join(newDir, "ocx.jsonc"))
-		const content = await configFile.text()
-		expect(content).toContain(SENTINEL_DEFAULT)
+		// Byte-equal content verification
+		const newContent = await Bun.file(join(newDir, "ocx.jsonc")).text()
+		expect(newContent).toBe(DEFAULT_CONTENT)
 	})
 
 	it("should warn when moving active profile", async () => {
@@ -213,5 +229,95 @@ describe("ocx profile move", () => {
 
 		// Move still succeeded
 		expect(existsSync(newDir)).toBe(true)
+	})
+
+	// =========================================================================
+	// Boundary Conditions
+	// =========================================================================
+
+	describe("boundary conditions", () => {
+		// Path traversal - old name
+		it("should reject path traversal in old name (../)", async () => {
+			const { exitCode, output } = await runCLI(["profile", "move", "../evil", "bar"], testDir)
+			expect(exitCode).toBe(1)
+			expect(output).toContain('Invalid profile name "../evil"')
+		})
+
+		it("should reject dotdot as old name", async () => {
+			const { exitCode, output } = await runCLI(["profile", "move", "..", "bar"], testDir)
+			expect(exitCode).toBe(1)
+			expect(output).toContain('Invalid profile name ".."')
+		})
+
+		it("should reject dot as old name", async () => {
+			const { exitCode, output } = await runCLI(["profile", "move", ".", "bar"], testDir)
+			expect(exitCode).toBe(1)
+			expect(output).toContain('Invalid profile name "."')
+		})
+
+		it("should reject forward slash in name", async () => {
+			const { exitCode, output } = await runCLI(["profile", "move", "a/b", "bar"], testDir)
+			expect(exitCode).toBe(1)
+			expect(output).toContain('Invalid profile name "a/b"')
+		})
+
+		it("should reject backslash in name", async () => {
+			const { exitCode, output } = await runCLI(["profile", "move", "a\\b", "bar"], testDir)
+			expect(exitCode).toBe(1)
+			expect(output).toContain("Invalid profile name")
+		})
+
+		// Name length boundaries
+		it("should accept minimum length name (1 char)", async () => {
+			// Create source profile first
+			const configDir = join(testDir, "opencode")
+			const profileDir = join(configDir, "profiles", "x")
+			await mkdir(profileDir, { recursive: true })
+			await Bun.write(join(profileDir, "ocx.jsonc"), "{}")
+
+			const { exitCode } = await runCLI(["profile", "move", "x", "y"], testDir)
+			expect(exitCode).toBe(0)
+		})
+
+		it("should accept maximum length name (32 chars)", async () => {
+			const longName = "a".repeat(32)
+			const configDir = join(testDir, "opencode")
+			const profileDir = join(configDir, "profiles", "src")
+			await mkdir(profileDir, { recursive: true })
+			await Bun.write(join(profileDir, "ocx.jsonc"), "{}")
+
+			const { exitCode } = await runCLI(["profile", "move", "src", longName], testDir)
+			expect(exitCode).toBe(0)
+		})
+
+		it("should reject name over 32 chars", async () => {
+			const tooLong = "a".repeat(33)
+			const { exitCode, output } = await runCLI(["profile", "move", "foo", tooLong], testDir)
+			expect(exitCode).toBe(1)
+			expect(output).toContain("Invalid profile name")
+		})
+
+		// Special characters
+		it("should accept allowed special chars (dots, underscores, hyphens)", async () => {
+			const configDir = join(testDir, "opencode")
+			const profileDir = join(configDir, "profiles", "src")
+			await mkdir(profileDir, { recursive: true })
+			await Bun.write(join(profileDir, "ocx.jsonc"), "{}")
+
+			const { exitCode } = await runCLI(["profile", "move", "src", "a.b_c-d"], testDir)
+			expect(exitCode).toBe(0)
+		})
+
+		it("should reject name starting with number", async () => {
+			const { exitCode, output } = await runCLI(["profile", "move", "foo", "1abc"], testDir)
+			expect(exitCode).toBe(1)
+			expect(output).toContain("Invalid profile name")
+		})
+
+		it("should reject name with space", async () => {
+			const { exitCode, output } = await runCLI(["profile", "move", "foo", "a b"], testDir)
+			expect(exitCode).toBe(1)
+			expect(output).toContain("Invalid profile name")
+		})
 	})
 })
