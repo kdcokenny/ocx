@@ -174,6 +174,7 @@ Profiles keep your configurations isolated and portable:
 | `ocx profile list` | `ocx p ls` | List all global profiles |
 | `ocx profile add <name>` | `ocx p add` | Create new profile or install from registry |
 | `ocx profile remove <name>` | `ocx p rm` | Delete a profile |
+| `ocx profile move <old> <new>` | `ocx p mv` | Rename a profile |
 | `ocx profile show [name]` | `ocx p show` | Display profile contents |
 
 **Config commands:**

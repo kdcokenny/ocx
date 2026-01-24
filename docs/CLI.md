@@ -1002,6 +1002,7 @@ Manage global profiles for different OpenCode configurations.
 - [`ocx profile list`](#ocx-profile-list) - List all global profiles
 - [`ocx profile add`](#ocx-profile-add) - Create new profile or install from registry
 - [`ocx profile remove`](#ocx-profile-remove) - Delete a profile
+- [`ocx profile move`](#ocx-profile-move) - Rename a profile
 - [`ocx profile show`](#ocx-profile-show) - Display profile contents
 
 ### Aliases
@@ -1138,6 +1139,50 @@ ocx profile remove old-profile
 
 - Deletion is immediate (Cargo-style, no confirmation prompt)
 - Cannot delete the last remaining profile
+
+---
+
+### ocx profile move
+
+Rename a global profile.
+
+#### Usage
+
+```bash
+ocx profile move <old-name> <new-name>
+ocx p mv <old-name> <new-name>  # alias
+```
+
+#### Arguments
+
+| Argument   | Description                     |
+| ---------- | ------------------------------- |
+| `old-name` | Current profile name (required) |
+| `new-name` | New profile name (required)     |
+
+#### Examples
+
+```bash
+# Rename a profile
+ocx profile move work client-work
+
+# Using alias
+ocx p mv personal home
+```
+
+#### Notes
+
+- Profile names must be 1-32 characters, alphanumeric with dots, underscores, hyphens
+- Cannot rename to a name that already exists (remove target first)
+- Warns if renaming the active profile (update `OCX_PROFILE` env var)
+- Self-rename (same old and new name) is a silent no-op
+
+#### Errors
+
+| Error                           | Cause                    | Solution                                             |
+| ------------------------------- | ------------------------ | ---------------------------------------------------- |
+| `Profile "X" not found`         | Source profile not found | Check name with `ocx profile list`                   |
+| `Cannot move: profile "Y" already exists` | Target name conflicts    | Remove existing profile first with `ocx profile rm Y` |
 
 ---
 

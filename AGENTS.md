@@ -253,7 +253,7 @@ OCX provides a global profile system for managing multiple OpenCode configuratio
 | `ProfileManager` | `src/profile/manager.ts` | Static factory for profile CRUD operations |
 | `profile/paths.ts` | `src/profile/paths.ts` | Path constants and helpers for profile directories |
 | `ConfigProvider` | `src/config/provider.ts` | Provides config from a single isolated scope |
-| Profile commands | `src/commands/profile/` | list, add, remove, show, config |
+| Profile commands | `src/commands/profile/` | list, add, remove, move, show, config |
 | Config commands | `src/commands/config/` | show, edit |
 | OpenCode commands | `src/commands/opencode/` | Launch OpenCode with profile config |
 | Init commands | `src/commands/init/` | Initialize global/local configs |
@@ -369,6 +369,7 @@ Use profile commands to manage multiple configurations:
 | `ocx profile list` | `ocx p ls` | List all global profiles |
 | `ocx profile add <name>` | `ocx p add` | Create new profile or install from registry |
 | `ocx profile remove <name>` | `ocx p rm` | Delete profile |
+| `ocx profile move <old> <new>` | `ocx p mv` | Rename a profile |
 | `ocx profile show <name>` | `ocx p show` | Display profile contents |
 
 #### Config Commands
