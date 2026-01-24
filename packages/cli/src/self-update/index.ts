@@ -51,9 +51,9 @@ function shouldCheckForUpdate(): boolean {
  * @param program - The root Commander program instance
  */
 export function registerUpdateCheckHook(program: Command): void {
-	program.hook("postAction", async (thisCommand) => {
+	program.hook("postAction", async (_thisCommand, actionCommand) => {
 		// Skip if running self update command itself
-		if (thisCommand.name() === "update" && thisCommand.parent?.name() === "self") {
+		if (actionCommand.name() === "update" && actionCommand.parent?.name() === "self") {
 			return
 		}
 
