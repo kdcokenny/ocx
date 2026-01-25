@@ -7,7 +7,6 @@
  * Spawns OpenCode with the resolved configuration.
  */
 
-import { resolve } from "node:path"
 import type { Command } from "commander"
 import { ConfigResolver } from "../config/resolver"
 import { ProfileManager } from "../profile/manager"
@@ -15,7 +14,6 @@ import { getProfileDir, getProfileOpencodeConfig } from "../profile/paths"
 import { ProfilesNotInitializedError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError, logger } from "../utils/index"
-import { sharedOptions } from "../utils/shared-options"
 import {
 	formatTerminalName,
 	restoreTerminalTitle,
@@ -26,8 +24,6 @@ import {
 interface OpencodeOptions {
 	profile?: string
 	rename?: boolean
-	quiet?: boolean
-	json?: boolean
 }
 
 /**
@@ -69,31 +65,25 @@ export function buildOpenCodeEnv(opts: {
 
 export function registerOpencodeCommand(program: Command): void {
 	program
-		.command("opencode [path]")
-		.alias("oc")
+		.command("oc")
+		.alias("opencode")
 		.description("Launch OpenCode with resolved configuration")
 		.option("-p, --profile <name>", "Use specific profile")
 		.option("--no-rename", "Disable terminal/tmux window renaming")
-		.addOption(sharedOptions.quiet())
-		.addOption(sharedOptions.json())
 		.allowUnknownOption()
 		.allowExcessArguments(true)
-		.action(async (path: string | undefined, options: OpencodeOptions, command: Command) => {
+		.action(async (options: OpencodeOptions, command: Command) => {
 			try {
-				await runOpencode(path, command.args, options)
+				await runOpencode(command.args, options)
 			} catch (error) {
-				handleError(error, { json: options.json })
+				handleError(error)
 			}
 		})
 }
 
-async function runOpencode(
-	pathArg: string | undefined,
-	args: string[],
-	options: OpencodeOptions,
-): Promise<void> {
+async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
 	// Resolve project directory
-	const projectDir = pathArg ? resolve(pathArg) : process.cwd()
+	const projectDir = process.cwd()
 
 	// Create resolver with optional profile override
 	const resolver = await ConfigResolver.create(projectDir, { profile: options.profile })
@@ -109,7 +99,7 @@ async function runOpencode(
 	}
 
 	// Print feedback about which profile is being used
-	if (config.profileName && !options.quiet) {
+	if (config.profileName) {
 		logger.info(`Using profile: ${config.profileName}`)
 	}
 
@@ -122,7 +112,7 @@ async function runOpencode(
 	const profileDir = config.profileName ? getProfileDir(config.profileName) : undefined
 
 	// Check for profile's opencode.jsonc (optional)
-	if (config.profileName && !options.quiet) {
+	if (config.profileName) {
 		const profileOpencodePath = getProfileOpencodeConfig(config.profileName)
 		const profileOpencodeFile = Bun.file(profileOpencodePath)
 		const hasOpencodeConfig = await profileOpencodeFile.exists()
@@ -145,8 +135,29 @@ async function runOpencode(
 	// Setup signal handlers BEFORE spawn to avoid race condition
 	let proc: ReturnType<typeof Bun.spawn> | null = null
 
-	const sigintHandler = () => proc?.kill("SIGINT")
-	const sigtermHandler = () => proc?.kill("SIGTERM")
+	const sigintHandler = () => {
+		if (proc) {
+			proc.kill("SIGINT")
+		} else {
+			// No child yet - restore terminal and exit with standard SIGINT code
+			if (shouldRename) {
+				restoreTerminalTitle()
+			}
+			process.exit(130)
+		}
+	}
+
+	const sigtermHandler = () => {
+		if (proc) {
+			proc.kill("SIGTERM")
+		} else {
+			// No child yet - restore terminal and exit with standard SIGTERM code
+			if (shouldRename) {
+				restoreTerminalTitle()
+			}
+			process.exit(143)
+		}
+	}
 
 	process.on("SIGINT", sigintHandler)
 	process.on("SIGTERM", sigtermHandler)
