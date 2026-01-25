@@ -18,21 +18,6 @@ describe("parseFromOption()", () => {
 		expect(result).toEqual({ type: "registry", namespace: "kdco", component: "minimal" })
 	})
 
-	it("parses local path starting with ./", () => {
-		const result = parseFromOption("./path/to/profile")
-		expect(result).toEqual({ type: "local-path", path: "./path/to/profile" })
-	})
-
-	it("parses local path starting with ~/", () => {
-		const result = parseFromOption("~/my-profile")
-		expect(result).toEqual({ type: "local-path", path: "~/my-profile" })
-	})
-
-	it("parses absolute path starting with /", () => {
-		const result = parseFromOption("/absolute/path")
-		expect(result).toEqual({ type: "local-path", path: "/absolute/path" })
-	})
-
 	it("parses local profile name (no slash)", () => {
 		const result = parseFromOption("my-profile")
 		expect(result).toEqual({ type: "local-profile", name: "my-profile" })
@@ -288,10 +273,10 @@ describe("ocx profile add (conflict detection)", () => {
 		expect(exitCode).toBe(6)
 		// Verify error message contains key information for user action
 		expect(output).toContain("already exists")
-		expect(output).toContain("--force")
+		expect(output).toContain("ocx profile rm existing-profile")
 	})
 
-	it("overwrites existing profile with --force", async () => {
+	it("allows adding profile after explicit removal", async () => {
 		// Setup global config
 		const globalConfigDir = join(testDir, "opencode")
 		const profilesDir = join(globalConfigDir, "profiles")
@@ -316,8 +301,12 @@ describe("ocx profile add (conflict detection)", () => {
 		const workDir = join(testDir, "workspace")
 		await mkdir(workDir, { recursive: true })
 
-		// Overwrite with --force
-		const { exitCode } = await runCLI(["profile", "add", "existing-profile", "--force"], workDir)
+		// First remove the profile
+		const { exitCode: rmExitCode } = await runCLI(["profile", "rm", "existing-profile"], workDir)
+		expect(rmExitCode).toBe(0)
+
+		// Then add the profile fresh
+		const { exitCode } = await runCLI(["profile", "add", "existing-profile"], workDir)
 
 		expect(exitCode).toBe(0)
 
@@ -506,55 +495,6 @@ describe("ocx profile add --from (local profile cloning)", () => {
 
 		expect(exitCode).not.toBe(0)
 		expect(output).toContain("not found")
-	})
-})
-
-// =============================================================================
-// INTEGRATION TESTS: Local Path Installation (Not Yet Implemented)
-// =============================================================================
-
-describe("ocx profile add --from (local path - not implemented)", () => {
-	let testDir: string
-	const originalXdgConfigHome = process.env.XDG_CONFIG_HOME
-
-	beforeEach(async () => {
-		testDir = await createTempDir("profile-local-path")
-		process.env.XDG_CONFIG_HOME = testDir
-	})
-
-	afterEach(async () => {
-		if (originalXdgConfigHome === undefined) {
-			delete process.env.XDG_CONFIG_HOME
-		} else {
-			process.env.XDG_CONFIG_HOME = originalXdgConfigHome
-		}
-		if (testDir) {
-			await cleanupTempDir(testDir)
-		}
-	})
-
-	it("shows clear error for local path installation (not yet implemented)", async () => {
-		// Setup global config
-		const globalConfigDir = join(testDir, "opencode")
-		const profilesDir = join(globalConfigDir, "profiles")
-		await mkdir(profilesDir, { recursive: true })
-		await writeFile(join(globalConfigDir, "ocx.jsonc"), JSON.stringify({ registries: {} }, null, 2))
-
-		// Create default profile
-		await mkdir(join(profilesDir, "default"), { recursive: true })
-		await writeFile(join(profilesDir, "default", "ocx.jsonc"), "{}")
-
-		const workDir = join(testDir, "workspace")
-		await mkdir(workDir, { recursive: true })
-
-		// Try to install from local path
-		const { exitCode, output } = await runCLI(
-			["profile", "add", "local-profile", "--from", "./my-local-profile"],
-			workDir,
-		)
-
-		expect(exitCode).not.toBe(0)
-		expect(output).toContain("not yet implemented")
 	})
 })
 

@@ -26,15 +26,13 @@ import { installProfileFromRegistry } from "./install-from-registry"
  */
 export type FromInput =
 	| { type: "local-profile"; name: string }
-	| { type: "local-path"; path: string }
 	| { type: "registry"; namespace: string; component: string }
 
 /**
  * Parse the --from option value to determine input type.
  *
  * Routing logic:
- * - Starts with ./, ~/, / → local path (future feature)
- * - Contains exactly one / and no path prefixes → registry ref (namespace/component)
+ * - Contains exactly one / → registry ref (namespace/component)
  * - No / → existing local profile name
  *
  * @param from - The --from option value
@@ -47,11 +45,6 @@ export function parseFromOption(from: string): FromInput {
 	}
 
 	const trimmed = from.trim()
-
-	// Route local paths: starts with ./, ~/, /
-	if (trimmed.startsWith("./") || trimmed.startsWith("~/") || trimmed.startsWith("/")) {
-		return { type: "local-path", path: trimmed }
-	}
 
 	// Route registry references: contains exactly one /
 	const slashCount = (trimmed.match(/\//g) || []).length
@@ -75,7 +68,6 @@ export function parseFromOption(from: string): FromInput {
 
 interface ProfileAddOptions {
 	from?: string
-	force?: boolean
 }
 
 // =============================================================================
@@ -158,7 +150,6 @@ export function registerProfileAddCommand(parent: Command): void {
 			"--from <source>",
 			"Clone from existing profile or install from registry (e.g., kdco/minimal)",
 		)
-		.option("-f, --force", "Overwrite existing profile (local/clone only)")
 		.addHelpText(
 			"after",
 			`
@@ -184,19 +175,10 @@ Examples:
 async function runProfileAdd(name: string, options: ProfileAddOptions): Promise<void> {
 	const manager = await ProfileManager.requireInitialized()
 
-	// Phase 1: Conflict detection (Law 4: Fail Fast)
-	const profileExists = await manager.exists(name)
-	if (profileExists && !options.force) {
-		logger.error(`✗ Profile "${name}" already exists`)
-		logger.error("")
-		logger.error("Use --force to overwrite the existing profile.")
-		throw new ProfileExistsError(name)
-	}
-
-	// Phase 2: Route based on --from input type
+	// Route based on --from input type
 	if (!options.from) {
 		// No --from: create empty profile
-		await createEmptyProfile(manager, name, profileExists)
+		await createEmptyProfile(manager, name)
 		return
 	}
 
@@ -204,17 +186,8 @@ async function runProfileAdd(name: string, options: ProfileAddOptions): Promise<
 
 	switch (fromInput.type) {
 		case "local-profile":
-			await cloneFromLocalProfile(manager, name, fromInput.name, profileExists)
+			await cloneFromLocalProfile(manager, name, fromInput.name)
 			break
-
-		case "local-path":
-			// TODO: Future feature - install from local directory
-			throw new ValidationError(
-				`Local path installation is not yet implemented: "${fromInput.path}"\n\n` +
-					`Currently supported sources:\n` +
-					`  - Existing profile: --from <profile-name>\n` +
-					`  - Registry: --from <namespace>/<component>`,
-			)
 
 		case "registry": {
 			// Validate registry is configured globally and get URL
@@ -242,16 +215,11 @@ async function runProfileAdd(name: string, options: ProfileAddOptions): Promise<
 /**
  * Create an empty profile with default configuration.
  */
-async function createEmptyProfile(
-	manager: ProfileManager,
-	name: string,
-	exists: boolean,
-): Promise<void> {
+async function createEmptyProfile(manager: ProfileManager, name: string): Promise<void> {
+	const exists = await manager.exists(name)
 	if (exists) {
-		// Force mode: remove existing before recreating
-		await manager.remove(name)
+		throw new ProfileExistsError(name, `Remove it first with 'ocx profile rm ${name}'.`)
 	}
-
 	await manager.add(name)
 	logger.success(`Created profile "${name}"`)
 }
@@ -263,15 +231,15 @@ async function cloneFromLocalProfile(
 	manager: ProfileManager,
 	name: string,
 	sourceName: string,
-	exists: boolean,
 ): Promise<void> {
-	// Load source profile first (fail fast if not found)
-	const source = await manager.get(sourceName)
-
+	// Guard: check if target profile already exists (Fail Fast)
+	const exists = await manager.exists(name)
 	if (exists) {
-		// Force mode: remove existing before recreating
-		await manager.remove(name)
+		throw new ProfileExistsError(name, `Remove it first with 'ocx profile rm ${name}'.`)
 	}
+
+	// Load source profile (fail fast if not found)
+	const source = await manager.get(sourceName)
 
 	await manager.add(name)
 

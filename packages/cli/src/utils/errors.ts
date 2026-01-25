@@ -119,12 +119,14 @@ export class ProfileNotFoundError extends OCXError {
 }
 
 export class ProfileExistsError extends OCXError {
-	constructor(public readonly profile: string) {
-		super(
-			`Profile "${profile}" already exists. Use --force to overwrite.`,
-			"CONFLICT",
-			EXIT_CODES.CONFLICT,
-		)
+	constructor(
+		public readonly profile: string,
+		hint?: string,
+	) {
+		const message = hint
+			? `Profile "${profile}" already exists. ${hint}`
+			: `Profile "${profile}" already exists.`
+		super(message, "CONFLICT", EXIT_CODES.CONFLICT)
 		this.name = "ProfileExistsError"
 	}
 }
