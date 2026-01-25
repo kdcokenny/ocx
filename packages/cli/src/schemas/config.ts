@@ -82,12 +82,38 @@ export const installedComponentSchema = z.object({
 export type InstalledComponent = z.infer<typeof installedComponentSchema>
 
 /**
+ * Profile source tracking for profiles installed from registries.
+ * Optional field in OcxLock - only present for profile installs.
+ */
+export const installedFromSchema = z.object({
+	/** Registry namespace this profile was installed from */
+	registry: z.string(),
+
+	/** Component name in the registry */
+	component: z.string(),
+
+	/** Registry version at time of install */
+	version: z.string().optional(),
+
+	/** SHA-256 hash of profile files for integrity */
+	hash: z.string(),
+
+	/** ISO timestamp of installation */
+	installedAt: z.string(),
+})
+
+export type InstalledFrom = z.infer<typeof installedFromSchema>
+
+/**
  * OCX lockfile schema (ocx.lock)
  * Keys are qualified component refs: "namespace/component"
  */
 export const ocxLockSchema = z.object({
 	/** Lockfile format version */
 	lockVersion: z.literal(1),
+
+	/** Profile source info (only present for profiles installed from registry) */
+	installedFrom: installedFromSchema.optional(),
 
 	/** Installed components, keyed by "namespace/component" */
 	installed: z.record(qualifiedComponentSchema, installedComponentSchema).default({}),

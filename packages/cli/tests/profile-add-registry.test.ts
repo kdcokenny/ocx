@@ -633,6 +633,61 @@ describe("ocx profile add --from (registry installation)", () => {
 		expect(lockContent.installedFrom.registry).toBe("kdco")
 		expect(lockContent.installedFrom.component).toBe("test-profile")
 	})
+
+	it("should install profile dependencies flat (not in .opencode/)", async () => {
+		// Setup global config with registry configured
+		const globalConfigDir = join(testDir, "opencode")
+		const profilesDir = join(globalConfigDir, "profiles")
+		await mkdir(profilesDir, { recursive: true })
+		await writeFile(
+			join(globalConfigDir, "ocx.jsonc"),
+			JSON.stringify({ registries: { kdco: { url: registry.url } } }, null, 2),
+		)
+
+		// Create default profile (required for initialization)
+		await mkdir(join(profilesDir, "default"), { recursive: true })
+		await writeFile(join(profilesDir, "default", "ocx.jsonc"), "{}")
+
+		const workDir = join(testDir, "workspace")
+		await mkdir(workDir, { recursive: true })
+
+		// Install profile with dependencies from registry
+		const { exitCode, output } = await runCLI(
+			["profile", "add", "test-with-deps", "--from", "kdco/test-profile-with-deps"],
+			workDir,
+		)
+
+		if (exitCode !== 0) {
+			console.log("Output:", output)
+		}
+		expect(exitCode).toBe(0)
+
+		const profileDir = join(profilesDir, "test-with-deps")
+
+		// Verify profile files exist at root
+		expect(existsSync(join(profileDir, "ocx.jsonc"))).toBe(true)
+		expect(existsSync(join(profileDir, "opencode.jsonc"))).toBe(true)
+		expect(existsSync(join(profileDir, "AGENTS.md"))).toBe(true)
+
+		// Verify dependency files are FLAT (at profile root, not in .opencode/)
+		expect(existsSync(join(profileDir, "plugin", "test-plugin.ts"))).toBe(true)
+
+		// Verify NO .opencode/ directory exists - this is the key regression check
+		expect(existsSync(join(profileDir, ".opencode"))).toBe(false)
+
+		// Verify lockfile contains both installedFrom and installed entries
+		const lockPath = join(profileDir, "ocx.lock")
+		expect(existsSync(lockPath)).toBe(true)
+		const lockContent = parseJsonc(await readFile(lockPath, "utf-8")) as {
+			lockVersion: number
+			installedFrom: { registry: string; component: string }
+			installed: Record<string, unknown>
+		}
+		expect(lockContent.lockVersion).toBe(1)
+		expect(lockContent.installedFrom.registry).toBe("kdco")
+		expect(lockContent.installedFrom.component).toBe("test-profile-with-deps")
+		expect(lockContent.installed["kdco/test-plugin"]).toBeDefined()
+	})
 })
 
 // =============================================================================

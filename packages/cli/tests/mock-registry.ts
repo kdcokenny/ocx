@@ -68,6 +68,18 @@ export function startMockRegistry(): MockRegistry {
 			],
 			dependencies: [],
 		},
+		// Profile with dependencies for testing flat installation
+		"test-profile-with-deps": {
+			name: "test-profile-with-deps",
+			type: "ocx:profile",
+			description: "Test profile with dependencies for regression testing",
+			files: [
+				{ path: "ocx.jsonc", target: "ocx.jsonc" },
+				{ path: "opencode.jsonc", target: "opencode.jsonc" },
+				{ path: "AGENTS.md", target: "AGENTS.md" },
+			],
+			dependencies: ["test-plugin"],
+		},
 		// Components for testing MCP merge regression
 		"test-mcp-provider": {
 			name: "test-mcp-provider",
@@ -189,6 +201,17 @@ export function startMockRegistry(): MockRegistry {
 					}
 					if (filePath === "AGENTS.md") {
 						return new Response("# Test Profile\n\nTest profile instructions.")
+					}
+				}
+				if (name === "test-profile-with-deps") {
+					if (filePath === "ocx.jsonc") {
+						return new Response(JSON.stringify({ registries: {} }, null, 2))
+					}
+					if (filePath === "opencode.jsonc") {
+						return new Response(JSON.stringify({}, null, 2))
+					}
+					if (filePath === "AGENTS.md") {
+						return new Response("# Test Profile With Deps\n\nTest profile with dependencies.")
 					}
 				}
 				return new Response(`Content of ${filePath} for ${name}`)

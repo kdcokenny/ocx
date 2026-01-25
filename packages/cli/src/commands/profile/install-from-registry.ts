@@ -11,15 +11,16 @@ import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import type { ConfigProvider } from "../../config/provider"
 import { getProfileDir, getProfilesDir } from "../../profile/paths"
 import { profileNameSchema } from "../../profile/schema"
 import { fetchComponent, fetchFileContent, fetchRegistryIndex } from "../../registry/fetcher"
-import { resolveDependencies } from "../../registry/resolver"
 import type { RegistryConfig } from "../../schemas/config"
+import { type OcxLock, writeOcxLock } from "../../schemas/config"
 import { normalizeComponentManifest } from "../../schemas/registry"
 import { ConflictError, NotFoundError, ValidationError } from "../../utils/errors"
 import { createSpinner, logger } from "../../utils/index"
-import { resolveTargetPath } from "../../utils/paths"
+import { runAddCore } from "../add"
 
 // =============================================================================
 // TYPES
@@ -40,33 +41,6 @@ export interface InstallProfileOptions {
 	registries: Record<string, RegistryConfig>
 	/** Suppress output */
 	quiet?: boolean
-}
-
-/**
- * Profile-specific lock file schema.
- * Tracks what was installed from the registry for reproducibility.
- */
-export interface ProfileLock {
-	/** Lock file format version */
-	version: 1
-	/** Source profile component info */
-	installedFrom: {
-		registry: string
-		component: string
-		version?: string
-		hash: string
-		installedAt: string
-	}
-	/** Installed dependencies */
-	installed: {
-		[qualifiedName: string]: {
-			registry: string
-			version?: string
-			hash: string
-			files: string[]
-			installedAt: string
-		}
-	}
 }
 
 // =============================================================================
@@ -102,12 +76,11 @@ function hashBundle(files: { path: string; content: Buffer }[]): string {
  * Flow:
  * 1. Fetch and validate the profile component manifest
  * 2. Fetch all profile files from registry
- * 3. Resolve and fetch dependencies (if any)
- * 4. Create staging directory for atomic install
- * 5. Write profile files (flat in profile dir)
- * 6. Write dependency files (to .opencode/ in profile)
- * 7. Create ocx.lock in profile directory
- * 8. Move staging dir to final profile location
+ * 3. Create staging directory for atomic install
+ * 4. Write profile files (flat in profile dir)
+ * 5. Create ocx.lock with installedFrom metadata
+ * 6. Move staging dir to final profile location
+ * 7. Install dependencies via runAddCore (if any)
  *
  * @throws ValidationError if component is not type "ocx:profile"
  * @throws NotFoundError if component doesn't exist
@@ -204,78 +177,17 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 	filesSpin?.succeed(`Downloaded ${normalized.files.length} files`)
 
 	// ==========================================================================
-	// Phase 3: Resolve and fetch dependencies
-	// ==========================================================================
-
-	let resolvedDeps: Awaited<ReturnType<typeof resolveDependencies>> | null = null
-	const dependencyBundles: {
-		qualifiedName: string
-		registryName: string
-		files: { path: string; target: string; content: Buffer }[]
-		hash: string
-		version?: string
-	}[] = []
-
-	if (manifest.dependencies.length > 0) {
-		const depsSpin = quiet ? null : createSpinner({ text: "Resolving dependencies..." })
-		depsSpin?.start()
-
-		try {
-			// Build dependency refs with namespace
-			const depRefs = manifest.dependencies.map((dep) =>
-				dep.includes("/") ? dep : `${namespace}/${dep}`,
-			)
-
-			resolvedDeps = await resolveDependencies(registries, depRefs)
-
-			// Fetch all dependency files
-			for (const depComponent of resolvedDeps.components) {
-				const files: { path: string; target: string; content: Buffer }[] = []
-
-				for (const file of depComponent.files) {
-					const content = await fetchFileContent(depComponent.baseUrl, depComponent.name, file.path)
-					// For dependencies, resolve target for flattened profile mode
-					const resolvedTarget = resolveTargetPath(file.target, true)
-					files.push({
-						path: file.path,
-						target: resolvedTarget,
-						content: Buffer.from(content),
-					})
-				}
-
-				const registryIndex = await fetchRegistryIndex(depComponent.baseUrl)
-
-				dependencyBundles.push({
-					qualifiedName: depComponent.qualifiedName,
-					registryName: depComponent.registryName,
-					files,
-					hash: hashBundle(files),
-					version: registryIndex.version,
-				})
-			}
-
-			depsSpin?.succeed(`Resolved ${resolvedDeps.components.length} dependencies`)
-		} catch (error) {
-			depsSpin?.fail("Failed to resolve dependencies")
-			throw error
-		}
-	}
-
-	// ==========================================================================
-	// Phase 4: Create staging directory
+	// Phase 3: Create staging directory
 	// Use profiles directory as parent to ensure same filesystem (avoids EXDEV on rename)
 	// ==========================================================================
 
 	const profilesDir = getProfilesDir()
 	await mkdir(profilesDir, { recursive: true, mode: 0o700 })
 	const stagingDir = await mkdtemp(join(profilesDir, ".staging-"))
-	const stagingOpencodeDir = join(stagingDir, ".opencode")
 
 	try {
-		await mkdir(stagingOpencodeDir, { recursive: true, mode: 0o700 })
-
 		// ==========================================================================
-		// Phase 5: Write profile files (flat in staging dir)
+		// Phase 4: Write profile files (flat in staging dir)
 		// ==========================================================================
 
 		const writeSpin = quiet ? null : createSpinner({ text: "Writing profile files..." })
@@ -292,14 +204,13 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 			await writeFile(targetPath, file.content)
 		}
 
-		// Also write any embedded dependency files from the profile manifest
+		// Write embedded files flat (strip .opencode/ prefix for profile mode)
 		for (const file of embeddedFiles) {
-			// Embedded files go to .opencode/ in profile
-			// Strip .opencode/ prefix if present to prevent double-nesting
+			// Strip .opencode/ prefix since profiles are flat
 			const target = file.target.startsWith(".opencode/")
 				? file.target.slice(".opencode/".length)
 				: file.target
-			const targetPath = join(stagingOpencodeDir, target)
+			const targetPath = join(stagingDir, target)
 			const targetDir = dirname(targetPath)
 
 			if (!existsSync(targetDir)) {
@@ -312,33 +223,7 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 		writeSpin?.succeed(`Wrote ${profileFiles.length + embeddedFiles.length} profile files`)
 
 		// ==========================================================================
-		// Phase 6: Write dependency component files (to .opencode/ in staging)
-		// ==========================================================================
-
-		if (dependencyBundles.length > 0) {
-			const depWriteSpin = quiet ? null : createSpinner({ text: "Writing dependency files..." })
-			depWriteSpin?.start()
-
-			let depFileCount = 0
-			for (const bundle of dependencyBundles) {
-				for (const file of bundle.files) {
-					const targetPath = join(stagingOpencodeDir, file.target)
-					const targetDir = dirname(targetPath)
-
-					if (!existsSync(targetDir)) {
-						await mkdir(targetDir, { recursive: true })
-					}
-
-					await writeFile(targetPath, file.content)
-					depFileCount++
-				}
-			}
-
-			depWriteSpin?.succeed(`Wrote ${depFileCount} dependency files`)
-		}
-
-		// ==========================================================================
-		// Phase 7: Create ocx.lock in staging directory
+		// Phase 5: Create ocx.lock in staging directory
 		// ==========================================================================
 
 		const profileHash = hashBundle(profileFiles.map((f) => ({ path: f.path, content: f.content })))
@@ -346,8 +231,8 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 		// Get registry version for the lock file
 		const registryIndex = await fetchRegistryIndex(registryUrl)
 
-		const lock: ProfileLock = {
-			version: 1,
+		const lock: OcxLock = {
+			lockVersion: 1,
 			installedFrom: {
 				registry: namespace,
 				component,
@@ -358,21 +243,10 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 			installed: {},
 		}
 
-		// Add dependency entries
-		for (const bundle of dependencyBundles) {
-			lock.installed[bundle.qualifiedName] = {
-				registry: bundle.registryName,
-				version: bundle.version,
-				hash: bundle.hash,
-				files: bundle.files.map((f) => f.target),
-				installedAt: new Date().toISOString(),
-			}
-		}
-
-		await writeFile(join(stagingDir, "ocx.lock"), JSON.stringify(lock, null, "\t"))
+		await writeOcxLock(stagingDir, lock, join(stagingDir, "ocx.lock"))
 
 		// ==========================================================================
-		// Phase 8: Move staging dir to final profile location (atomic swap)
+		// Phase 6: Move staging dir to final profile location (atomic swap)
 		// ==========================================================================
 
 		const moveSpin = quiet ? null : createSpinner({ text: "Finalizing installation..." })
@@ -406,6 +280,34 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 		moveSpin?.succeed("Installation complete")
 
 		// ==========================================================================
+		// Phase 7: Install dependencies via runAddCore
+		// ==========================================================================
+
+		if (manifest.dependencies.length > 0) {
+			const depsSpin = quiet ? null : createSpinner({ text: "Installing dependencies..." })
+			depsSpin?.start()
+
+			try {
+				const depRefs = manifest.dependencies.map((dep) =>
+					dep.includes("/") ? dep : `${namespace}/${dep}`,
+				)
+
+				// Create provider for the installed profile (same pattern as GlobalConfigProvider)
+				const provider: ConfigProvider = {
+					cwd: profileDir,
+					getRegistries: () => registries,
+					getComponentPath: () => "", // Flat install - no .opencode/ prefix
+				}
+
+				await runAddCore(depRefs, { profile: profileName, force }, provider)
+				depsSpin?.succeed(`Installed ${manifest.dependencies.length} dependencies`)
+			} catch (error) {
+				depsSpin?.fail("Failed to install dependencies")
+				throw error
+			}
+		}
+
+		// ==========================================================================
 		// Summary
 		// ==========================================================================
 
@@ -417,12 +319,11 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 			for (const file of profileFiles) {
 				logger.info(`  ${file.target}`)
 			}
-			if (dependencyBundles.length > 0) {
-				logger.info("")
-				logger.info("Dependencies:")
-				for (const bundle of dependencyBundles) {
-					logger.info(`  ${bundle.qualifiedName}`)
-				}
+			for (const file of embeddedFiles) {
+				const target = file.target.startsWith(".opencode/")
+					? file.target.slice(".opencode/".length)
+					: file.target
+				logger.info(`  ${target}`)
 			}
 		}
 	} catch (error) {
