@@ -158,7 +158,7 @@ export function registerProfileAddCommand(parent: Command): void {
 			"--from <source>",
 			"Clone from existing profile or install from registry (e.g., kdco/minimal)",
 		)
-		.option("-f, --force", "Overwrite existing profile")
+		.option("-f, --force", "Overwrite existing profile (local/clone only)")
 		.addHelpText(
 			"after",
 			`
@@ -166,7 +166,6 @@ Examples:
   $ ocx profile add work                      # Create empty profile
   $ ocx profile add work --from dev           # Clone from existing profile
   $ ocx profile add work --from kdco/minimal  # Install from registry
-  $ ocx profile add work --from kdco/minimal --force  # Overwrite existing
 `,
 		)
 		.action(async (name: string, options: ProfileAddOptions) => {
@@ -232,7 +231,6 @@ async function runProfileAdd(name: string, options: ProfileAddOptions): Promise<
 				namespace: fromInput.namespace,
 				component: fromInput.component,
 				profileName: name,
-				force: options.force,
 				registryUrl,
 				registries,
 			})

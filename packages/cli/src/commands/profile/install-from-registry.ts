@@ -33,8 +33,6 @@ export interface InstallProfileOptions {
 	component: string
 	/** Local profile name (e.g., "work") */
 	profileName: string
-	/** Overwrite existing files */
-	force?: boolean
 	/** Resolved registry URL */
 	registryUrl: string
 	/** All configured registries (for dependency resolution) */
@@ -87,7 +85,7 @@ function hashBundle(files: { path: string; content: Buffer }[]): string {
  * @throws ConflictError if profile exists and force is not set
  */
 export async function installProfileFromRegistry(options: InstallProfileOptions): Promise<void> {
-	const { namespace, component, profileName, force, registryUrl, registries, quiet } = options
+	const { namespace, component, profileName, registryUrl, registries, quiet } = options
 
 	// ==========================================================================
 	// Guard: Validate profile name at boundary (Law 2: Parse Don't Validate)
@@ -109,8 +107,10 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 	// Guard: Profile already exists
 	// ==========================================================================
 
-	if (profileExists && !force) {
-		throw new ConflictError(`Profile "${profileName}" already exists.\nUse --force to overwrite.`)
+	if (profileExists) {
+		throw new ConflictError(
+			`Profile "${profileName}" already exists. Remove it first with 'ocx profile rm ${profileName}'.`,
+		)
 	}
 
 	// ==========================================================================
@@ -246,11 +246,11 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 		await writeOcxLock(stagingDir, lock, join(stagingDir, "ocx.lock"))
 
 		// ==========================================================================
-		// Phase 6: Move staging dir to final profile location (atomic swap)
+		// Phase 6: Move staging to final profile directory
 		// ==========================================================================
 
-		const moveSpin = quiet ? null : createSpinner({ text: "Finalizing installation..." })
-		moveSpin?.start()
+		const renameSpin = quiet ? null : createSpinner({ text: "Moving to profile directory..." })
+		renameSpin?.start()
 
 		// Ensure parent directory exists
 		const profilesDir = dirname(profileDir)
@@ -258,26 +258,8 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 			await mkdir(profilesDir, { recursive: true, mode: 0o700 })
 		}
 
-		// Atomic swap with rollback for force mode
-		if (profileExists && force) {
-			const backupDir = `${profileDir}.backup-${Date.now()}`
-			await rename(profileDir, backupDir)
-			try {
-				await rename(stagingDir, profileDir)
-			} catch (err) {
-				// Rollback: restore backup
-				await rename(backupDir, profileDir)
-				throw err
-			}
-			// Cleanup backup after successful install (outside try block)
-			// Failure here shouldn't trigger rollback since install succeeded
-			await rm(backupDir, { recursive: true, force: true })
-		} else {
-			// No existing profile: simple rename
-			await rename(stagingDir, profileDir)
-		}
-
-		moveSpin?.succeed("Installation complete")
+		await rename(stagingDir, profileDir)
+		renameSpin?.succeed("Profile installed")
 
 		// ==========================================================================
 		// Phase 7: Install dependencies via runAddCore
@@ -299,7 +281,7 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 					getComponentPath: () => "", // Flat install - no .opencode/ prefix
 				}
 
-				await runAddCore(depRefs, { profile: profileName, force }, provider)
+				await runAddCore(depRefs, { profile: profileName }, provider)
 				depsSpin?.succeed(`Installed ${manifest.dependencies.length} dependencies`)
 			} catch (error) {
 				depsSpin?.fail("Failed to install dependencies")
