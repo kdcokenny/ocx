@@ -44,5 +44,5 @@ jobs:
           test -f index.json
           test -f .well-known/ocx.json
           test -f components/hello-world.json
-          test -f components/hello-world/skill/hello-world/SKILL.md
+          test -f components/hello-world/skills/hello-world/SKILL.md
           echo "✓ All required files present"

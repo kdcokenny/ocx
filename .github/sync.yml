@@ -113,16 +113,16 @@ kdcokenny/opencode-workspace:
   - source: workers/kdco-registry/files/plugin/kdco-primitives/terminal-detect.ts
     dest: src/plugin/kdco-primitives/terminal-detect.ts
   # Skills
-  - source: workers/kdco-registry/files/skill/plan-protocol/SKILL.md
-    dest: src/skill/plan-protocol/SKILL.md
-  - source: workers/kdco-registry/files/skill/plan-review/SKILL.md
-    dest: src/skill/plan-review/SKILL.md
-  - source: workers/kdco-registry/files/skill/code-review/SKILL.md
-    dest: src/skill/code-review/SKILL.md
-  - source: workers/kdco-registry/files/skill/code-philosophy/SKILL.md
-    dest: src/skill/code-philosophy/SKILL.md
-  - source: workers/kdco-registry/files/skill/frontend-philosophy/SKILL.md
-    dest: src/skill/frontend-philosophy/SKILL.md
+  - source: workers/kdco-registry/files/skills/plan-protocol/SKILL.md
+    dest: src/skills/plan-protocol/SKILL.md
+  - source: workers/kdco-registry/files/skills/plan-review/SKILL.md
+    dest: src/skills/plan-review/SKILL.md
+  - source: workers/kdco-registry/files/skills/code-review/SKILL.md
+    dest: src/skills/code-review/SKILL.md
+  - source: workers/kdco-registry/files/skills/code-philosophy/SKILL.md
+    dest: src/skills/code-philosophy/SKILL.md
+  - source: workers/kdco-registry/files/skills/frontend-philosophy/SKILL.md
+    dest: src/skills/frontend-philosophy/SKILL.md
   # Agents
   - source: workers/kdco-registry/files/agent/researcher.md
     dest: src/agent/researcher.md

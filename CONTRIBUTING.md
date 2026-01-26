@@ -15,7 +15,7 @@ my-registry/
 ├── registry.jsonc      # Required: metadata and component definitions
 └── files/              # Component source files
     ├── agent/          # .md files
-    ├── skill/          # Directories with SKILL.md
+    ├── skills/          # Directories with SKILL.md
     └── plugin/         # .ts files (can have sub-directories)
 ```
 

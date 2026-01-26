@@ -751,7 +751,7 @@ my-registry/
       my-agent.md       # Agent definition
     plugin/
       my-plugin.ts      # Plugin file
-    skill/
+    skills/
       my-skill/
         SKILL.md        # Skill definition
 ```

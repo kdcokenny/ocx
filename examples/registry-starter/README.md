@@ -59,7 +59,7 @@ ocx add hello-world --registry https://your-registry.workers.dev
 ```
 ├── registry.jsonc         # Registry manifest
 ├── files/                  # Component source files
-│   └── skill/
+│   └── skills/
 │       └── hello-world/
 │           └── SKILL.md   # Example skill
 ├── dist/                   # Built output (generated)
@@ -75,8 +75,8 @@ ocx add hello-world --registry https://your-registry.workers.dev
 
 ```bash
 # Skill
-mkdir -p files/skill/my-skill
-echo "# My Skill\n\nInstructions..." > files/skill/my-skill/SKILL.md
+mkdir -p files/skills/my-skill
+echo "# My Skill\n\nInstructions..." > files/skills/my-skill/SKILL.md
 
 # Plugin
 touch files/plugin/my-plugin.ts
@@ -94,7 +94,7 @@ touch files/agent/my-agent.md
       "name": "my-skill",
       "type": "ocx:skill",
       "description": "What it does",
-      "files": ["skill/my-skill/SKILL.md"]
+      "files": ["skills/my-skill/SKILL.md"]
     }
   ]
 }

@@ -484,8 +484,8 @@ Skills are reusable instructions loaded on-demand via the `skill` tool.
 
 ### Skill Locations
 
-- **Project config**: `.opencode/skill/<name>/SKILL.md`
-- **Global config**: `~/.config/opencode/skill/<name>/SKILL.md`
+- **Project config**: `.opencode/skills/<name>/SKILL.md`
+- **Global config**: `~/.config/opencode/skills/<name>/SKILL.md`
 - **Claude-compatible**: `.claude/skills/<name>/SKILL.md`
 - **Global Claude**: `~/.claude/skills/<name>/SKILL.md`
 

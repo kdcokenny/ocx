@@ -41,7 +41,7 @@ my-registry/
 └── files/            # Component source files
     ├── agent/
     ├── plugin/
-    ├── skill/
+    ├── skills/
     └── command/
 ```
 
@@ -86,8 +86,8 @@ Use string shorthand when the target can be auto-inferred from the path:
 // Full object (when you need a custom target)
 "files": [
   {
-    "path": "skill/my-skill/SKILL.md",
-    "target": ".opencode/skill/my-skill/SKILL.md"
+    "path": "skills/my-skill/SKILL.md",
+    "target": ".opencode/skills/my-skill/SKILL.md"
   }
 ]
 ```
@@ -162,7 +162,7 @@ Components can specify settings to merge into the user's `opencode.jsonc`:
 | Type | Target Directory | Description |
 |------|-----------------|-------------|
 | `ocx:agent` | `agent/` | Markdown files defining specialized agents. |
-| `ocx:skill` | `skill/` | Instruction sets (must follow `.opencode/skill/<name>/SKILL.md`). |
+| `ocx:skill` | `skills/` | Instruction sets (must follow `.opencode/skills/<name>/SKILL.md`). |
 | `ocx:plugin` | `plugin/` | TypeScript/JavaScript extensions for tools and hooks. |
 | `ocx:command` | `command/` | Markdown templates for TUI commands. |
 | `ocx:tool` | `tool/` | Custom tool implementations. |

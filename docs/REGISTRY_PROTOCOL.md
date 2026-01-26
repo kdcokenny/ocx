@@ -90,7 +90,7 @@ Returns full component metadata in npm-style packument format.
       "files": [
         {
           "path": "SKILL.md",
-          "target": ".opencode/skill/my-skill/SKILL.md"
+          "target": ".opencode/skills/my-skill/SKILL.md"
         }
       ],
       "dependencies": [],
@@ -129,7 +129,7 @@ Returns raw file content for installation.
 
 | Type | Install Location | Description |
 |------|------------------|-------------|
-| `ocx:skill` | `.opencode/skill/{name}/` | AI behavior instructions |
+| `ocx:skill` | `.opencode/skills/{name}/` | AI behavior instructions |
 | `ocx:plugin` | `.opencode/plugin/` | OpenCode plugins |
 | `ocx:agent` | `.opencode/agent/` | Custom agent definitions |
 | `ocx:command` | `.opencode/command/` | Custom CLI commands |

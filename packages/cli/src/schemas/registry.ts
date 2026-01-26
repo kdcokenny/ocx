@@ -158,11 +158,11 @@ export const targetPathSchema = z
 			const parts = path.split("/")
 			const dir = parts[1]
 			if (!dir) return false
-			return ["agent", "skill", "plugin", "command", "tool", "philosophy"].includes(dir)
+			return ["agent", "skills", "plugin", "command", "tool", "philosophy"].includes(dir)
 		},
 		{
 			message:
-				'Target must be in a valid directory: ".opencode/{agent|skill|plugin|command|tool|philosophy}/..."',
+				'Target must be in a valid directory: ".opencode/{agent|skills|plugin|command|tool|philosophy}/..."',
 		},
 	)
 

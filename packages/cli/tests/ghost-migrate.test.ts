@@ -779,14 +779,14 @@ describe("ghost migrate - flatten .opencode directories", () => {
 		const dotOpencode = join(profileDir, ".opencode")
 
 		// Create all 4 directories with content
-		for (const dir of ["plugin", "agent", "skill", "command"]) {
+		for (const dir of ["plugin", "agent", "skills", "command"]) {
 			const dirPath = join(dotOpencode, dir)
 			mkdirSync(dirPath, { recursive: true })
 			writeFileSync(join(dirPath, `${dir}-file.md`), `# ${dir}`)
 		}
 
 		// Create nested structure in skill
-		const skillSubdir = join(dotOpencode, "skill", "my-skill")
+		const skillSubdir = join(dotOpencode, "skills", "my-skill")
 		mkdirSync(skillSubdir, { recursive: true })
 		writeFileSync(join(skillSubdir, "SKILL.md"), "# My Skill")
 
@@ -798,13 +798,13 @@ describe("ghost migrate - flatten .opencode directories", () => {
 		expect(exitCode).toBe(0)
 
 		// Verify all moved to root
-		for (const dir of ["plugin", "agent", "skill", "command"]) {
+		for (const dir of ["plugin", "agent", "skills", "command"]) {
 			expect(existsSync(join(profileDir, dir, `${dir}-file.md`))).toBe(true)
 		}
 
 		// Verify nested structure preserved
-		expect(existsSync(join(profileDir, "skill", "my-skill", "SKILL.md"))).toBe(true)
-		expect(readFileSync(join(profileDir, "skill", "my-skill", "SKILL.md"), "utf-8")).toBe(
+		expect(existsSync(join(profileDir, "skills", "my-skill", "SKILL.md"))).toBe(true)
+		expect(readFileSync(join(profileDir, "skills", "my-skill", "SKILL.md"), "utf-8")).toBe(
 			"# My Skill",
 		)
 	})

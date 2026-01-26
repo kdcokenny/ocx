@@ -112,7 +112,7 @@ describe("ocx update", () => {
 		expect(pluginContent).toBe("// Plugin v2")
 
 		const skillContent = await readFile(
-			join(testDir, ".opencode/skill/test-skill/SKILL.md"),
+			join(testDir, ".opencode/skills/test-skill/SKILL.md"),
 			"utf-8",
 		)
 		expect(skillContent).toBe("# Skill v2")
@@ -484,7 +484,7 @@ describe("ocx update", () => {
 
 		// Verify all dependencies were installed
 		expect(existsSync(join(testDir, ".opencode/agent/test-agent.md"))).toBe(true)
-		expect(existsSync(join(testDir, ".opencode/skill/test-skill/SKILL.md"))).toBe(true)
+		expect(existsSync(join(testDir, ".opencode/skills/test-skill/SKILL.md"))).toBe(true)
 		expect(existsSync(join(testDir, ".opencode/plugin/test-plugin.ts"))).toBe(true)
 
 		// Change registry content for the main component only

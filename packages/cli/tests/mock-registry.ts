@@ -38,7 +38,7 @@ export function startMockRegistry(): MockRegistry {
 			name: "test-skill",
 			type: "ocx:skill",
 			description: "A test skill",
-			files: [{ path: "SKILL.md", target: ".opencode/skill/test-skill/SKILL.md" }],
+			files: [{ path: "SKILL.md", target: ".opencode/skills/test-skill/SKILL.md" }],
 			dependencies: ["test-plugin"],
 		},
 		"test-agent": {

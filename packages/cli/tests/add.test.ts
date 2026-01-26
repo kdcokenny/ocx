@@ -54,7 +54,7 @@ describe("ocx add", () => {
 
 		// Verify files
 		expect(existsSync(join(testDir, ".opencode/agent/test-agent.md"))).toBe(true)
-		expect(existsSync(join(testDir, ".opencode/skill/test-skill/SKILL.md"))).toBe(true)
+		expect(existsSync(join(testDir, ".opencode/skills/test-skill/SKILL.md"))).toBe(true)
 		expect(existsSync(join(testDir, ".opencode/plugin/test-plugin.ts"))).toBe(true)
 
 		// Verify lock file
@@ -334,7 +334,7 @@ describe("ocx add --profile", () => {
 
 		// Verify all installed to flattened paths
 		expect(existsSync(join(profileDir, "agent", "test-agent.md"))).toBe(true)
-		expect(existsSync(join(profileDir, "skill", "test-skill", "SKILL.md"))).toBe(true)
+		expect(existsSync(join(profileDir, "skills", "test-skill", "SKILL.md"))).toBe(true)
 		expect(existsSync(join(profileDir, "plugin", "test-plugin.ts"))).toBe(true)
 
 		// Verify lock file at profile root

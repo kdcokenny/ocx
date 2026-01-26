@@ -29,7 +29,7 @@ const BACKUP_EXT = ".bak"
 /** Legacy symlink for stateful profile selection */
 const CURRENT_SYMLINK = "current"
 /** Directories to flatten from .opencode/ to profile root */
-const FLATTEN_DIRS = ["plugin", "agent", "skill", "command"] as const
+const FLATTEN_DIRS = ["plugin", "agent", "skills", "command"] as const
 
 // =============================================================================
 // HELPERS

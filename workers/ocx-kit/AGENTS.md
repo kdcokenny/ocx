@@ -109,7 +109,7 @@ const skip = o.f === true
 kit/
 ├── registry.jsonc         # Registry manifest (required)
 ├── files/                  # Component source files
-│   ├── skill/
+│   ├── skills/
 │   │   └── my-skill/
 │   │       └── SKILL.md
 │   ├── plugin/
@@ -140,7 +140,7 @@ The registry manifest defines your components:
       "name": "my-skill",
       "type": "ocx:skill",
       "description": "A helpful skill",
-      "files": ["skill/my-skill/SKILL.md"]
+      "files": ["skills/my-skill/SKILL.md"]
     }
   ]
 }
@@ -164,7 +164,7 @@ OCX supports the following component types:
 
 Skills teach AI assistants how to perform specific tasks.
 
-**File:** `files/skill/{name}/SKILL.md`
+**File:** `files/skills/{name}/SKILL.md`
 
 ```markdown
 # Skill Name
@@ -424,7 +424,7 @@ Simple relative path:
 
 ```json
 {
-  "files": ["skill/my-skill/SKILL.md"]
+  "files": ["skills/my-skill/SKILL.md"]
 }
 ```
 
@@ -436,7 +436,7 @@ For advanced control:
 {
   "files": [
     {
-      "source": "skill/my-skill/SKILL.md",
+      "source": "skills/my-skill/SKILL.md",
       "target": ".opencode/skills/my-skill.md",
       "transform": "minify"
     }
@@ -491,7 +491,7 @@ dist/
 ├── index.json              # Registry manifest
 ├── .well-known/
 │   └── ocx.json            # Discovery endpoint
-├── skill/
+├── skills/
 │   └── my-skill/
 │       └── SKILL.md
 └── plugin/
@@ -561,8 +561,8 @@ For comprehensive documentation, refer to:
 
 ```bash
 # For a skill
-mkdir -p files/skill/my-new-skill
-touch files/skill/my-new-skill/SKILL.md
+mkdir -p files/skills/my-new-skill
+touch files/skills/my-new-skill/SKILL.md
 
 # For a plugin
 touch files/plugin/my-plugin.ts
@@ -581,7 +581,7 @@ touch files/agent/my-agent.md
       "name": "my-new-skill",
       "type": "ocx:skill",
       "description": "Description of what it does",
-      "files": ["skill/my-new-skill/SKILL.md"]
+      "files": ["skills/my-new-skill/SKILL.md"]
     }
   ]
 }

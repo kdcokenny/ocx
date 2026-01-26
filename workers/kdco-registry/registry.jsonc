@@ -79,35 +79,35 @@
 			"name": "plan-protocol",
 			"type": "ocx:skill",
 			"description": "Guidelines for using the plan system",
-			"files": ["skill/plan-protocol/SKILL.md"],
+			"files": ["skills/plan-protocol/SKILL.md"],
 			"dependencies": ["workspace-plugin"]
 		},
 		{
 			"name": "code-philosophy",
 			"type": "ocx:skill",
 			"description": "The 5 Laws of Elegant Defense",
-			"files": ["skill/code-philosophy/SKILL.md"],
+			"files": ["skills/code-philosophy/SKILL.md"],
 			"dependencies": []
 		},
 		{
 			"name": "frontend-philosophy",
 			"type": "ocx:skill",
 			"description": "The 5 Pillars of Intentional UI",
-			"files": ["skill/frontend-philosophy/SKILL.md"],
+			"files": ["skills/frontend-philosophy/SKILL.md"],
 			"dependencies": []
 		},
 		{
 			"name": "code-review",
 			"type": "ocx:skill",
 			"description": "Structured code review methodology with severity levels and categories",
-			"files": ["skill/code-review/SKILL.md"],
+			"files": ["skills/code-review/SKILL.md"],
 			"dependencies": []
 		},
 		{
 			"name": "plan-review",
 			"type": "ocx:skill",
 			"description": "Criteria for reviewing implementation plans",
-			"files": ["skill/plan-review/SKILL.md"],
+			"files": ["skills/plan-review/SKILL.md"],
 			"dependencies": []
 		},
 

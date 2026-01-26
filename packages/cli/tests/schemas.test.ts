@@ -131,11 +131,11 @@ describe("schemas", () => {
 		it("should accept valid .opencode paths", () => {
 			expect(() => targetPathSchema.parse(".opencode/agent/test.md")).not.toThrow()
 			expect(() => targetPathSchema.parse(".opencode/plugin/my-plugin.ts")).not.toThrow()
-			expect(() => targetPathSchema.parse(".opencode/skill/test/SKILL.md")).not.toThrow()
+			expect(() => targetPathSchema.parse(".opencode/skills/test/SKILL.md")).not.toThrow()
 		})
 
 		it("should accept all valid directories", () => {
-			const validDirs = ["agent", "skill", "plugin", "command", "tool", "philosophy"]
+			const validDirs = ["agent", "skills", "plugin", "command", "tool", "philosophy"]
 			for (const dir of validDirs) {
 				expect(() => targetPathSchema.parse(`.opencode/${dir}/file.md`)).not.toThrow()
 			}
@@ -204,7 +204,7 @@ describe("schemas", () => {
 		})
 
 		it("should handle nested paths", () => {
-			expect(inferTargetPath("skill/test/SKILL.md")).toBe(".opencode/skill/test/SKILL.md")
+			expect(inferTargetPath("skills/test/SKILL.md")).toBe(".opencode/skills/test/SKILL.md")
 		})
 
 		it("should handle single file", () => {
@@ -228,10 +228,10 @@ describe("schemas", () => {
 		})
 
 		it("should handle skill directory paths", () => {
-			const result = normalizeFile("skill/my-skill/SKILL.md")
+			const result = normalizeFile("skills/my-skill/SKILL.md")
 			expect(result).toEqual({
-				path: "skill/my-skill/SKILL.md",
-				target: ".opencode/skill/my-skill/SKILL.md",
+				path: "skills/my-skill/SKILL.md",
+				target: ".opencode/skills/my-skill/SKILL.md",
 			})
 		})
 	})

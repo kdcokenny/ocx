@@ -28,7 +28,7 @@
 			"name": "hello-world",
 			"type": "ocx:skill",
 			"description": "An example skill to get you started",
-			"files": ["skill/hello-world/SKILL.md"]
+			"files": ["skills/hello-world/SKILL.md"]
 		}
 	]
 }
