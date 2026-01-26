@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { buildOpenCodeEnv, resolveOpenCodeBinary } from "../src/commands/opencode"
+import { runCLI } from "./helpers"
 
 describe("resolveOpenCodeBinary", () => {
 	// Table-driven with DIFFERENT values to prove precedence
@@ -156,5 +157,33 @@ describe("buildOpenCodeEnv", () => {
 			disableProjectConfig: false,
 		})
 		expect(result).not.toBe(baseEnv)
+	})
+})
+
+describe("oc command CLI contract", () => {
+	it("help shows supported flags and not [path]", async () => {
+		const result = await runCLI(["oc", "--help"], process.cwd())
+		expect(result.stdout).toContain("--profile")
+		expect(result.stdout).toContain("--no-rename")
+		expect(result.stdout).not.toContain("[path]")
+	})
+
+	it("does not interpret positional args as path (regression #112)", async () => {
+		// The bug: "ocx oc run" treated "run" as [path] argument, causing ENOENT
+		// Now: "run" should pass through to opencode, not be interpreted as a directory
+		// Set OPENCODE_BIN to a command that fails quickly to avoid timeout
+		const result = await runCLI(["oc", "--no-rename", "run", "test"], process.cwd(), {
+			env: { OPENCODE_BIN: "nonexistent-opencode-binary" },
+		})
+		// Should NOT fail with "no such file or directory" for a 'run' directory
+		// It should fail with opencode binary not found, which is expected
+		expect(result.output).not.toMatch(/no such file or directory.*run/i)
+		// Should fail with command not found or similar
+		expect(result.exitCode).not.toBe(0)
+	})
+
+	it("errors when -p flag missing value", async () => {
+		const result = await runCLI(["oc", "-p"], process.cwd())
+		expect(result.exitCode).toBe(1)
 	})
 })
