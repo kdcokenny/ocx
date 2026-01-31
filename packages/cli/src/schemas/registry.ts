@@ -147,6 +147,7 @@ const PROFILE_RESERVED_TARGETS = new Set(["ocx.lock", ".opencode"])
 
 /**
  * Target path must be inside .opencode/ with valid subdirectory
+ * TODO: Consider allowing root-level .opencode/<file> targets for config files
  */
 export const targetPathSchema = z
 	.string()
