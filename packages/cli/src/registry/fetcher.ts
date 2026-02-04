@@ -6,6 +6,7 @@
 import type { ComponentManifest, McpServer, RegistryIndex } from "../schemas/registry"
 import { componentManifestSchema, packumentSchema, registryIndexSchema } from "../schemas/registry"
 import { NetworkError, NotFoundError, ValidationError } from "../utils/errors"
+import { normalizeRegistryUrl } from "../utils/url"
 
 // In-memory cache for deduplication
 const cache = new Map<string, Promise<unknown>>()
@@ -66,7 +67,7 @@ async function fetchWithCache<T>(url: string, parse: (data: unknown) => T): Prom
  * Fetch registry index
  */
 export async function fetchRegistryIndex(baseUrl: string): Promise<RegistryIndex> {
-	const url = `${baseUrl.replace(/\/$/, "")}/index.json`
+	const url = `${normalizeRegistryUrl(baseUrl)}/index.json`
 
 	return fetchWithCache(url, (data) => {
 		const result = registryIndexSchema.safeParse(data)
@@ -94,7 +95,7 @@ export async function fetchComponentVersion(
 	name: string,
 	version?: string,
 ): Promise<{ manifest: ComponentManifest; version: string }> {
-	const url = `${baseUrl.replace(/\/$/, "")}/components/${name}.json`
+	const url = `${normalizeRegistryUrl(baseUrl)}/components/${name}.json`
 
 	return fetchWithCache(`${url}#v=${version ?? "latest"}`, (data) => {
 		// 1. Parse as packument
@@ -143,7 +144,7 @@ export async function fetchFileContent(
 	componentName: string,
 	filePath: string,
 ): Promise<string> {
-	const url = `${baseUrl.replace(/\/$/, "")}/components/${componentName}/${filePath}`
+	const url = `${normalizeRegistryUrl(baseUrl)}/components/${componentName}/${filePath}`
 
 	let response: Response
 	try {

@@ -26,11 +26,11 @@ import {
 import { isContentIdentical } from "../utils/content"
 import { ConfigError, ConflictError, IntegrityError, ValidationError } from "../utils/errors"
 import {
-	assertPathInside,
 	collectCompatIssues,
 	createSpinner,
 	handleError,
 	logger,
+	normalizeRegistryUrl,
 	warnCompatIssues,
 } from "../utils/index"
 import {
@@ -42,6 +42,7 @@ import {
 	validateNpmPackage,
 	validateOpenCodePlugin,
 } from "../utils/npm-registry"
+import { PathValidationError, validatePath } from "../utils/path-security"
 import { resolveTargetPath } from "../utils/paths"
 import { hashBundle, hashContent } from "../utils/receipt"
 import {
@@ -483,7 +484,14 @@ async function runRegistryAddCore(
 				// V2: Resolve target path based on mode (flattened vs local)
 				const resolvedTarget = resolveTargetPath(file.target, isFlattened)
 				const targetPath = join(cwd, resolvedTarget)
-				assertPathInside(targetPath, cwd)
+				try {
+					validatePath(cwd, resolvedTarget)
+				} catch (error) {
+					if (error instanceof PathValidationError) {
+						throw new ValidationError(`Path "${targetPath}" is outside allowed directory "${cwd}"`)
+					}
+					throw error
+				}
 			}
 
 			// V2: Check if already installed with canonical ID (use hash as revision)
@@ -491,7 +499,7 @@ async function runRegistryAddCore(
 			// If found with different hash, fail - registry content changed unexpectedly
 			const existingEntries = Object.entries(receipt.installed).filter(
 				([_id, entry]) =>
-					entry.registryUrl.replace(/\/$/, "") === component.baseUrl.replace(/\/$/, "") &&
+					normalizeRegistryUrl(entry.registryUrl) === normalizeRegistryUrl(component.baseUrl) &&
 					entry.namespace === component.registryName &&
 					entry.name === component.name,
 			)

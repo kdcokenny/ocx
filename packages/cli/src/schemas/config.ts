@@ -10,6 +10,7 @@ import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
 import { z } from "zod"
+import { normalizeRegistryUrl } from "../utils/url"
 import { qualifiedComponentSchema } from "./registry"
 
 // =============================================================================
@@ -229,7 +230,7 @@ export function createCanonicalId(
 	revision: string,
 ): string {
 	// Normalize registry URL (remove trailing slash)
-	const normalizedUrl = registryUrl.replace(/\/$/, "")
+	const normalizedUrl = normalizeRegistryUrl(registryUrl)
 	return `${normalizedUrl}::${namespace}/${name}@${revision}`
 }
 
@@ -296,7 +297,7 @@ export function parseCanonicalId(canonicalId: string): {
 	}
 
 	return {
-		registryUrl: registryUrl.replace(/\/$/, ""), // Normalize
+		registryUrl: normalizeRegistryUrl(registryUrl), // Normalize
 		namespace,
 		name,
 		revision,

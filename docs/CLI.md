@@ -491,6 +491,7 @@ These options are available on all commands:
 | 6    | Conflict   | Resource already exists        |
 | 66   | Not Found  | Resource not found             |
 | 69   | Network    | Network/connectivity error     |
+| 73   | Integrity  | Component hash mismatch        |
 | 78   | Config     | Configuration error            |
 
 ---

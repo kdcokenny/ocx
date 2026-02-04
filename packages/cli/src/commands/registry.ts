@@ -13,7 +13,7 @@ import { getProfileOcxConfig } from "../profile/paths"
 import type { RegistryConfig } from "../schemas/config"
 import { findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config"
 import {
-	OcxConfigError,
+	ConfigError,
 	ProfileNotFoundError,
 	RegistryExistsError,
 	ValidationError,
@@ -199,7 +199,7 @@ async function resolveRegistryTarget(
 
 		const configPath = getProfileOcxConfig(options.profile)
 		if (!existsSync(configPath)) {
-			throw new OcxConfigError(
+			throw new ConfigError(
 				`Profile '${options.profile}' has no ocx.jsonc. Run 'ocx profile config ${options.profile}' to create it.`,
 			)
 		}

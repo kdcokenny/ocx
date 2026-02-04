@@ -241,7 +241,7 @@ describe("handleError JSON output", () => {
 				expected: "abc123",
 				found: "def456",
 			})
-			expect(output.exitCode).toBe(EXIT_CODES.INTEGRITY)
+			expect(output.exitCode).toBe(73)
 		})
 	})
 

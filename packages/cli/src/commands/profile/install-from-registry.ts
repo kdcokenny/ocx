@@ -7,7 +7,6 @@
  * - Lock file creation for reproducible installs
  */
 
-import { createHash } from "node:crypto"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
@@ -21,6 +20,7 @@ import { type OcxLock, writeOcxLock } from "../../schemas/config"
 import { normalizeComponentManifest } from "../../schemas/registry"
 import { ConflictError, NotFoundError, ValidationError } from "../../utils/errors"
 import { createSpinner, logger } from "../../utils/index"
+import { hashBundle } from "../../utils/receipt"
 import { runAddCore } from "../add"
 
 // =============================================================================
@@ -38,29 +38,6 @@ export interface InstallProfileOptions {
 	registryUrl: string
 	/** Suppress output */
 	quiet?: boolean
-}
-
-// =============================================================================
-// HASHING UTILITIES
-// =============================================================================
-
-function hashContent(content: string | Buffer): string {
-	return createHash("sha256").update(content).digest("hex")
-}
-
-function hashBundle(files: { path: string; content: Buffer }[]): string {
-	// Sort files for deterministic hashing
-	const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path))
-
-	// Create a manifest of file hashes
-	const manifestParts: string[] = []
-	for (const file of sorted) {
-		const hash = hashContent(file.content)
-		manifestParts.push(`${file.path}:${hash}`)
-	}
-
-	// Hash the manifest itself
-	return hashContent(manifestParts.join("\n"))
 }
 
 // =============================================================================
@@ -250,7 +227,9 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 		// Phase 5: Create ocx.lock in staging directory
 		// ==========================================================================
 
-		const profileHash = hashBundle(profileFiles.map((f) => ({ path: f.path, content: f.content })))
+		const profileHash = await hashBundle(
+			profileFiles.map((f) => ({ path: f.path, content: f.content })),
+		)
 
 		const lock: OcxLock = {
 			lockVersion: 1,

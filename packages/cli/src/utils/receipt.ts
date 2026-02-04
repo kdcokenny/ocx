@@ -9,6 +9,7 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 import type { InstalledComponent, Receipt } from "../schemas/config"
 import { createCanonicalId, parseCanonicalId } from "../schemas/config"
+import { normalizeRegistryUrl } from "./url"
 
 /**
  * Hash file content using SHA-256.
@@ -137,11 +138,11 @@ export function findComponentsByRegistry(
 	receipt: Receipt,
 	registryUrl: string,
 ): Array<{ canonicalId: string; entry: InstalledComponent }> {
-	const normalized = registryUrl.replace(/\/$/, "")
+	const normalized = normalizeRegistryUrl(registryUrl)
 	const results: Array<{ canonicalId: string; entry: InstalledComponent }> = []
 
 	for (const [canonicalId, entry] of Object.entries(receipt.installed)) {
-		if (entry.registryUrl.replace(/\/$/, "") === normalized) {
+		if (normalizeRegistryUrl(entry.registryUrl) === normalized) {
 			results.push({ canonicalId, entry })
 		}
 	}

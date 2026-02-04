@@ -13,13 +13,23 @@ export type ErrorCode =
 	| "INTEGRITY_ERROR"
 	| "UPDATE_ERROR"
 
+/**
+ * Exit codes for OCX CLI errors
+ * @property {0} SUCCESS - Command completed successfully
+ * @property {1} GENERAL - Unspecified error
+ * @property {6} CONFLICT - Resource already exists
+ * @property {66} NOT_FOUND - Resource not found
+ * @property {69} NETWORK - Network/connectivity error
+ * @property {73} INTEGRITY - Component hash mismatch
+ * @property {78} CONFIG - Configuration error
+ */
 export const EXIT_CODES = {
 	SUCCESS: 0,
 	GENERAL: 1,
 	NOT_FOUND: 66,
 	NETWORK: 69,
 	CONFIG: 78,
-	INTEGRITY: 1, // Exit code for integrity failures
+	INTEGRITY: 73,
 	CONFLICT: 6,
 } as const
 
@@ -97,13 +107,6 @@ export class SelfUpdateError extends OCXError {
 	constructor(message: string) {
 		super(message, "UPDATE_ERROR", EXIT_CODES.GENERAL)
 		this.name = "SelfUpdateError"
-	}
-}
-
-export class OcxConfigError extends OCXError {
-	constructor(message: string) {
-		super(message, "CONFIG_ERROR", EXIT_CODES.CONFIG)
-		this.name = "OcxConfigError"
 	}
 }
 

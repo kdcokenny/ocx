@@ -19,7 +19,7 @@ import {
 	ProfileNotFoundError,
 	ValidationError,
 } from "../../utils/errors"
-import { handleError, logger } from "../../utils/index"
+import { handleError, logger, normalizeRegistryUrl } from "../../utils/index"
 import { installProfileFromRegistry } from "./install-from-registry"
 
 // =============================================================================
@@ -239,7 +239,7 @@ async function runProfileAdd(name: string, options: ProfileAddOptions): Promise<
 			// Registry URL is everything except the last path segment
 			pathParts.pop()
 			url.pathname = pathParts.length > 0 ? `/${pathParts.join("/")}` : ""
-			const registryUrl = url.toString().replace(/\/$/, "") // Remove trailing slash
+			const registryUrl = normalizeRegistryUrl(url.toString()) // Remove trailing slash
 
 			// Install profile from URL
 			await installProfileFromRegistry({

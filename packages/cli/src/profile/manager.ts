@@ -3,9 +3,9 @@ import { parse } from "jsonc-parser"
 import type { ProfileOcxConfig } from "../schemas/ocx"
 import { profileOcxConfigSchema } from "../schemas/ocx"
 import {
+	ConfigError,
 	ConflictError,
 	InvalidProfileNameError,
-	OcxConfigError,
 	ProfileExistsError,
 	ProfileNotFoundError,
 	ProfilesNotInitializedError,
@@ -161,7 +161,7 @@ export class ProfileManager {
 		const ocxFile = Bun.file(ocxPath)
 
 		if (!(await ocxFile.exists())) {
-			throw new OcxConfigError(`Profile "${name}" is missing ocx.jsonc. Expected at: ${ocxPath}`)
+			throw new ConfigError(`Profile "${name}" is missing ocx.jsonc. Expected at: ${ocxPath}`)
 		}
 
 		const ocxContent = await ocxFile.text()
@@ -226,9 +226,7 @@ export class ProfileManager {
 		const ocxFile = Bun.file(ocxPath)
 
 		if (!(await ocxFile.exists())) {
-			throw new OcxConfigError(
-				`Local profile "${name}" is missing ocx.jsonc. Expected at: ${ocxPath}`,
-			)
+			throw new ConfigError(`Local profile "${name}" is missing ocx.jsonc. Expected at: ${ocxPath}`)
 		}
 
 		const ocxContent = await ocxFile.text()
