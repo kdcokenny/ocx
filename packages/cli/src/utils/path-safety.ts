@@ -16,7 +16,6 @@
 
 import path from "node:path"
 import { ValidationError } from "./errors"
-import { validatePath } from "./path-security"
 
 /**
  * Check if a resolved path is inside the allowed parent directory.
@@ -31,21 +30,16 @@ export function isPathInside(childPath: string, parentPath: string): boolean {
 	const resolvedChild = path.resolve(childPath)
 	const resolvedParent = path.resolve(parentPath)
 
-	// Compute relative path from parent to child
-	let relative = path.relative(resolvedParent, resolvedChild)
-
-	// Avoid empty string for same directory case
-	if (relative === "") {
-		relative = "."
-	}
-
-	// Test if validatePath succeeds
-	try {
-		validatePath(resolvedParent, relative)
+	// Same path is contained
+	if (resolvedChild === resolvedParent) {
 		return true
-	} catch {
-		return false
 	}
+
+	// Compute relative path from parent to child
+	const relative = path.relative(resolvedParent, resolvedChild)
+
+	// Check if relative path escapes parent
+	return !!relative && !relative.startsWith("..") && !path.isAbsolute(relative)
 }
 
 /**

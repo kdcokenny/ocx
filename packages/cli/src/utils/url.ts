@@ -3,5 +3,5 @@
  * Ensures consistent URL comparison and prevents double-slash issues.
  */
 export function normalizeRegistryUrl(url: string): string {
-	return url.replace(/\/+$/, "")
+	return url.trim().replace(/\/+$/, "")
 }
