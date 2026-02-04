@@ -180,4 +180,103 @@ describe("ConfigResolver", () => {
 			expect(config.opencode.topLevel).toBe("local") // Local wins
 		})
 	})
+
+	// =============================================================================
+	// OPENCODE CONFIG MERGING TESTS
+	// =============================================================================
+
+	describe("opencode config merging", () => {
+		let originalXdgConfigHome: string | undefined
+		let xdgDir: string
+
+		beforeEach(async () => {
+			xdgDir = path.join(os.tmpdir(), `ocx-test-xdg-${Math.random().toString(36).slice(2)}`)
+			await fs.mkdir(xdgDir, { recursive: true })
+			originalXdgConfigHome = process.env.XDG_CONFIG_HOME
+			process.env.XDG_CONFIG_HOME = xdgDir
+		})
+
+		afterEach(async () => {
+			if (originalXdgConfigHome === undefined) {
+				delete process.env.XDG_CONFIG_HOME
+			} else {
+				process.env.XDG_CONFIG_HOME = originalXdgConfigHome
+			}
+			await fs.rm(xdgDir, { recursive: true, force: true })
+		})
+
+		it("concatenates plugin arrays from profile and local config", async () => {
+			await using tmp = await tmpdir({
+				git: true,
+				profile: {
+					name: "default",
+					ocxConfig: { registries: {}, exclude: [], include: [] },
+					opencodeConfig: { plugin: ["npm:profile-plugin"] },
+				},
+				opencodeConfig: { plugin: ["npm:local-plugin"] },
+			})
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const config = resolver.resolve()
+
+			expect(config.opencode.plugin).toEqual(["npm:profile-plugin", "npm:local-plugin"])
+		})
+
+		it("concatenates instructions arrays from profile and local config", async () => {
+			await using tmp = await tmpdir({
+				git: true,
+				profile: {
+					name: "default",
+					ocxConfig: { registries: {}, exclude: [], include: [] },
+					opencodeConfig: { instructions: ["Profile instruction"] },
+				},
+				opencodeConfig: { instructions: ["Local instruction"] },
+			})
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const config = resolver.resolve()
+
+			expect(config.opencode.instructions).toEqual(["Profile instruction", "Local instruction"])
+		})
+
+		it("keeps profile plugins when local config has empty plugin array", async () => {
+			await using tmp = await tmpdir({
+				git: true,
+				profile: {
+					name: "default",
+					ocxConfig: { registries: {}, exclude: [], include: [] },
+					opencodeConfig: { plugin: ["npm:profile-plugin"] },
+				},
+				opencodeConfig: { plugin: [] },
+			})
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const config = resolver.resolve()
+
+			// Empty array concatenation results in just the profile plugins
+			expect(config.opencode.plugin).toEqual(["npm:profile-plugin"])
+		})
+
+		it("deduplicates plugins when same plugin in profile and local", async () => {
+			await using tmp = await tmpdir({
+				git: true,
+				profile: {
+					name: "default",
+					ocxConfig: { registries: {}, exclude: [], include: [] },
+					opencodeConfig: { plugin: ["npm:shared-plugin", "npm:profile-only"] },
+				},
+				opencodeConfig: { plugin: ["npm:shared-plugin", "npm:local-only"] },
+			})
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const config = resolver.resolve()
+
+			// Should deduplicate shared-plugin
+			expect(config.opencode.plugin).toEqual([
+				"npm:shared-plugin",
+				"npm:profile-only",
+				"npm:local-only",
+			])
+		})
+	})
 })

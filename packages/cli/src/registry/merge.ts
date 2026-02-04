@@ -30,12 +30,14 @@ export function mergeOpencodeConfig(
 	const merged = mergeDeep(target, source) as NormalizedOpencodeConfig
 
 	// Concatenate and deduplicate plugin arrays (matching OpenCode behavior)
-	if (target.plugin && source.plugin) {
+	// Array.isArray guard protects against malformed input
+	if (Array.isArray(target.plugin) && Array.isArray(source.plugin)) {
 		merged.plugin = Array.from(new Set([...target.plugin, ...source.plugin]))
 	}
 
 	// Concatenate and deduplicate instructions arrays (matching OpenCode behavior)
-	if (target.instructions && source.instructions) {
+	// Array.isArray guard protects against malformed input
+	if (Array.isArray(target.instructions) && Array.isArray(source.instructions)) {
 		merged.instructions = Array.from(new Set([...target.instructions, ...source.instructions]))
 	}
 

@@ -1,7 +1,9 @@
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises"
 import { parse } from "jsonc-parser"
+import { mergeOpencodeConfig } from "../registry/merge"
 import type { ProfileOcxConfig } from "../schemas/ocx"
 import { profileOcxConfigSchema } from "../schemas/ocx"
+import type { NormalizedOpencodeConfig } from "../schemas/registry"
 import {
 	ConflictError,
 	InvalidProfileNameError,
@@ -269,7 +271,10 @@ export class ProfileManager {
 		return {
 			name: base.name,
 			ocx: this.deepMergeOcx(base.ocx, overlay.ocx),
-			opencode: this.deepMerge(base.opencode ?? {}, overlay.opencode ?? {}),
+			opencode: mergeOpencodeConfig(
+				(base.opencode ?? {}) as NormalizedOpencodeConfig,
+				(overlay.opencode ?? {}) as NormalizedOpencodeConfig,
+			) as Record<string, unknown>,
 			hasAgents: base.hasAgents || overlay.hasAgents,
 		}
 	}
@@ -306,52 +311,6 @@ export class ProfileManager {
 		}
 
 		return result
-	}
-
-	/**
-	 * Deep merge for opencode config.
-	 * Matches OpenCode behavior: objects merge, arrays replace (except plugin/instructions).
-	 */
-	private deepMerge(
-		target: Record<string, unknown>,
-		source: Record<string, unknown>,
-	): Record<string, unknown> {
-		const result = { ...target }
-
-		for (const key of Object.keys(source)) {
-			const sourceValue = source[key]
-			const targetValue = result[key]
-
-			// Special handling for plugin and instructions arrays - concatenate + dedupe
-			if (
-				(key === "plugin" || key === "instructions") &&
-				Array.isArray(sourceValue) &&
-				Array.isArray(targetValue)
-			) {
-				result[key] = Array.from(new Set([...targetValue, ...sourceValue]))
-				continue
-			}
-
-			// If both are plain objects, recurse
-			if (this.isPlainObject(sourceValue) && this.isPlainObject(targetValue)) {
-				result[key] = this.deepMerge(
-					targetValue as Record<string, unknown>,
-					sourceValue as Record<string, unknown>,
-				)
-			} else {
-				// Arrays and scalars: source wins (last-write-wins)
-				result[key] = sourceValue
-			}
-		}
-
-		return result
-	}
-
-	/**
-	 * Check if value is a plain object (not array, not null).
-	 */
-	private isPlainObject(value: unknown): value is Record<string, unknown> {
-		return typeof value === "object" && value !== null && !Array.isArray(value)
 	}
 
 	/**

@@ -241,4 +241,36 @@ describe("mergeOpencodeConfig", () => {
 			expect(result.agent?.myagent?.tools?.write).toBe(false)
 		})
 	})
+
+	describe("malformed input handling", () => {
+		it("does not crash when plugin is not an array", () => {
+			const target: NormalizedOpencodeConfig = {
+				plugin: ["valid-plugin"],
+			}
+			const source = {
+				plugin: "not-an-array",
+			} as unknown as NormalizedOpencodeConfig
+
+			// Should not throw - guard protects against spreading non-array
+			const result = mergeOpencodeConfig(target, source)
+
+			// Source wins via mergeDeep since guard skips concatenation
+			expect(result.plugin).toBe("not-an-array")
+		})
+
+		it("does not crash when instructions is not an array", () => {
+			const target: NormalizedOpencodeConfig = {
+				instructions: ["valid-instruction"],
+			}
+			const source = {
+				instructions: { invalid: true },
+			} as unknown as NormalizedOpencodeConfig
+
+			// Should not throw
+			const result = mergeOpencodeConfig(target, source)
+
+			// Source wins via mergeDeep
+			expect(result.instructions).toEqual({ invalid: true })
+		})
+	})
 })

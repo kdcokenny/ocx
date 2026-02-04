@@ -36,8 +36,10 @@ import {
 	OPENCODE_CONFIG_FILE,
 } from "../profile/paths"
 import type { Profile } from "../profile/schema"
+import { mergeOpencodeConfig } from "../registry/merge"
 import type { RegistryConfig } from "../schemas/config"
 import { readReceipt } from "../schemas/config"
+import type { NormalizedOpencodeConfig } from "../schemas/registry"
 import { resolveGitRootSync } from "../utils/git-root"
 import { resolveRegistryInstructionPaths } from "../utils/instruction-paths"
 import { getGlobalConfigPath } from "../utils/paths"
@@ -378,7 +380,10 @@ export class ConfigResolver {
 				componentPath = this.profile.ocx.componentPath
 			}
 			if (this.profile.opencode) {
-				opencode = this.deepMerge(opencode, this.profile.opencode)
+				opencode = mergeOpencodeConfig(
+					opencode as NormalizedOpencodeConfig,
+					this.profile.opencode as NormalizedOpencodeConfig,
+				) as Record<string, unknown>
 			}
 		}
 
@@ -399,7 +404,10 @@ export class ConfigResolver {
 		if (shouldLoadLocal && this.localConfigDir) {
 			const localOpencodeConfig = this.loadLocalOpencodeConfig()
 			if (localOpencodeConfig) {
-				opencode = this.deepMerge(opencode, localOpencodeConfig)
+				opencode = mergeOpencodeConfig(
+					opencode as NormalizedOpencodeConfig,
+					localOpencodeConfig as NormalizedOpencodeConfig,
+				) as Record<string, unknown>
 			}
 		}
 
@@ -446,7 +454,10 @@ export class ConfigResolver {
 			}
 
 			if (this.profile.opencode) {
-				opencode = this.deepMerge(opencode, this.profile.opencode)
+				opencode = mergeOpencodeConfig(
+					opencode as NormalizedOpencodeConfig,
+					this.profile.opencode as NormalizedOpencodeConfig,
+				) as Record<string, unknown>
 				const profileOpencodePath = `~/.config/opencode/profiles/${this.profileName}/opencode.jsonc`
 				for (const key of Object.keys(this.profile.opencode)) {
 					origins.set(`opencode.${key}`, { path: profileOpencodePath, source: "global-profile" })
@@ -473,7 +484,10 @@ export class ConfigResolver {
 		if (shouldLoadLocal && this.localConfigDir) {
 			const localOpencodeConfig = this.loadLocalOpencodeConfig()
 			if (localOpencodeConfig) {
-				opencode = this.deepMerge(opencode, localOpencodeConfig)
+				opencode = mergeOpencodeConfig(
+					opencode as NormalizedOpencodeConfig,
+					localOpencodeConfig as NormalizedOpencodeConfig,
+				) as Record<string, unknown>
 				const localOpencodePath = join(this.localConfigDir, OPENCODE_CONFIG_FILE)
 				for (const key of Object.keys(localOpencodeConfig)) {
 					origins.set(`opencode.${key}`, { path: localOpencodePath, source: "local-opencode" })
@@ -655,42 +669,6 @@ export class ConfigResolver {
 	 */
 	private loadRegistryInstructions(): string[] {
 		return this.registryInstructions
-	}
-
-	/**
-	 * Deep merge objects (for opencode config).
-	 * Arrays are replaced (not concatenated), objects are recursively merged, scalars last-wins.
-	 */
-	private deepMerge(
-		target: Record<string, unknown>,
-		source: Record<string, unknown>,
-	): Record<string, unknown> {
-		const result = { ...target }
-
-		for (const key of Object.keys(source)) {
-			const sourceValue = source[key]
-			const targetValue = result[key]
-
-			// If both are plain objects, recurse
-			if (this.isPlainObject(sourceValue) && this.isPlainObject(targetValue)) {
-				result[key] = this.deepMerge(
-					targetValue as Record<string, unknown>,
-					sourceValue as Record<string, unknown>,
-				)
-			} else {
-				// Arrays and scalars: source wins (last-write-wins)
-				result[key] = sourceValue
-			}
-		}
-
-		return result
-	}
-
-	/**
-	 * Check if value is a plain object (not array, not null).
-	 */
-	private isPlainObject(value: unknown): value is Record<string, unknown> {
-		return typeof value === "object" && value !== null && !Array.isArray(value)
 	}
 
 	// =========================================================================
