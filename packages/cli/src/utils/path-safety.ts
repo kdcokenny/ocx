@@ -16,6 +16,7 @@
 
 import path from "node:path"
 import { ValidationError } from "./errors"
+import { isPathSafe, PathValidationError, validatePath } from "./path-security"
 
 /**
  * Check if a resolved path is inside the allowed parent directory.
@@ -29,22 +30,9 @@ import { ValidationError } from "./errors"
 export function isPathInside(childPath: string, parentPath: string): boolean {
 	const resolvedChild = path.resolve(childPath)
 	const resolvedParent = path.resolve(parentPath)
-
-	// Same path is contained
-	if (resolvedChild === resolvedParent) {
-		return true
-	}
-
-	// Compute relative path from parent to child
-	const relative = path.relative(resolvedParent, resolvedChild)
-
-	// Check if relative path escapes parent
-	return !(
-		relative.startsWith("../") ||
-		relative.startsWith("..\\") ||
-		relative === ".." ||
-		path.isAbsolute(relative)
-	)
+	let relative = path.relative(resolvedParent, resolvedChild)
+	if (relative === "") relative = "."
+	return isPathSafe(resolvedParent, relative)
 }
 
 /**
@@ -57,7 +45,17 @@ export function isPathInside(childPath: string, parentPath: string): boolean {
  * @throws ValidationError if path is outside parent
  */
 export function assertPathInside(childPath: string, parentPath: string): void {
-	if (!isPathInside(childPath, parentPath)) {
-		throw new ValidationError(`Path "${childPath}" is outside allowed directory "${parentPath}"`)
+	const resolvedChild = path.resolve(childPath)
+	const resolvedParent = path.resolve(parentPath)
+	let relative = path.relative(resolvedParent, resolvedChild)
+	if (relative === "") relative = "."
+
+	try {
+		validatePath(resolvedParent, relative)
+	} catch (error) {
+		if (error instanceof PathValidationError) {
+			throw new ValidationError(`Path "${childPath}" is unsafe: ${error.message}`)
+		}
+		throw error
 	}
 }
