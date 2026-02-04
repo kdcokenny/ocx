@@ -187,6 +187,7 @@ describe("ConfigResolver", () => {
 
 	describe("opencode config merging", () => {
 		let originalXdgConfigHome: string | undefined
+		let originalOcxProfile: string | undefined
 		let xdgDir: string
 
 		beforeEach(async () => {
@@ -194,6 +195,8 @@ describe("ConfigResolver", () => {
 			await fs.mkdir(xdgDir, { recursive: true })
 			originalXdgConfigHome = process.env.XDG_CONFIG_HOME
 			process.env.XDG_CONFIG_HOME = xdgDir
+			originalOcxProfile = process.env.OCX_PROFILE
+			delete process.env.OCX_PROFILE
 		})
 
 		afterEach(async () => {
@@ -201,6 +204,11 @@ describe("ConfigResolver", () => {
 				delete process.env.XDG_CONFIG_HOME
 			} else {
 				process.env.XDG_CONFIG_HOME = originalXdgConfigHome
+			}
+			if (originalOcxProfile === undefined) {
+				delete process.env.OCX_PROFILE
+			} else {
+				process.env.OCX_PROFILE = originalOcxProfile
 			}
 			await fs.rm(xdgDir, { recursive: true, force: true })
 		})
