@@ -39,7 +39,12 @@ export function isPathInside(childPath: string, parentPath: string): boolean {
 	const relative = path.relative(resolvedParent, resolvedChild)
 
 	// Check if relative path escapes parent
-	return !!relative && !relative.startsWith("..") && !path.isAbsolute(relative)
+	return !(
+		relative.startsWith("../") ||
+		relative.startsWith("..\\") ||
+		relative === ".." ||
+		path.isAbsolute(relative)
+	)
 }
 
 /**

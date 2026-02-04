@@ -35,6 +35,13 @@ describe("isPathInside", () => {
 		expect(isPathInside("./src/file.ts", ".")).toBe(true)
 		expect(isPathInside("../other/file.ts", ".")).toBe(false)
 	})
+
+	it("allows filenames starting with '..' (not traversal)", () => {
+		// Filenames like '..config' should be allowed (not actual traversal)
+		expect(isPathInside("/project/..config", "/project")).toBe(true)
+		expect(isPathInside("/project/src/..hidden", "/project")).toBe(true)
+		expect(isPathInside("/project/..myfile.txt", "/project")).toBe(true)
+	})
 })
 
 describe("assertPathInside", () => {
