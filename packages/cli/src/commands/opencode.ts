@@ -14,7 +14,7 @@ import { getProfileDir, getProfileOpencodeConfig } from "../profile/paths"
 import { ProfilesNotInitializedError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError, logger } from "../utils/index"
-import { resolveEnvVars } from "../utils/resolve-env"
+import { resolveConfigPatterns } from "../utils/resolve-config"
 import {
 	formatTerminalName,
 	restoreTerminalTitle,
@@ -52,16 +52,14 @@ export function buildOpenCodeEnv(opts: {
 	baseEnv: Record<string, string | undefined>
 	profileDir?: string
 	profileName?: string
-	mergedConfig?: object
+	configContent?: string
 	disableProjectConfig: boolean
 }): Record<string, string | undefined> {
 	return {
 		...opts.baseEnv,
 		...(opts.disableProjectConfig && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
 		...(opts.profileDir && { OPENCODE_CONFIG_DIR: opts.profileDir }),
-		...(opts.mergedConfig && {
-			OPENCODE_CONFIG_CONTENT: resolveEnvVars(JSON.stringify(opts.mergedConfig)),
-		}),
+		...(opts.configContent && { OPENCODE_CONFIG_CONTENT: opts.configContent }),
 		...(opts.profileName && { OCX_PROFILE: opts.profileName }),
 	}
 }
@@ -186,6 +184,11 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 		envBin: process.env.OPENCODE_BIN,
 	})
 
+	// Resolve config patterns ({env:VAR}, {file:path}) before passing to OpenCode
+	const configContent = configToPass
+		? await resolveConfigPatterns(JSON.stringify(configToPass), profileDir ?? projectDir)
+		: undefined
+
 	// Spawn OpenCode directly in the project directory with config via environment
 	proc = Bun.spawn({
 		cmd: [bin, ...args],
@@ -194,7 +197,7 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 			baseEnv: process.env as Record<string, string | undefined>,
 			profileDir,
 			profileName: config.profileName ?? undefined,
-			mergedConfig: configToPass,
+			configContent,
 			disableProjectConfig: true,
 		}),
 		stdin: "inherit",
