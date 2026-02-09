@@ -79,13 +79,15 @@ describe("buildOpenCodeEnv", () => {
 	})
 
 	it("sets OPENCODE_CONFIG_CONTENT when configContent provided", () => {
+		const config = { theme: "dark", nested: { key: "value" } }
 		const result = buildOpenCodeEnv({
 			baseEnv: {},
-			configContent: JSON.stringify({ theme: "dark" }),
+			configContent: JSON.stringify(config),
 			disableProjectConfig: true,
 		})
+		// Parse and compare objects - NOT string comparison
 		expect(result.OPENCODE_CONFIG_CONTENT).toBeDefined()
-		expect(JSON.parse(result.OPENCODE_CONFIG_CONTENT as string)).toEqual({ theme: "dark" })
+		expect(JSON.parse(result.OPENCODE_CONFIG_CONTENT as string)).toEqual(config)
 	})
 
 	it("sets OCX_PROFILE when profileName provided", () => {
@@ -108,6 +110,7 @@ describe("buildOpenCodeEnv", () => {
 			profileName: "work",
 			disableProjectConfig: true,
 		})
+		// Preserved keys
 		expect(result.PATH).toBe("/usr/bin")
 		expect(result.HOME).toBe("/home/user")
 		expect(result.CUSTOM_VAR).toBe("custom-value")
@@ -115,9 +118,9 @@ describe("buildOpenCodeEnv", () => {
 
 	it("overwrites conflicting keys with new values (proves merge order)", () => {
 		const baseEnv = {
-			OCX_PROFILE: "old-profile",
-			OPENCODE_CONFIG_DIR: "/old/path",
-			PATH: "/usr/bin",
+			OCX_PROFILE: "old-profile", // Will be overwritten
+			OPENCODE_CONFIG_DIR: "/old/path", // Will be overwritten
+			PATH: "/usr/bin", // Will be preserved
 		}
 		const result = buildOpenCodeEnv({
 			baseEnv,
@@ -125,8 +128,10 @@ describe("buildOpenCodeEnv", () => {
 			profileDir: "/new/path",
 			disableProjectConfig: true,
 		})
+		// Overwritten keys
 		expect(result.OCX_PROFILE).toBe("new-profile")
 		expect(result.OPENCODE_CONFIG_DIR).toBe("/new/path")
+		// Preserved keys
 		expect(result.PATH).toBe("/usr/bin")
 	})
 
@@ -140,6 +145,7 @@ describe("buildOpenCodeEnv", () => {
 			disableProjectConfig: true,
 		})
 
+		// baseEnv should be unchanged
 		expect(baseEnv).toEqual(originalCopy)
 		expect(baseEnv.OCX_PROFILE).toBe("original")
 	})
