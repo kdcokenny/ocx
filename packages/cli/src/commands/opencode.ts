@@ -14,6 +14,7 @@ import { getProfileDir, getProfileOpencodeConfig } from "../profile/paths"
 import { ProfilesNotInitializedError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError, logger } from "../utils/index"
+import { resolveEnvVars } from "../utils/resolve-env"
 import {
 	formatTerminalName,
 	restoreTerminalTitle,
@@ -58,7 +59,9 @@ export function buildOpenCodeEnv(opts: {
 		...opts.baseEnv,
 		...(opts.disableProjectConfig && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
 		...(opts.profileDir && { OPENCODE_CONFIG_DIR: opts.profileDir }),
-		...(opts.mergedConfig && { OPENCODE_CONFIG_CONTENT: JSON.stringify(opts.mergedConfig) }),
+		...(opts.mergedConfig && {
+			OPENCODE_CONFIG_CONTENT: resolveEnvVars(JSON.stringify(opts.mergedConfig)),
+		}),
 		...(opts.profileName && { OCX_PROFILE: opts.profileName }),
 	}
 }
