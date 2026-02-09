@@ -468,34 +468,41 @@ export async function openMacOSTerminal(cwd: string, command?: string): Promise<
 				return { success: true }
 			}
 
-			// Non-detached terminals: use withTempScript (waits for completion)
+			// iTerm uses AppleScript `write text` which returns before execution completes.
+			// Script must self-delete via trap — withTempScript would race.
 			case "iterm": {
-				return await withTempScript(scriptContent, async (scriptPath) => {
-					const escapedPath = escapeAppleScript(scriptPath)
-					const appleScript = `
-						tell application "iTerm"
-							if not (exists window 1) then
-								reopen
-							else
-								tell current window
-									create tab with default profile
-								end tell
-							end if
-							activate
-							tell first session of current tab of current window
-								write text "${escapedPath}"
+				detachedScriptPath = path.join(
+					getTempDir(),
+					`worktree-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`,
+				)
+				await Bun.write(detachedScriptPath, scriptContent)
+				await fs.chmod(detachedScriptPath, 0o755)
+
+				const escapedPath = escapeAppleScript(detachedScriptPath)
+				const appleScript = `
+					tell application "iTerm"
+						if not (exists window 1) then
+							reopen
+						else
+							tell current window
+								create tab with default profile
 							end tell
+						end if
+						activate
+						tell first session of current tab of current window
+							write text "${escapedPath}"
 						end tell
-					`
-					const result = Bun.spawnSync(["osascript", "-e", appleScript])
-					if (result.exitCode !== 0) {
-						return {
-							success: false,
-							error: `iTerm AppleScript failed: ${result.stderr.toString()}`,
-						}
+					end tell
+				`
+				const result = Bun.spawnSync(["osascript", "-e", appleScript])
+				if (result.exitCode !== 0) {
+					return {
+						success: false,
+						error: `iTerm AppleScript failed: ${result.stderr.toString()}`,
 					}
-					return { success: true }
-				})
+				}
+				detachedScriptPath = null
+				return { success: true }
 			}
 
 			default: {
