@@ -225,6 +225,38 @@ describe("ocx add", () => {
 		expect(opencode.plugin).toContain("no-mcp-plugin")
 	})
 
+	it("should install npm dependencies after writing package.json", async () => {
+		testDir = await createTempDir("add-npm-install")
+
+		// Init and add registry
+		await runCLI(["init", "--force"], testDir)
+
+		const configPath = join(testDir, ".opencode", "ocx.jsonc")
+		const config = parseJsonc(await readFile(configPath, "utf-8"))
+		config.registries = {
+			kdco: { url: registry.url },
+		}
+		await writeFile(configPath, JSON.stringify(config, null, 2))
+
+		// Install component that has npmDependencies (test-plugin has lodash@^4.17.21)
+		const { exitCode, output } = await runCLI(["add", "kdco/test-plugin", "--force"], testDir)
+
+		if (exitCode !== 0) {
+			console.log(output)
+		}
+		expect(exitCode).toBe(0)
+
+		// Verify package.json was written
+		const packageJsonPath = join(testDir, ".opencode", "package.json")
+		expect(existsSync(packageJsonPath)).toBe(true)
+
+		// Verify node_modules was created (bun install ran)
+		expect(existsSync(join(testDir, ".opencode", "node_modules"))).toBe(true)
+
+		// Verify the dependency was actually installed
+		expect(existsSync(join(testDir, ".opencode", "node_modules", "lodash"))).toBe(true)
+	})
+
 	it("should fail if integrity check fails", async () => {
 		testDir = await createTempDir("add-integrity-fail")
 

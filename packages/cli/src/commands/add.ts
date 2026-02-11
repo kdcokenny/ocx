@@ -594,6 +594,24 @@ async function runRegistryAddCore(
 				npmSpin?.fail(`Failed to update ${packageJsonPath}`)
 				throw error
 			}
+
+			// Run bun install to actually install the dependencies
+			const packageDir = isFlattened ? cwd : join(cwd, ".opencode")
+			const installSpin2 = options.quiet
+				? null
+				: createSpinner({ text: "Installing npm dependencies..." })
+			installSpin2?.start()
+
+			try {
+				await runBunInstall(packageDir)
+				installSpin2?.succeed("Installed npm dependencies")
+			} catch (_error) {
+				installSpin2?.fail("Failed to install npm dependencies")
+				logger.warn(
+					`Could not run 'bun install' in ${packageDir}. ` +
+						"You may need to install dependencies manually.",
+				)
+			}
 		}
 
 		// Save lock file
@@ -883,6 +901,26 @@ async function updateOpencodeDevDependencies(
 	// Ensure manifest files are tracked by git (only for local mode)
 	if (!options.isFlattened) {
 		await ensureManifestFilesAreTracked(packageDir)
+	}
+}
+
+/**
+ * Run `bun install` in the given directory to install dependencies
+ * declared in package.json.
+ *
+ * @param cwd - Directory containing the package.json
+ * @throws Error if the install process exits with a non-zero code
+ */
+async function runBunInstall(cwd: string): Promise<void> {
+	const proc = Bun.spawn(["bun", "install"], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	const exitCode = await proc.exited
+	if (exitCode !== 0) {
+		const stderr = await new Response(proc.stderr).text()
+		throw new Error(`bun install failed (exit ${exitCode}): ${stderr.trim()}`)
 	}
 }
 
