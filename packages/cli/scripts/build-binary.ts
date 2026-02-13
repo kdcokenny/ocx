@@ -40,6 +40,7 @@ async function buildBinary(build: { name: string; target: Bun.Build.Target }) {
 		compile: {
 			target: build.target,
 			outfile: outfile,
+			autoloadDotenv: false,
 		},
 		minify: true,
 		define: {
