@@ -169,6 +169,134 @@ Components can specify settings to merge into the user's `opencode.jsonc`:
 | `ocx:bundle` | N/A | Virtual components that install multiple other components. |
 | `ocx:profile` | N/A | Shareable profile configuration. |
 
+## Validation
+
+Always validate your registry before building or publishing to catch common issues early.
+
+### Quick Validation
+
+```bash
+# Validate your registry
+ocx validate .
+
+# Strict mode (treat warnings as errors)
+ocx validate . --strict
+
+# Enforce no duplicate targets
+ocx validate . --no-duplicate-targets
+```
+
+### What Gets Validated
+
+The validator checks for:
+
+1. **Schema Compliance**
+   - Required fields: `name`, `namespace`, `version`, `author`, `components`
+   - Correct field types and formats
+   - Valid component types
+
+2. **File Existence**
+   - All referenced files exist in `files/` directory
+   - Reports missing files with component context
+
+3. **Circular Dependencies**
+   - Detects dependency cycles (A → B → C → A)
+   - Only checks same-namespace dependencies
+   - Example violation:
+     ```json
+     {
+       "components": [
+         { "name": "a", "dependencies": ["b"] },
+         { "name": "b", "dependencies": ["c"] },
+         { "name": "c", "dependencies": ["a"] }  // ❌ Circular!
+       ]
+     }
+     ```
+
+4. **Duplicate File Targets** (Warning)
+   - Warns when multiple components install to the same path
+   - Helps prevent installation conflicts
+   - Example:
+     ```json
+     {
+       "components": [
+         {
+           "name": "comp-a",
+           "files": [{ "path": "shared.ts", "target": ".opencode/plugin/shared.ts" }]
+         },
+         {
+           "name": "comp-b",
+           "files": [{ "path": "shared.ts", "target": ".opencode/plugin/shared.ts" }]
+         }
+       ]
+     }
+     ```
+
+### Output Example
+
+```bash
+$ ocx validate .
+
+Registry Metadata
+  ✓ Name: My Registry
+  ✓ Namespace: my
+  ✓ Version: 1.0.0
+  ✓ Author: Your Name
+
+Components (5 total)
+Files (12 total)
+
+Warnings
+  ⚠ duplicate_target: File .opencode/plugin/shared.ts is installed by multiple components: comp-a, comp-b
+    Consider renaming to avoid installation conflicts
+
+Summary
+  ✓ Valid registry
+  ⚠ 1 warning(s)
+```
+
+### CI/CD Integration
+
+Add validation to your publish workflow:
+
+```json
+// package.json
+{
+  "scripts": {
+    "validate": "ocx validate . --strict",
+    "build": "ocx build . --out dist",
+    "prepublish": "bun run validate && bun run build"
+  }
+}
+```
+
+```yaml
+# GitHub Actions
+- name: Validate Registry
+  run: ocx validate . --strict --json
+```
+
+### Exit Codes
+
+- **0**: Registry is valid
+- **1**: Validation errors found
+- **1**: Warnings present (with `--strict` flag)
+- **1**: Duplicate targets (with `--no-duplicate-targets` flag)
+
+### Best Practices
+
+✅ **Do:**
+- Run `ocx validate .` before every build
+- Use `--strict` in CI/CD pipelines
+- Fix warnings even if validation passes
+- Document intentional duplicate targets
+
+❌ **Don't:**
+- Skip validation to save time
+- Ignore warnings
+- Create circular dependencies
+- Have multiple components install to the same path (unless intentional)
+
 ## Building
 
 Use the OCX CLI to validate and build your registry:

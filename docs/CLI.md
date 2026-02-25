@@ -22,6 +22,7 @@ ocx <command>
 - [`ocx search`](#ocx-search) - Search for components
 - [`ocx registry`](#ocx-registry) - Manage registries
 - [`ocx build`](#ocx-build) - Build a registry from source
+- [`ocx validate`](#ocx-validate) - Validate a registry
 - [`ocx self update`](#ocx-self-update) - Update OCX to latest version
 - [`ocx self uninstall`](#ocx-self-uninstall) - Remove OCX configuration and binary
 - [`ocx profile`](#ocx-profile) - Manage global profiles
@@ -761,6 +762,184 @@ my-registry/
 | Error | Cause | Solution |
 |-------|-------|----------|
 | Build errors | Invalid registry.jsonc or missing files | Check error messages for details |
+
+---
+
+## ocx validate
+
+Validate a registry for common issues before publishing. This command checks for schema violations, missing files, circular dependencies, and potential installation conflicts.
+
+### Usage
+
+```bash
+ocx validate <path-or-url> [options]
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `path-or-url` | Registry source directory or URL (required) |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--strict` | Treat warnings as errors |
+| `--no-duplicate-targets` | Treat duplicate file targets as errors |
+| `--json` | Output as JSON |
+| `--cwd <path>` | Working directory (default: current directory) |
+| `-q, --quiet` | Suppress output |
+
+### Examples
+
+```bash
+# Validate current directory
+ocx validate .
+
+# Validate specific registry directory
+ocx validate ./my-registry
+
+# Treat warnings as errors (for CI/CD)
+ocx validate . --strict
+
+# Enforce no duplicate targets
+ocx validate . --no-duplicate-targets
+
+# Get machine-readable output
+ocx validate . --json
+
+# Combine flags for CI/CD
+ocx validate . --strict --json
+```
+
+### Validation Checks
+
+The validator performs the following checks:
+
+#### ✅ Schema Validation
+- Validates `registry.jsonc` against the OCX registry schema
+- Checks required fields: `name`, `namespace`, `version`, `author`, `components`
+- Validates field types and formats
+
+#### ✅ File Existence
+- Verifies all referenced source files exist in the `files/` directory
+- Reports missing files with component context
+
+#### ✅ Circular Dependencies
+- Detects dependency cycles within the same namespace
+- Example: A → B → C → A
+- Skips cross-namespace dependencies (user's responsibility)
+
+#### ⚠️ Duplicate File Targets (Warning)
+- Warns when multiple components install to the same target path
+- Helps avoid installation conflicts
+- Can be treated as error with `--no-duplicate-targets`
+
+### Output Formats
+
+#### Human-Readable (Default)
+
+```bash
+$ ocx validate .
+
+Registry Metadata
+  ✓ Name: My Registry
+  ✓ Namespace: my
+  ✓ Version: 1.0.0
+  ✓ Author: Your Name
+
+Components (5 total)
+Files (12 total)
+
+Warnings
+  ⚠ duplicate_target: File .opencode/plugin/shared.ts is installed by multiple components: comp-a, comp-b
+    Consider renaming to avoid installation conflicts
+
+Summary
+  ✓ Valid registry
+  ⚠ 1 warning(s)
+```
+
+#### JSON Format
+
+```bash
+$ ocx validate . --json
+{
+  "valid": true,
+  "errors": [],
+  "warnings": [
+    {
+      "type": "duplicate_target",
+      "message": "File .opencode/plugin/shared.ts is installed by multiple components: comp-a, comp-b",
+      "suggestion": "Consider renaming to avoid installation conflicts"
+    }
+  ],
+  "stats": {
+    "componentsCount": 5,
+    "filesCount": 12
+  },
+  "metadata": {
+    "name": "My Registry",
+    "namespace": "my",
+    "version": "1.0.0",
+    "author": "Your Name"
+  }
+}
+```
+
+### Exit Codes
+
+| Code | Condition |
+|------|-----------|
+| 0    | Valid registry (no errors) |
+| 1    | Validation failed (errors present) |
+| 1    | Warnings present with `--strict` flag |
+| 1    | Duplicate targets with `--no-duplicate-targets` flag |
+
+### CI/CD Integration
+
+Use `--strict` and `--json` for continuous integration:
+
+```yaml
+# GitHub Actions example
+- name: Validate Registry
+  run: ocx validate . --strict --json
+```
+
+```bash
+# Pre-publish script (package.json)
+{
+  "scripts": {
+    "validate": "ocx validate . --strict",
+    "prepublish": "bun run validate && bun run build"
+  }
+}
+```
+
+### Common Errors
+
+| Error Type | Cause | Solution |
+|------------|-------|----------|
+| `schema_error` | Invalid registry.jsonc | Fix schema violations reported |
+| `missing_file` | Referenced file doesn't exist | Create file or fix path in registry.jsonc |
+| `circular_dependency` | Dependency cycle detected | Remove circular dependency or refactor components |
+| `duplicate_target` (with `--no-duplicate-targets`) | Multiple components install same file | Rename files or consolidate components |
+
+### Best Practices
+
+1. **Run before build**: Always validate before running `ocx build`
+2. **Use in CI/CD**: Add validation to your deployment pipeline with `--strict`
+3. **Fix warnings**: Even if validation passes, review and fix warnings
+4. **Version control**: Commit clean validations (no warnings)
+5. **Document overrides**: If you intentionally have duplicate targets, document why
+
+### Notes
+
+- **Local validation only**: Remote URL validation is not yet implemented
+- **Same-namespace only**: Circular dependency detection only checks within the registry
+- **Case-sensitive**: File paths are case-sensitive on all platforms
+- **Performance**: Validation is fast (O(n) for most checks)
 
 ---
 
