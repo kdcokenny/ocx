@@ -63,28 +63,16 @@ export async function buildRegistry(options: BuildRegistryOptions): Promise<Buil
 	// Capture warnings (non-blocking)
 	const warnings = validationResult.warnings.map((w) => w.message)
 
-	// Read registry file from source (prefer .jsonc over .json)
+	// Read and parse registry file (already validated by runValidation)
 	const jsoncFile = Bun.file(join(sourcePath, "registry.jsonc"))
 	const jsonFile = Bun.file(join(sourcePath, "registry.json"))
 	const jsoncExists = await jsoncFile.exists()
-	const jsonExists = await jsonFile.exists()
-
-	if (!jsoncExists && !jsonExists) {
-		throw new BuildRegistryError("No registry.jsonc or registry.json found in source directory")
-	}
-
 	const registryFile = jsoncExists ? jsoncFile : jsonFile
 	const content = await registryFile.text()
 	const registryData = parseJsonc(content, [], { allowTrailingComma: true })
 
-	// Validate registry schema
-	const parseResult = registrySchema.safeParse(registryData)
-	if (!parseResult.success) {
-		const errors = parseResult.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`)
-		throw new BuildRegistryError("Registry validation failed", errors)
-	}
-
-	const registry = parseResult.data
+	// Parse validated data (skip safeParse since runValidation already checked)
+	const registry = registrySchema.parse(registryData)
 	const validationErrors: string[] = []
 
 	// Create output directory structure
