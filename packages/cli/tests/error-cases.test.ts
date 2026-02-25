@@ -226,7 +226,8 @@ describe("Error Cases", () => {
 			// testDir has no registry.jsonc or registry.json
 			const result = await runCLI(["build", "--cwd", testDir], testDir)
 			expect(result.exitCode).toBe(1)
-			expect(result.stderr).toMatch(/no registry\.jsonc.*found/i)
+			// Error messages now go to stdout via formatValidationResult
+			expect(result.output).toMatch(/no registry\.jsonc.*found/i)
 		})
 
 		it("should error when registry schema is invalid", async () => {
@@ -240,7 +241,8 @@ describe("Error Cases", () => {
 
 			const result = await runCLI(["build", "--cwd", testDir], testDir)
 			expect(result.exitCode).toBe(1)
-			expect(result.stderr).toMatch(/validation failed|required/i)
+			// Error messages now go to stdout via formatValidationResult
+			expect(result.output).toMatch(/validation failed|required/i)
 		})
 
 		it("should error when source files are missing", async () => {
