@@ -17,7 +17,7 @@ interface BuildOptions {
 	out: string
 	json: boolean
 	quiet: boolean
-	validate: boolean
+	showValidation: boolean
 }
 
 export function registerBuildCommand(program: Command): void {
@@ -29,14 +29,14 @@ export function registerBuildCommand(program: Command): void {
 		.option("--cwd <path>", "Working directory", process.cwd())
 		.option("--json", "Output as JSON", false)
 		.option("-q, --quiet", "Suppress output", false)
-		.option("--validate", "Show validation results before building", false)
+		.option("--show-validation", "Show validation results before building", false)
 		.action(async (path: string, options: BuildOptions) => {
 			try {
 				const sourcePath = join(options.cwd, path)
 				const outPath = join(options.cwd, options.out)
 
-				// Run validation if --validate flag is set
-				if (options.validate && !options.json) {
+				// Run validation if --show-validation flag is set
+				if (options.showValidation && !options.json) {
 					const validationResult = await runValidation(sourcePath)
 					console.log(formatValidationResult(validationResult))
 

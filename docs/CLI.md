@@ -702,7 +702,7 @@ ocx build [path] [options]
 |--------|-------------|
 | `--out <dir>` | Output directory (default: `./dist`) |
 | `--cwd <path>` | Working directory (default: current directory) |
-| `--validate` | Show validation results before building |
+| `--show-validation` | Show validation results before building |
 | `--json` | Output as JSON |
 | `-q, --quiet` | Suppress output |
 
@@ -719,7 +719,7 @@ ocx build ./my-registry
 ocx build --out ./public
 
 # Show validation results before building
-ocx build --validate
+ocx build --show-validation
 
 # Get machine-readable output
 ocx build --json
@@ -772,12 +772,12 @@ The `ocx build` command automatically validates your registry before building, p
 
 If validation fails, the build is aborted with a descriptive error message.
 
-#### Using --validate Flag
+#### Using --show-validation Flag
 
-Use the `--validate` flag to explicitly show validation results before building:
+Use the `--show-validation` flag to explicitly show validation results before building:
 
 ```bash
-$ ocx build --validate
+$ ocx build --show-validation
 
 Registry Metadata
   ✓ Name: My Registry
@@ -805,7 +805,7 @@ This is useful for:
 - Debugging validation issues
 - CI/CD pipelines (combine with `--json` for structured output)
 
-**Note:** Validation always runs during build, even without the `--validate` flag. The flag only controls whether validation results are displayed.
+**Note:** Validation always runs during build, even without the `--show-validation` flag. The flag only controls whether validation results are displayed.
 
 ### Errors
 

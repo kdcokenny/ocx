@@ -326,7 +326,7 @@ if (!validationResult.valid) {
 // Proceed with build...
 ```
 
-**With --validate flag:**
+**With --show-validation flag:**
 - Shows validation output before building
 - Exits early if validation fails
 - Continues without prompt if warnings only
@@ -403,7 +403,7 @@ class BuildRegistryError extends Error {
 | `lib/build-registry.ts` | Runs validation before building |
 | `lib/validate-registry-types.ts` | Type definitions |
 | `lib/format-validation-result.ts` | Human-readable output formatter |
-| `commands/build.ts` | Build command with --validate flag |
+| `commands/build.ts` | Build command with --show-validation flag |
 | `commands/validate.ts` | Validate command |
 | `tests/validators.test.ts` | Validator unit tests |
 | `tests/build.test.ts` | Build command integration tests |
@@ -411,7 +411,7 @@ class BuildRegistryError extends Error {
 ### Best Practices
 
 1. **Always validate before build:** The build command automatically validates
-2. **Use --validate flag:** For debugging and CI/CD visibility
+2. **Use --show-validation flag:** For debugging and CI/CD visibility
 3. **Fix all errors:** Build will fail if any errors present
 4. **Review warnings:** Even if build succeeds, warnings indicate potential issues
 5. **Use --strict in CI/CD:** Treat warnings as errors in automated pipelines

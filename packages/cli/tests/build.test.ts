@@ -387,7 +387,7 @@ describe("ocx build", () => {
 		expect(output).toContain("multiple components")
 	})
 
-	it("should accept --validate flag", async () => {
+	it("should accept --show-validation flag", async () => {
 		const sourceDir = join(testDir, "registry-validate-flag")
 		await mkdir(sourceDir, { recursive: true })
 
@@ -416,7 +416,7 @@ describe("ocx build", () => {
 
 		const outDir = "dist-validate"
 		const { exitCode, output } = await runCLI(
-			["build", "registry-validate-flag", "--out", outDir, "--validate"],
+			["build", "registry-validate-flag", "--out", outDir, "--show-validation"],
 			testDir,
 		)
 
@@ -425,7 +425,7 @@ describe("ocx build", () => {
 		expect(output).toContain("Built 1 component")
 	})
 
-	it("should display validation results when --validate flag is used", async () => {
+	it("should display validation results when --show-validation flag is used", async () => {
 		const sourceDir = join(testDir, "registry-with-validation-output")
 		await mkdir(sourceDir, { recursive: true })
 
@@ -463,7 +463,7 @@ describe("ocx build", () => {
 
 		const outDir = "dist-validation-output"
 		const { exitCode, output } = await runCLI(
-			["build", "registry-with-validation-output", "--out", outDir, "--validate"],
+			["build", "registry-with-validation-output", "--out", outDir, "--show-validation"],
 			testDir,
 		)
 
@@ -478,7 +478,7 @@ describe("ocx build", () => {
 		expect(output).toContain("Built 2 components")
 	})
 
-	it("should exit before building when validation fails with --validate flag", async () => {
+	it("should exit before building when validation fails with --show-validation flag", async () => {
 		const sourceDir = join(testDir, "registry-invalid-with-validate")
 		await mkdir(sourceDir, { recursive: true })
 
@@ -508,7 +508,7 @@ describe("ocx build", () => {
 
 		const outDir = "dist-invalid-validate"
 		const { exitCode, output } = await runCLI(
-			["build", "registry-invalid-with-validate", "--out", outDir, "--validate"],
+			["build", "registry-invalid-with-validate", "--out", outDir, "--show-validation"],
 			testDir,
 		)
 
