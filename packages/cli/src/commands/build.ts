@@ -9,6 +9,7 @@ import type { Command } from "commander"
 import kleur from "kleur"
 import { BuildRegistryError, buildRegistry } from "../lib/build-registry"
 import { formatValidationResult } from "../lib/format-validation-result"
+import { runValidation } from "../lib/validators/run-validation"
 import { createSpinner, handleError, logger, outputJson } from "../utils/index"
 
 interface BuildOptions {
@@ -33,6 +34,12 @@ export function registerBuildCommand(program: Command): void {
 			try {
 				const sourcePath = join(options.cwd, path)
 				const outPath = join(options.cwd, options.out)
+
+				// Run validation if --validate flag is set
+				if (options.validate && !options.json) {
+					const validationResult = await runValidation(sourcePath)
+					console.log(formatValidationResult(validationResult))
+				}
 
 				const spinner = createSpinner({
 					text: "Building registry...",

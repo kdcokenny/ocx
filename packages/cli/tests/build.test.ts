@@ -424,6 +424,59 @@ describe("ocx build", () => {
 		expect(exitCode).toBe(0)
 		expect(output).toContain("Built 1 component")
 	})
+
+	it("should display validation results when --validate flag is used", async () => {
+		const sourceDir = join(testDir, "registry-with-validation-output")
+		await mkdir(sourceDir, { recursive: true })
+
+		// Create a registry with duplicate targets to trigger warnings
+		const registryJson = {
+			name: "Registry With Warnings",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "comp-a",
+					type: "ocx:plugin",
+					description: "Component A",
+					files: [{ path: "a.ts", target: ".opencode/plugin/shared.ts" }],
+					dependencies: [],
+				},
+				{
+					name: "comp-b",
+					type: "ocx:plugin",
+					description: "Component B",
+					files: [{ path: "b.ts", target: ".opencode/plugin/shared.ts" }],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create the files directory and source files
+		const filesDir = join(sourceDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await writeFile(join(filesDir, "a.ts"), "// Component A")
+		await writeFile(join(filesDir, "b.ts"), "// Component B")
+
+		const outDir = "dist-validation-output"
+		const { exitCode, output } = await runCLI(
+			["build", "registry-with-validation-output", "--out", outDir, "--validate"],
+			testDir,
+		)
+
+		// Should succeed
+		expect(exitCode).toBe(0)
+		// Should display validation results
+		expect(output).toContain("Summary")
+		expect(output).toContain("Valid registry")
+		// Should show warnings about duplicate targets
+		expect(output).toContain("Warnings")
+		// Should still build the registry
+		expect(output).toContain("Built 2 components")
+	})
 })
 
 describe("BuildRegistryError", () => {
