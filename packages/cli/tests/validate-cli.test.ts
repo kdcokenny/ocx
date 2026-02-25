@@ -232,9 +232,8 @@ describe("ocx validate command", () => {
 		const windowsPath = `C:${testDir.replace(/\//g, "\\")}`
 		const { exitCode, output } = await runCLI(["validate", windowsPath], testDir)
 
-		// Should NOT error with "Remote validation not yet implemented"
+		// Should NOT be treated as remote URL
 		expect(output).not.toContain("Remote validation not yet implemented")
-		// Should attempt local validation (may fail due to path resolution, but shouldn't be treated as remote)
 		expect(exitCode).toBeDefined()
 	})
 })

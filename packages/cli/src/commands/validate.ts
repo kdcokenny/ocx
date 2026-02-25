@@ -31,7 +31,7 @@ export function registerValidateCommand(program: Command): void {
 		.option("-q, --quiet", "Suppress output", false)
 		.action(async (pathOrUrl: string, options: ValidateOptions) => {
 			try {
-				// Auto-detect local vs remote
+				// Auto-detect remote URL (http/https only - Windows paths like C:/ are local)
 				let isRemote = false
 				try {
 					const url = new URL(pathOrUrl)
