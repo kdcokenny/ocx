@@ -386,6 +386,44 @@ describe("ocx build", () => {
 		// Should show duplicate target warning
 		expect(output).toContain("multiple components")
 	})
+
+	it("should accept --validate flag", async () => {
+		const sourceDir = join(testDir, "registry-validate-flag")
+		await mkdir(sourceDir, { recursive: true })
+
+		const registryJson = {
+			name: "Validate Flag Test Registry",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "test-comp",
+					type: "ocx:plugin",
+					description: "Test component",
+					files: [{ path: "index.ts", target: ".opencode/plugin/test.ts" }],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create the files directory and source files
+		const filesDir = join(sourceDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await writeFile(join(filesDir, "index.ts"), "// Test content")
+
+		const outDir = "dist-validate"
+		const { exitCode, output } = await runCLI(
+			["build", "registry-validate-flag", "--out", outDir, "--validate"],
+			testDir,
+		)
+
+		// Should succeed and build the registry
+		expect(exitCode).toBe(0)
+		expect(output).toContain("Built 1 component")
+	})
 })
 
 describe("BuildRegistryError", () => {

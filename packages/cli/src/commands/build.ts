@@ -16,6 +16,7 @@ interface BuildOptions {
 	out: string
 	json: boolean
 	quiet: boolean
+	validate: boolean
 }
 
 export function registerBuildCommand(program: Command): void {
@@ -27,6 +28,7 @@ export function registerBuildCommand(program: Command): void {
 		.option("--cwd <path>", "Working directory", process.cwd())
 		.option("--json", "Output as JSON", false)
 		.option("-q, --quiet", "Suppress output", false)
+		.option("--validate", "Show validation results before building", false)
 		.action(async (path: string, options: BuildOptions) => {
 			try {
 				const sourcePath = join(options.cwd, path)
