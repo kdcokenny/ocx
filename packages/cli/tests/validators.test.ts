@@ -593,4 +593,43 @@ describe("runValidation", () => {
 
 		await rm(circularDir, { recursive: true, force: true })
 	})
+
+	it("should skip duplicate target check when skipDuplicateTargets is true", async () => {
+		const duplicateDir = join(import.meta.dir, "tmp-skip-duplicate-test")
+		await mkdir(join(duplicateDir, "files", "plugin"), { recursive: true })
+		await Bun.write(
+			join(duplicateDir, "registry.json"),
+			JSON.stringify({
+				name: "Test Registry",
+				namespace: "test",
+				version: "1.0.0",
+				author: "Test Author",
+				components: [
+					{
+						name: "comp1",
+						type: "ocx:plugin",
+						description: "Component 1",
+						files: ["plugin/shared.ts"],
+						dependencies: [],
+					},
+					{
+						name: "comp2",
+						type: "ocx:plugin",
+						description: "Component 2",
+						files: ["plugin/shared.ts"],
+						dependencies: [],
+					},
+				],
+			}),
+		)
+		await Bun.write(join(duplicateDir, "files", "plugin", "shared.ts"), "// test")
+
+		const result = await runValidation(duplicateDir, { skipDuplicateTargets: true })
+
+		expect(result.valid).toBe(true)
+		expect(result.errors).toEqual([])
+		expect(result.warnings).toEqual([])
+
+		await rm(duplicateDir, { recursive: true, force: true })
+	})
 })
