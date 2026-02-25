@@ -34,8 +34,8 @@ export function registerValidateCommand(program: Command): void {
 				// Auto-detect local vs remote
 				let isRemote = false
 				try {
-					new URL(pathOrUrl)
-					isRemote = true
+					const url = new URL(pathOrUrl)
+					isRemote = url.protocol === "http:" || url.protocol === "https:"
 				} catch {
 					// Not a URL, treat as local path
 				}

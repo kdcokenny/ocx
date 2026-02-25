@@ -201,4 +201,40 @@ describe("ocx validate command", () => {
 		expect(output).toContain("Summary")
 		expect(exitCode).toBe(0)
 	})
+
+	it("should treat Windows absolute paths as local, not remote", async () => {
+		// Setup valid registry
+		const registryJson = {
+			name: "Test Registry",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "test-component",
+					type: "ocx:plugin",
+					description: "A test component",
+					files: ["plugin/test.ts"],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(testDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create files directory and source file
+		const filesDir = join(testDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await mkdir(join(filesDir, "plugin"), { recursive: true })
+		await writeFile(join(filesDir, "plugin", "test.ts"), "// Test plugin")
+
+		// Use Windows-style absolute path
+		const windowsPath = `C:${testDir.replace(/\//g, "\\")}`
+		const { exitCode, output } = await runCLI(["validate", windowsPath], testDir)
+
+		// Should NOT error with "Remote validation not yet implemented"
+		expect(output).not.toContain("Remote validation not yet implemented")
+		// Should attempt local validation (may fail due to path resolution, but shouldn't be treated as remote)
+		expect(exitCode).toBeDefined()
+	})
 })
