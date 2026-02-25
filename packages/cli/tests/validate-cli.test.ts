@@ -236,4 +236,18 @@ describe("ocx validate command", () => {
 		expect(output).not.toContain("Remote validation not yet implemented")
 		expect(exitCode).toBeDefined()
 	})
+
+	it("should error for remote URLs (not yet implemented)", async () => {
+		const { exitCode, output } = await runCLI(["validate", "https://example.com/registry"], testDir)
+
+		expect(exitCode).toBe(1)
+		expect(output).toContain("Remote validation not yet implemented")
+	})
+
+	it("should error for http URLs (not yet implemented)", async () => {
+		const { exitCode, output } = await runCLI(["validate", "http://localhost:8080"], testDir)
+
+		expect(exitCode).toBe(1)
+		expect(output).toContain("Remote validation not yet implemented")
+	})
 })
