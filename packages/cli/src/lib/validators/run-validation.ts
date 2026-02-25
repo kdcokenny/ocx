@@ -20,24 +20,12 @@ import {
 } from "./index"
 
 /**
- * Options for runValidation
- */
-export interface RunValidationOptions {
-	skipCircularDeps?: boolean
-	skipDuplicateTargets?: boolean
-}
-
-/**
  * Run all validation checks on a registry
  *
  * @param sourcePath - Path to the registry source directory
- * @param options - Optional configuration for skipping certain checks
  * @returns Complete validation result
  */
-export async function runValidation(
-	sourcePath: string,
-	options?: RunValidationOptions,
-): Promise<ValidationResult> {
+export async function runValidation(sourcePath: string): Promise<ValidationResult> {
 	const errors: ValidationError[] = []
 	const warnings: ValidationWarning[] = []
 
@@ -92,16 +80,12 @@ export async function runValidation(
 	errors.push(...fileResult.errors)
 
 	// Circular dependency detection
-	if (!options?.skipCircularDeps) {
-		const circularResult = detectCircularDependencies(registry)
-		errors.push(...circularResult.errors)
-	}
+	const circularResult = detectCircularDependencies(registry)
+	errors.push(...circularResult.errors)
 
 	// Duplicate target detection
-	if (!options?.skipDuplicateTargets) {
-		const duplicateResult = detectDuplicateTargets(registry)
-		warnings.push(...duplicateResult.warnings)
-	}
+	const duplicateResult = detectDuplicateTargets(registry)
+	warnings.push(...duplicateResult.warnings)
 
 	return {
 		valid: errors.length === 0,
