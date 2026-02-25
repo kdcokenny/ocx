@@ -1,14 +1,39 @@
 /**
  * Build Registry Library Function
  *
- * Pure function to build a registry from source.
+ * Pure function to build a registry from source. This function performs
+ * comprehensive validation before building to ensure registry integrity.
+ *
+ * ## Validation
+ *
+ * All registries are validated before building using the unified validation
+ * system (see `validators/run-validation.ts`). The build will fail if:
+ * - Schema validation fails (invalid registry.jsonc structure)
+ * - Source files are missing
+ * - Circular dependencies are detected
+ *
+ * Warnings (e.g., duplicate targets) are captured but do not block the build.
+ *
+ * ## Build Process
+ *
+ * 1. Validate registry (schema, files, circular deps, duplicate targets)
+ * 2. Create output directory structure
+ * 3. Generate component packuments (components/[name].json)
+ * 4. Copy source files to components/[name]/[path]
+ * 5. Generate index.json with registry metadata
+ * 6. Generate .well-known/ocx.json for discovery
+ *
  * No CLI concerns - just input/output.
+ *
+ * @see {@link runValidation} for validation logic
+ * @see {@link BuildRegistryError} for error handling
  */
 
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
 import { normalizeFile, registrySchema } from "../schemas/registry"
+import type { ValidationResult } from "./validate-registry-types"
 import { runValidation } from "./validators/run-validation"
 
 export interface BuildRegistryOptions {
@@ -33,6 +58,15 @@ export interface BuildRegistryResult {
 	warnings: string[]
 }
 
+/**
+ * Error thrown when registry build fails
+ *
+ * This error carries either a ValidationResult (for validation failures) or
+ * a string array (for backward compatibility with legacy error handling).
+ *
+ * When validationResult is present, the CLI uses formatValidationResult()
+ * to display consistent, user-friendly error output.
+ */
 export class BuildRegistryError extends Error {
 	public readonly errors: string[]
 	public readonly validationResult?: ValidationResult
@@ -52,11 +86,52 @@ export class BuildRegistryError extends Error {
 }
 
 /**
- * Build a registry from source.
+ * Build a registry from source
  *
- * @param options - Build options
- * @returns Build result with metadata
+ * Validates the registry source, then builds the distributable registry structure
+ * with packuments, source files, index, and discovery endpoint.
+ *
+ * ## Validation
+ *
+ * The build process starts with comprehensive validation:
+ * - Schema validation (required fields, types, formats)
+ * - File existence checks (all referenced files must exist)
+ * - Circular dependency detection (prevents installation loops)
+ * - Duplicate target detection (warns about installation conflicts)
+ *
+ * If validation fails, throws BuildRegistryError with detailed error information.
+ *
+ * ## Output Structure
+ *
+ * ```
+ * dist/
+ *   index.json              # Registry index
+ *   .well-known/
+ *     ocx.json              # Discovery endpoint
+ *   components/
+ *     comp-a.json           # Component packument
+ *     comp-a/
+ *       index.ts            # Component source files
+ *     comp-b.json
+ *     comp-b/
+ *       skill.md
+ * ```
+ *
+ * @param options - Build options (source path, output path)
+ * @returns Build result with metadata and warnings
  * @throws {BuildRegistryError} If validation fails or files are missing
+ *
+ * @example
+ * ```typescript
+ * const result = await buildRegistry({
+ *   source: "./my-registry",
+ *   out: "./dist"
+ * })
+ * console.log(`Built ${result.componentsCount} components`)
+ * if (result.warnings.length > 0) {
+ *   console.warn("Warnings:", result.warnings)
+ * }
+ * ```
  */
 export async function buildRegistry(options: BuildRegistryOptions): Promise<BuildRegistryResult> {
 	const { source: sourcePath, out: outPath } = options

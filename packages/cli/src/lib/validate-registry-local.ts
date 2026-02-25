@@ -1,7 +1,24 @@
 /**
  * Local Registry Validation
  *
- * Validates registry source files before building
+ * Validates registry source files before building or publishing. This module
+ * composes the individual validator functions from `validators/index.ts` to
+ * provide a complete validation workflow.
+ *
+ * ## Validation Workflow
+ *
+ * 1. Check for registry.jsonc (or registry.json) file
+ * 2. Parse JSONC content (supports comments and trailing commas)
+ * 3. Validate schema (using validateSchema)
+ * 4. Check file existence (using validateFileExistence)
+ * 5. Detect circular dependencies (using detectCircularDependencies)
+ * 6. Detect duplicate targets (using detectDuplicateTargets)
+ *
+ * The function short-circuits on schema validation failure, as subsequent
+ * checks require a valid schema to proceed safely.
+ *
+ * @see {@link runValidation} for the unified validation runner used by build
+ * @see {@link validators} for individual validation functions
  */
 
 import { join } from "node:path"
@@ -18,8 +35,27 @@ import {
 /**
  * Validate a local registry source directory
  *
- * @param sourcePath - Path to registry source directory
- * @returns Validation result with errors, warnings, and stats
+ * Performs comprehensive validation of a registry source directory, checking
+ * schema compliance, file existence, circular dependencies, and duplicate targets.
+ *
+ * This function is used by the `ocx validate` command. For build workflows,
+ * use `runValidation()` instead (it provides the same validation logic with
+ * optional skip flags).
+ *
+ * @param sourcePath - Path to registry source directory (contains registry.jsonc and files/)
+ * @returns Validation result with errors, warnings, stats, and metadata
+ *
+ * @example
+ * ```typescript
+ * const result = await validateRegistryLocal("./my-registry")
+ * if (!result.valid) {
+ *   console.error("Validation failed:", result.errors)
+ *   process.exit(1)
+ * }
+ * if (result.warnings.length > 0) {
+ *   console.warn("Warnings:", result.warnings)
+ * }
+ * ```
  */
 export async function validateRegistryLocal(sourcePath: string): Promise<ValidationResult> {
 	const errors: ValidationResult["errors"] = []

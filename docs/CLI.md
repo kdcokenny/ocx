@@ -702,6 +702,7 @@ ocx build [path] [options]
 |--------|-------------|
 | `--out <dir>` | Output directory (default: `./dist`) |
 | `--cwd <path>` | Working directory (default: current directory) |
+| `--validate` | Show validation results before building |
 | `--json` | Output as JSON |
 | `-q, --quiet` | Suppress output |
 
@@ -716,6 +717,9 @@ ocx build ./my-registry
 
 # Specify output directory
 ocx build --out ./public
+
+# Show validation results before building
+ocx build --validate
 
 # Get machine-readable output
 ocx build --json
@@ -757,11 +761,59 @@ my-registry/
         SKILL.md        # Skill definition
 ```
 
+### Validation
+
+The `ocx build` command automatically validates your registry before building, performing the same checks as `ocx validate`:
+
+1. ✅ **Schema validation** - Validates registry.jsonc structure
+2. ✅ **File existence** - Ensures all referenced files exist
+3. ✅ **Circular dependencies** - Detects dependency cycles
+4. ⚠️ **Duplicate targets** - Warns about installation conflicts
+
+If validation fails, the build is aborted with a descriptive error message.
+
+#### Using --validate Flag
+
+Use the `--validate` flag to explicitly show validation results before building:
+
+```bash
+$ ocx build --validate
+
+Registry Metadata
+  ✓ Name: My Registry
+  ✓ Namespace: my
+  ✓ Version: 1.0.0
+  ✓ Author: Your Name
+
+Components (5 total)
+Files (12 total)
+
+Warnings
+  ⚠ duplicate_target: File .opencode/plugin/shared.ts is installed by multiple components: comp-a, comp-b
+    Consider renaming to avoid installation conflicts
+
+Summary
+  ✓ Valid registry
+  ⚠ 1 warning(s)
+
+Building registry...
+Built 5 components to dist
+```
+
+This is useful for:
+- Reviewing warnings before publishing
+- Debugging validation issues
+- CI/CD pipelines (combine with `--json` for structured output)
+
+**Note:** Validation always runs during build, even without the `--validate` flag. The flag only controls whether validation results are displayed.
+
 ### Errors
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| Build errors | Invalid registry.jsonc or missing files | Check error messages for details |
+| `schema_error` | Invalid registry.jsonc | Fix schema violations in registry.jsonc |
+| `missing_file` | Referenced file doesn't exist | Create missing file or fix path in registry.jsonc |
+| `circular_dependency` | Dependency cycle detected | Remove circular dependency or refactor components |
 
 ---
 

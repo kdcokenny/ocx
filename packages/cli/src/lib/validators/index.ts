@@ -1,7 +1,42 @@
 /**
  * Individual Validator Functions
  *
- * Extracted validation checks that can be used by both build and validate commands.
+ * This module provides reusable validation functions that are shared by both the
+ * `ocx build` and `ocx validate` commands, ensuring consistent validation behavior
+ * across the CLI.
+ *
+ * ## Validation Checks
+ *
+ * 1. **Schema Validation** (`validateSchema`):
+ *    - Validates registry.jsonc structure against the Zod schema
+ *    - Checks required fields, types, and formats
+ *    - Used by: build, validate
+ *
+ * 2. **File Existence** (`validateFileExistence`):
+ *    - Verifies all source files referenced in registry.jsonc exist
+ *    - Checks files in the `files/` directory
+ *    - Used by: build, validate
+ *
+ * 3. **Circular Dependencies** (`detectCircularDependencies`):
+ *    - Detects dependency cycles within the same namespace
+ *    - Prevents infinite loops during component installation
+ *    - Used by: build, validate
+ *
+ * 4. **Duplicate Targets** (`detectDuplicateTargets`):
+ *    - Warns when multiple components install to the same target path
+ *    - Helps avoid installation conflicts
+ *    - Used by: build (warning), validate (warning or error with --no-duplicate-targets)
+ *
+ * ## Architecture
+ *
+ * Each validator function:
+ * - Accepts validated registry data and context (e.g., sourcePath)
+ * - Returns a partial ValidationResult with errors and/or warnings
+ * - Is composable via the `runValidation()` orchestrator
+ * - Can be selectively skipped via configuration options
+ *
+ * @see {@link runValidation} for the orchestration function
+ * @see {@link ValidationResult} for the unified result type
  */
 
 import { join } from "node:path"
@@ -40,8 +75,25 @@ export interface DuplicateTargetValidationResult {
 /**
  * Validate registry data against the schema
  *
+ * Checks the parsed registry.jsonc structure against the OCX registry schema,
+ * validating required fields (name, namespace, version, author, components),
+ * field types, formats, and business rules (e.g., component name patterns,
+ * dependency references).
+ *
+ * This is always the first validation check to run, since subsequent checks
+ * require a valid schema to proceed safely.
+ *
  * @param registryData - The parsed registry data to validate
- * @returns Validation result with schema errors
+ * @returns Validation result with schema errors (if any)
+ *
+ * @example
+ * ```typescript
+ * const data = JSON.parse(await Bun.file("registry.jsonc").text())
+ * const result = validateSchema(data)
+ * if (result.errors.length > 0) {
+ *   console.error("Schema validation failed:", result.errors)
+ * }
+ * ```
  */
 export function validateSchema(registryData: unknown): SchemaValidationResult {
 	const errors: ValidationError[] = []
@@ -63,9 +115,25 @@ export function validateSchema(registryData: unknown): SchemaValidationResult {
 /**
  * Validate that all source files exist
  *
- * @param registry - The validated registry data
+ * Checks that every file referenced in component.files[] exists in the
+ * registry's `files/` directory. This prevents build failures and ensures
+ * the registry is complete before publishing.
+ *
+ * Files are checked at: `<sourcePath>/files/<file.path>`
+ *
+ * @param registry - The validated registry data (must pass schema validation first)
  * @param sourcePath - Path to the registry source directory
- * @returns Validation result with file existence errors and file count
+ * @returns Validation result with file existence errors and total file count
+ *
+ * @example
+ * ```typescript
+ * const registry = registrySchema.parse(data)
+ * const result = await validateFileExistence(registry, "./my-registry")
+ * console.log(`Found ${result.filesCount} files`)
+ * if (result.errors.length > 0) {
+ *   console.error("Missing files:", result.errors)
+ * }
+ * ```
  */
 export async function validateFileExistence(
 	registry: Registry,
@@ -99,8 +167,26 @@ export async function validateFileExistence(
 /**
  * Detect circular dependencies in registry components
  *
- * @param registry - The validated registry data
- * @returns Validation result with circular dependency errors
+ * Uses depth-first search to detect dependency cycles within the same namespace.
+ * Circular dependencies prevent proper component installation order and would
+ * cause infinite loops.
+ *
+ * Example cycle: comp-a → comp-b → comp-c → comp-a
+ *
+ * Cross-namespace dependencies (e.g., "other-registry/component") are skipped,
+ * as they are resolved independently.
+ *
+ * @param registry - The validated registry data (must pass schema validation first)
+ * @returns Validation result with circular dependency errors (if any)
+ *
+ * @example
+ * ```typescript
+ * const registry = registrySchema.parse(data)
+ * const result = detectCircularDependencies(registry)
+ * if (result.errors.length > 0) {
+ *   console.error("Circular dependencies detected:", result.errors)
+ * }
+ * ```
  */
 export function detectCircularDependencies(registry: Registry): CircularDependencyValidationResult {
 	const errors: ValidationError[] = []
@@ -143,8 +229,24 @@ export function detectCircularDependencies(registry: Registry): CircularDependen
 /**
  * Detect duplicate file targets across components
  *
- * @param registry - The validated registry data
- * @returns Validation result with duplicate target warnings
+ * Checks if multiple components install files to the same target path.
+ * This typically indicates a design issue and can cause installation conflicts
+ * where one component overwrites another's files.
+ *
+ * Returns warnings (non-blocking) by default. The `ocx validate` command can
+ * treat these as errors with the `--no-duplicate-targets` flag.
+ *
+ * @param registry - The validated registry data (must pass schema validation first)
+ * @returns Validation result with duplicate target warnings (if any)
+ *
+ * @example
+ * ```typescript
+ * const registry = registrySchema.parse(data)
+ * const result = detectDuplicateTargets(registry)
+ * if (result.warnings.length > 0) {
+ *   console.warn("Duplicate targets found:", result.warnings)
+ * }
+ * ```
  */
 export function detectDuplicateTargets(registry: Registry): DuplicateTargetValidationResult {
 	const warnings: ValidationWarning[] = []
