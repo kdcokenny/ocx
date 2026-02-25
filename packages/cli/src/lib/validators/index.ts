@@ -6,7 +6,7 @@
 
 import { join } from "node:path"
 import { normalizeFile, type Registry, registrySchema } from "../../schemas/registry"
-import type { ValidationError } from "../validate-registry-types"
+import type { ValidationError, ValidationWarning } from "../validate-registry-types"
 
 /**
  * Validation result for schema validation
@@ -28,6 +28,13 @@ export interface FileExistenceValidationResult {
  */
 export interface CircularDependencyValidationResult {
 	errors: ValidationError[]
+}
+
+/**
+ * Validation result for duplicate target detection
+ */
+export interface DuplicateTargetValidationResult {
+	warnings: ValidationWarning[]
 }
 
 /**
@@ -131,4 +138,37 @@ export function detectCircularDependencies(registry: Registry): CircularDependen
 	}
 
 	return { errors }
+}
+
+/**
+ * Detect duplicate file targets across components
+ *
+ * @param registry - The validated registry data
+ * @returns Validation result with duplicate target warnings
+ */
+export function detectDuplicateTargets(registry: Registry): DuplicateTargetValidationResult {
+	const warnings: ValidationWarning[] = []
+	const targetMap = new Map<string, string[]>() // target -> component names
+
+	for (const component of registry.components) {
+		for (const rawFile of component.files) {
+			const file = normalizeFile(rawFile, component.type)
+			const components = targetMap.get(file.target) || []
+			components.push(component.name)
+			targetMap.set(file.target, components)
+		}
+	}
+
+	// Warn about duplicates
+	for (const [target, components] of targetMap) {
+		if (components.length > 1) {
+			warnings.push({
+				type: "duplicate_target",
+				message: `File ${target} is installed by multiple components: ${components.join(", ")}`,
+				suggestion: "Consider renaming to avoid installation conflicts",
+			})
+		}
+	}
+
+	return { warnings }
 }

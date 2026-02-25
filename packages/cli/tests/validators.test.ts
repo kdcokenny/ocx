@@ -7,6 +7,7 @@ import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	detectCircularDependencies,
+	detectDuplicateTargets,
 	validateFileExistence,
 	validateSchema,
 } from "../src/lib/validators/index"
@@ -241,5 +242,139 @@ describe("detectCircularDependencies", () => {
 		const result = detectCircularDependencies(registry)
 
 		expect(result.errors).toEqual([])
+	})
+})
+
+describe("detectDuplicateTargets", () => {
+	it("should return no warnings when there are no duplicate targets", () => {
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/comp1.ts"],
+					dependencies: [],
+				},
+				{
+					name: "comp2",
+					type: "ocx:plugin",
+					description: "Component 2",
+					files: ["plugin/comp2.ts"],
+					dependencies: [],
+				},
+			],
+		}
+
+		const result = detectDuplicateTargets(registry)
+
+		expect(result.warnings).toEqual([])
+	})
+
+	it("should detect duplicate targets from two components", () => {
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/shared.ts"],
+					dependencies: [],
+				},
+				{
+					name: "comp2",
+					type: "ocx:plugin",
+					description: "Component 2",
+					files: ["plugin/shared.ts"],
+					dependencies: [],
+				},
+			],
+		}
+
+		const result = detectDuplicateTargets(registry)
+
+		expect(result.warnings.length).toBe(1)
+		expect(result.warnings[0]?.type).toBe("duplicate_target")
+		expect(result.warnings[0]?.message).toContain("plugin/shared.ts")
+		expect(result.warnings[0]?.message).toContain("comp1")
+		expect(result.warnings[0]?.message).toContain("comp2")
+	})
+
+	it("should detect duplicate targets from multiple components", () => {
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/shared.ts"],
+					dependencies: [],
+				},
+				{
+					name: "comp2",
+					type: "ocx:plugin",
+					description: "Component 2",
+					files: ["plugin/shared.ts"],
+					dependencies: [],
+				},
+				{
+					name: "comp3",
+					type: "ocx:plugin",
+					description: "Component 3",
+					files: ["plugin/shared.ts"],
+					dependencies: [],
+				},
+			],
+		}
+
+		const result = detectDuplicateTargets(registry)
+
+		expect(result.warnings.length).toBe(1)
+		expect(result.warnings[0]?.type).toBe("duplicate_target")
+		expect(result.warnings[0]?.message).toContain("comp1")
+		expect(result.warnings[0]?.message).toContain("comp2")
+		expect(result.warnings[0]?.message).toContain("comp3")
+	})
+
+	it("should handle components with different types correctly", () => {
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/shared.ts"],
+					dependencies: [],
+				},
+				{
+					name: "comp2",
+					type: "ocx:skill",
+					description: "Component 2",
+					files: ["skills/shared.ts"],
+					dependencies: [],
+				},
+			],
+		}
+
+		const result = detectDuplicateTargets(registry)
+
+		// Different types means different target paths, so no duplicates
+		expect(result.warnings).toEqual([])
 	})
 })
