@@ -8,6 +8,7 @@ import { join } from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
 import { normalizeFile, registrySchema } from "../schemas/registry"
 import type { ValidationResult } from "./validate-registry-types"
+import { validateSchema } from "./validators/index"
 
 /**
  * Validate a local registry source directory
@@ -44,21 +45,23 @@ export async function validateRegistryLocal(sourcePath: string): Promise<Validat
 	const registryData = parseJsonc(content, [], { allowTrailingComma: true })
 
 	// 3. Validate schema
-	const parseResult = registrySchema.safeParse(registryData)
-	if (!parseResult.success) {
-		for (const error of parseResult.error.errors) {
-			errors.push({
-				type: "invalid_schema",
-				message: `${error.path.join(".")}: ${error.message}`,
-				path: error.path.map(String),
-			})
-		}
+	const schemaResult = validateSchema(registryData)
+	errors.push(...schemaResult.errors)
+
+	if (schemaResult.errors.length > 0) {
 		return {
 			valid: false,
 			errors,
 			warnings,
 			stats: { componentsCount: 0, filesCount: 0 },
 		}
+	}
+
+	// Schema is valid, safe to parse
+	const parseResult = registrySchema.safeParse(registryData)
+	if (!parseResult.success) {
+		// This should never happen since validateSchema passed, but keep for type safety
+		throw new Error("Schema validation passed but parse failed - this is a bug")
 	}
 
 	const registry = parseResult.data
