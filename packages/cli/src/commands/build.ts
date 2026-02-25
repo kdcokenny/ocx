@@ -48,6 +48,14 @@ export function registerBuildCommand(program: Command): void {
 					if (process.env.NODE_ENV === "test" || !process.stdout.isTTY) {
 						logger.success(`Built ${result.componentsCount} components`)
 					}
+
+					// Display warnings if any
+					if (result.warnings.length > 0) {
+						logger.warn("⚠ Build completed with warnings:")
+						for (const warning of result.warnings) {
+							console.log(kleur.yellow(`  ${warning}`))
+						}
+					}
 				}
 
 				if (options.json) {

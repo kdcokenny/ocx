@@ -304,4 +304,52 @@ describe("ocx build", () => {
 		expect(exitCode).not.toBe(0)
 		expect(output).toContain("Circular dependency")
 	})
+
+	it("should succeed with warnings on duplicate targets", async () => {
+		const sourceDir = join(testDir, "registry-dup-targets")
+		await mkdir(sourceDir, { recursive: true })
+
+		const registryJson = {
+			name: "Duplicate Targets Registry",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "comp-a",
+					type: "ocx:plugin",
+					description: "Component A",
+					files: [{ path: "a.ts", target: ".opencode/plugin/shared.ts" }],
+					dependencies: [],
+				},
+				{
+					name: "comp-b",
+					type: "ocx:plugin",
+					description: "Component B",
+					files: [{ path: "b.ts", target: ".opencode/plugin/shared.ts" }],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create the files directory and source files
+		const filesDir = join(sourceDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await writeFile(join(filesDir, "a.ts"), "// Component A")
+		await writeFile(join(filesDir, "b.ts"), "// Component B")
+
+		const outDir = "dist-dup-targets"
+		const { exitCode, output } = await runCLI(
+			["build", "registry-dup-targets", "--out", outDir],
+			testDir,
+		)
+
+		// Should succeed despite warnings
+		expect(exitCode).toBe(0)
+		expect(output).toContain("Built 2 components")
+		// Should show duplicate target warning
+		expect(output).toContain("multiple components")
+	})
 })

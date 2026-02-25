@@ -29,6 +29,8 @@ export interface BuildRegistryResult {
 	componentsCount: number
 	/** Absolute path to output directory */
 	outputPath: string
+	/** Validation warnings (non-blocking) */
+	warnings: string[]
 }
 
 export class BuildRegistryError extends Error {
@@ -57,6 +59,9 @@ export async function buildRegistry(options: BuildRegistryOptions): Promise<Buil
 		const errors = validationResult.errors.map((e) => e.message)
 		throw new BuildRegistryError("Registry validation failed", errors)
 	}
+
+	// Capture warnings (non-blocking)
+	const warnings = validationResult.warnings.map((w) => w.message)
 
 	// Read registry file from source (prefer .jsonc over .json)
 	const jsoncFile = Bun.file(join(sourcePath, "registry.jsonc"))
@@ -158,5 +163,6 @@ export async function buildRegistry(options: BuildRegistryOptions): Promise<Buil
 		version: registry.version,
 		componentsCount: registry.components.length,
 		outputPath: outPath,
+		warnings,
 	}
 }
