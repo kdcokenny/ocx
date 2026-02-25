@@ -118,6 +118,29 @@ export async function validateRegistryLocal(sourcePath: string): Promise<Validat
 		detectCycle(component.name)
 	}
 
+	// 6. Check for duplicate file targets
+	const targetMap = new Map<string, string[]>() // target -> component names
+
+	for (const component of registry.components) {
+		for (const rawFile of component.files) {
+			const file = normalizeFile(rawFile, component.type)
+			const components = targetMap.get(file.target) || []
+			components.push(component.name)
+			targetMap.set(file.target, components)
+		}
+	}
+
+	// Warn about duplicates
+	for (const [target, components] of targetMap) {
+		if (components.length > 1) {
+			warnings.push({
+				type: "duplicate_target",
+				message: `File ${target} is installed by multiple components: ${components.join(", ")}`,
+				suggestion: "Consider renaming to avoid installation conflicts",
+			})
+		}
+	}
+
 	return {
 		valid: errors.length === 0,
 		errors,

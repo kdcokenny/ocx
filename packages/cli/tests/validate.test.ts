@@ -130,4 +130,45 @@ describe("validateRegistryLocal", () => {
 		expect(result.valid).toBe(false)
 		expect(result.errors.some((e) => e.type === "circular_dependency")).toBe(true)
 	})
+
+	it("should warn about duplicate file targets", async () => {
+		// Create registry where two components install same file
+		const registryJson = {
+			name: "Test Registry",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "comp-a",
+					type: "ocx:plugin",
+					description: "Component A",
+					files: [{ path: "plugin/shared.ts", target: ".opencode/plugin/shared.ts" }],
+					dependencies: [],
+				},
+				{
+					name: "comp-b",
+					type: "ocx:plugin",
+					description: "Component B",
+					files: [{ path: "plugin/shared.ts", target: ".opencode/plugin/shared.ts" }],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(testDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create all source files
+		const filesDir = join(testDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await mkdir(join(filesDir, "plugin"), { recursive: true })
+		await writeFile(join(filesDir, "plugin", "shared.ts"), "// Shared file")
+
+		const result = await validateRegistryLocal(testDir)
+
+		expect(result.valid).toBe(true) // Warning, not error
+		expect(result.warnings).toHaveLength(1)
+		expect(result.warnings[0].type).toBe("duplicate_target")
+		expect(result.warnings[0].message).toContain("shared.ts")
+	})
 })
