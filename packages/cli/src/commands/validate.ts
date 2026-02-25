@@ -6,6 +6,7 @@
 
 import { join } from "node:path"
 import type { Command } from "commander"
+import { formatValidationResult } from "../lib/format-validation-result"
 import { validateRegistryLocal } from "../lib/validate-registry-local"
 import { EXIT_CODES } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
@@ -49,18 +50,7 @@ export function registerValidateCommand(program: Command): void {
 				if (options.json) {
 					console.log(JSON.stringify(result, null, 2))
 				} else {
-					// Human-readable output
-					if (result.valid && result.warnings.length === 0) {
-						console.log("✓ Valid registry")
-					} else if (result.valid) {
-						console.log(`✓ Valid registry (${result.warnings.length} warnings)`)
-					} else {
-						console.log(`✗ Invalid registry (${result.errors.length} errors)`)
-						// Show error details
-						for (const error of result.errors) {
-							console.log(`  - ${error.type}: ${error.message}`)
-						}
-					}
+					console.log(formatValidationResult(result))
 				}
 
 				// Determine exit code

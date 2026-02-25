@@ -151,4 +151,54 @@ describe("ocx validate command", () => {
 
 		expect(exitCode).toBe(1)
 	})
+
+	it("should output enhanced human-readable format by default", async () => {
+		// Setup registry with some errors and warnings
+		const registryJson = {
+			name: "Test Registry",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "comp-a",
+					type: "ocx:plugin",
+					description: "Component A",
+					files: [{ path: "plugin/shared.ts", target: ".opencode/plugin/shared.ts" }],
+					dependencies: [],
+				},
+				{
+					name: "comp-b",
+					type: "ocx:plugin",
+					description: "Component B",
+					files: [{ path: "plugin/shared.ts", target: ".opencode/plugin/shared.ts" }],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(testDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create all source files
+		const filesDir = join(testDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await mkdir(join(filesDir, "plugin"), { recursive: true })
+		await writeFile(join(filesDir, "plugin", "shared.ts"), "// Shared file")
+
+		const { exitCode, output } = await runCLI(["validate", "."], testDir)
+
+		// Should contain formatted sections
+		expect(output).toContain("Registry Metadata")
+		expect(output).toContain("Name: Test Registry")
+		expect(output).toContain("Namespace: test")
+		expect(output).toContain("Version: 1.0.0")
+		expect(output).toContain("Author: Test Author")
+		expect(output).toContain("Components")
+		expect(output).toContain("2 total")
+		expect(output).toContain("Files")
+		expect(output).toContain("Warnings")
+		expect(output).toContain("duplicate_target")
+		expect(output).toContain("Summary")
+		expect(exitCode).toBe(0)
+	})
 })
