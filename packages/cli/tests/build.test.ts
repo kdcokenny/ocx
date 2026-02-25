@@ -307,6 +307,38 @@ describe("ocx build", () => {
 		expect(output).toContain("Circular dependency")
 	})
 
+	it("should use formatValidationResult for error output", async () => {
+		const sourceDir = join(testDir, "registry-invalid-format")
+		await mkdir(sourceDir, { recursive: true })
+
+		// Create registry with schema validation error
+		const registryJson = {
+			name: "Invalid Format Registry",
+			namespace: "test",
+			version: "1.0.0",
+			// Missing 'author' field
+			components: [
+				{
+					name: "test-comp",
+					type: "ocx:plugin",
+					description: "Test component",
+					files: [{ path: "index.ts", target: ".opencode/plugin/test.ts" }],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		const { exitCode, output } = await runCLI(["build", "registry-invalid-format"], testDir)
+
+		expect(exitCode).not.toBe(0)
+		// Should contain formatted validation result sections
+		expect(output).toContain("Errors")
+		expect(output).toContain("Summary")
+		expect(output).toContain("Invalid registry")
+	})
+
 	it("should succeed with warnings on duplicate targets", async () => {
 		const sourceDir = join(testDir, "registry-dup-targets")
 		await mkdir(sourceDir, { recursive: true })

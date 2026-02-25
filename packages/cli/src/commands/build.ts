@@ -8,6 +8,7 @@ import { join, relative } from "node:path"
 import type { Command } from "commander"
 import kleur from "kleur"
 import { BuildRegistryError, buildRegistry } from "../lib/build-registry"
+import { formatValidationResult } from "../lib/format-validation-result"
 import { createSpinner, handleError, logger, outputJson } from "../utils/index"
 
 interface BuildOptions {
@@ -72,9 +73,15 @@ export function registerBuildCommand(program: Command): void {
 			} catch (error) {
 				if (error instanceof BuildRegistryError) {
 					if (!options.json) {
-						logger.error(error.message)
-						for (const err of error.errors) {
-							console.log(kleur.red(`  ${err}`))
+						// Use formatValidationResult if validationResult is available
+						if (error.validationResult) {
+							console.log(formatValidationResult(error.validationResult))
+						} else {
+							// Fallback to old format for backward compatibility
+							logger.error(error.message)
+							for (const err of error.errors) {
+								console.log(kleur.red(`  ${err}`))
+							}
 						}
 					}
 					process.exit(1)
