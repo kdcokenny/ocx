@@ -22,8 +22,8 @@ import {
  * @returns Complete validation result
  */
 export async function runValidation(sourcePath: string): Promise<ValidationResult> {
-	const errors = []
-	const warnings = []
+	const errors: ValidationError[] = []
+	const warnings: ValidationWarning[] = []
 
 	// Read registry.json
 	const registryFilePath = join(sourcePath, "registry.json")
