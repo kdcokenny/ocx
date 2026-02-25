@@ -8,7 +8,7 @@ import { join } from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
 import { normalizeFile, registrySchema } from "../schemas/registry"
 import type { ValidationResult } from "./validate-registry-types"
-import { validateSchema } from "./validators/index"
+import { validateFileExistence, validateSchema } from "./validators/index"
 
 /**
  * Validate a local registry source directory
@@ -67,25 +67,9 @@ export async function validateRegistryLocal(sourcePath: string): Promise<Validat
 	const registry = parseResult.data
 
 	// 4. Validate all source files exist
-	let totalFiles = 0
-	for (const component of registry.components) {
-		for (const rawFile of component.files) {
-			const file = normalizeFile(rawFile, component.type)
-			const sourceFilePath = join(sourcePath, "files", file.path)
-			const exists = await Bun.file(sourceFilePath).exists()
-
-			if (!exists) {
-				errors.push({
-					type: "missing_file",
-					message: `Source file not found: ${file.path}`,
-					component: component.name,
-					file: file.path,
-				})
-			} else {
-				totalFiles++
-			}
-		}
-	}
+	const fileExistenceResult = await validateFileExistence(registry, sourcePath)
+	errors.push(...fileExistenceResult.errors)
+	const totalFiles = fileExistenceResult.filesCount
 
 	// 5. Detect circular dependencies
 	const visited = new Set<string>()
