@@ -206,17 +206,18 @@ export function detectCircularDependencies(registry: Registry): CircularDependen
 
 		visiting.add(componentName)
 		const component = registry.components.find((c) => c.name === componentName)
+		let hasCycle = false
 		if (component?.dependencies) {
 			for (const dep of component.dependencies) {
 				if (dep.includes("/")) continue // Skip cross-namespace dependencies
 				if (detectCycle(dep, [...path, componentName])) {
-					return true
+					hasCycle = true
 				}
 			}
 		}
 		visiting.delete(componentName)
 		visited.add(componentName)
-		return false
+		return hasCycle
 	}
 
 	for (const component of registry.components) {

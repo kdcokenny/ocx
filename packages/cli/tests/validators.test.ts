@@ -244,6 +244,66 @@ describe("detectCircularDependencies", () => {
 
 		expect(result.errors).toEqual([])
 	})
+
+	it("should not report false positives from stale visiting set entries", () => {
+		// Diamond pattern with a cycle between two shared dependencies
+		//   comp1 -> comp2 -> comp4
+		//   comp1 -> comp3 -> comp4
+		//   comp2 <-> comp3 (cycle)
+		//
+		// Bug scenario: When traversing comp1's dependencies:
+		// 1. Visit comp2, mark as visiting
+		// 2. Visit comp3 from comp2, mark as visiting
+		// 3. Detect cycle comp3 -> comp2 (comp2 in visiting)
+		// 4. Early return skips cleanup - comp3 stays in visiting
+		// 5. Visit comp3 from comp1 directly
+		// 6. comp3 is in visiting -> FALSE POSITIVE
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/comp1.ts"],
+					dependencies: ["comp2", "comp3"],
+				},
+				{
+					name: "comp2",
+					type: "ocx:plugin",
+					description: "Component 2",
+					files: ["plugin/comp2.ts"],
+					dependencies: ["comp3", "comp4"],
+				},
+				{
+					name: "comp3",
+					type: "ocx:plugin",
+					description: "Component 3",
+					files: ["plugin/comp3.ts"],
+					dependencies: ["comp2", "comp4"],
+				},
+				{
+					name: "comp4",
+					type: "ocx:plugin",
+					description: "Component 4",
+					files: ["plugin/comp4.ts"],
+					dependencies: [],
+				},
+			],
+		}
+
+		const result = detectCircularDependencies(registry)
+
+		// Should detect exactly one cycle: comp2 <-> comp3
+		expect(result.errors.length).toBe(1)
+		expect(result.errors[0]?.type).toBe("circular_dependency")
+		// The cycle should be between comp2 and comp3
+		expect(result.errors[0]?.message).toContain("comp2")
+		expect(result.errors[0]?.message).toContain("comp3")
+	})
 })
 
 describe("detectDuplicateTargets", () => {
