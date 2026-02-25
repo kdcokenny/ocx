@@ -4,7 +4,7 @@
  * Validates a registry (local source or remote deployment)
  */
 
-import { join } from "node:path"
+import path from "node:path"
 import type { Command } from "commander"
 import { formatValidationResult } from "../lib/format-validation-result"
 import { validateRegistryLocal } from "../lib/validate-registry-local"
@@ -31,20 +31,17 @@ export function registerValidateCommand(program: Command): void {
 		.option("-q, --quiet", "Suppress output", false)
 		.action(async (pathOrUrl: string, options: ValidateOptions) => {
 			try {
-				// Auto-detect remote URL (http/https only - Windows paths like C:/ are local)
-				let isRemote = false
-				try {
-					const url = new URL(pathOrUrl)
-					isRemote = url.protocol === "http:" || url.protocol === "https:"
-				} catch {
-					// Not a URL, treat as local path
-				}
+				// Auto-detect remote URL vs local path
+				// Check if it's an absolute path on any platform, or not an http(s) URL
+				const isAbsolutePath = path.posix.isAbsolute(pathOrUrl) || path.win32.isAbsolute(pathOrUrl)
+				const isHttpUrl = /^https?:\/\//i.test(pathOrUrl)
+				const isRemote = isHttpUrl && !isAbsolutePath
 
 				if (isRemote) {
 					throw new Error("Remote validation not yet implemented")
 				}
 
-				const sourcePath = join(options.cwd, pathOrUrl)
+				const sourcePath = path.join(options.cwd, pathOrUrl)
 				const result = await validateRegistryLocal(sourcePath)
 
 				if (options.json) {
