@@ -477,6 +477,53 @@ describe("ocx build", () => {
 		// Should still build the registry
 		expect(output).toContain("Built 2 components")
 	})
+
+	it("should exit before building when validation fails with --validate flag", async () => {
+		const sourceDir = join(testDir, "registry-invalid-with-validate")
+		await mkdir(sourceDir, { recursive: true })
+
+		// Create a registry with schema validation error (missing required field)
+		const registryJson = {
+			name: "Invalid Registry",
+			namespace: "test",
+			version: "1.0.0",
+			// Missing 'author' field - schema validation error
+			components: [
+				{
+					name: "test-comp",
+					type: "ocx:plugin",
+					description: "Test component",
+					files: [{ path: "index.ts", target: ".opencode/plugin/test.ts" }],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create the files directory and source files
+		const filesDir = join(sourceDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await writeFile(join(filesDir, "index.ts"), "// Test content")
+
+		const outDir = "dist-invalid-validate"
+		const { exitCode, output } = await runCLI(
+			["build", "registry-invalid-with-validate", "--out", outDir, "--validate"],
+			testDir,
+		)
+
+		// Should fail with exit code 1
+		expect(exitCode).toBe(1)
+		// Should display validation errors
+		expect(output).toContain("Errors")
+		expect(output).toContain("Invalid registry")
+		// Should NOT build the registry (no "Built X components" message)
+		expect(output).not.toContain("Built")
+		// Should only show validation output ONCE (not twice from buildRegistry)
+		const summaryMatches = output.match(/Summary/g)
+		expect(summaryMatches).toBeDefined()
+		expect(summaryMatches?.length).toBe(1)
+	})
 })
 
 describe("BuildRegistryError", () => {

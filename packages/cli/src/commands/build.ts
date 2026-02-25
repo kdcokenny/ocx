@@ -39,6 +39,11 @@ export function registerBuildCommand(program: Command): void {
 				if (options.validate && !options.json) {
 					const validationResult = await runValidation(sourcePath)
 					console.log(formatValidationResult(validationResult))
+
+					// If validation fails, exit before building
+					if (!validationResult.valid) {
+						process.exit(1)
+					}
 				}
 
 				const spinner = createSpinner({
