@@ -554,4 +554,43 @@ describe("runValidation", () => {
 
 		await rm(duplicateDir, { recursive: true, force: true })
 	})
+
+	it("should skip circular dependency check when skipCircularDeps is true", async () => {
+		const circularDir = join(import.meta.dir, "tmp-skip-circular-test")
+		await mkdir(join(circularDir, "files", "plugin"), { recursive: true })
+		await Bun.write(
+			join(circularDir, "registry.json"),
+			JSON.stringify({
+				name: "Test Registry",
+				namespace: "test",
+				version: "1.0.0",
+				author: "Test Author",
+				components: [
+					{
+						name: "comp1",
+						type: "ocx:plugin",
+						description: "Component 1",
+						files: ["plugin/comp1.ts"],
+						dependencies: ["comp2"],
+					},
+					{
+						name: "comp2",
+						type: "ocx:plugin",
+						description: "Component 2",
+						files: ["plugin/comp2.ts"],
+						dependencies: ["comp1"],
+					},
+				],
+			}),
+		)
+		await Bun.write(join(circularDir, "files", "plugin", "comp1.ts"), "// test")
+		await Bun.write(join(circularDir, "files", "plugin", "comp2.ts"), "// test")
+
+		const result = await runValidation(circularDir, { skipCircularDeps: true })
+
+		expect(result.valid).toBe(true)
+		expect(result.errors).toEqual([])
+
+		await rm(circularDir, { recursive: true, force: true })
+	})
 })
