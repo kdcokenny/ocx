@@ -50,4 +50,36 @@ describe("validateRegistryLocal", () => {
 		expect(result.metadata?.name).toBe("Test Registry")
 		expect(result.metadata?.namespace).toBe("test")
 	})
+
+	it("should detect missing source files", async () => {
+		// Create registry with file reference that doesn't exist
+		const registryJson = {
+			name: "Test Registry",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "test-component",
+					type: "ocx:plugin",
+					description: "A test component",
+					files: ["plugin/missing.ts"],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(testDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create files directory but NOT the referenced file
+		const filesDir = join(testDir, "files")
+		await mkdir(filesDir, { recursive: true })
+
+		const result = await validateRegistryLocal(testDir)
+
+		expect(result.valid).toBe(false)
+		expect(result.errors).toHaveLength(1)
+		expect(result.errors[0].type).toBe("missing_file")
+		expect(result.errors[0].component).toBe("test-component")
+	})
 })
