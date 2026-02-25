@@ -5,7 +5,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
-import { validateFileExistence, validateSchema } from "../src/lib/validators/index"
+import {
+	detectCircularDependencies,
+	validateFileExistence,
+	validateSchema,
+} from "../src/lib/validators/index"
 import type { Registry } from "../src/schemas/registry"
 
 describe("validateSchema", () => {
@@ -112,5 +116,130 @@ describe("validateFileExistence", () => {
 		expect(result.errors[0]?.type).toBe("missing_file")
 		expect(result.errors[0]?.file).toBe("plugin/missing.ts")
 		expect(result.filesCount).toBe(0)
+	})
+})
+
+describe("detectCircularDependencies", () => {
+	it("should return no errors when there are no circular dependencies", () => {
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/comp1.ts"],
+					dependencies: ["comp2"],
+				},
+				{
+					name: "comp2",
+					type: "ocx:plugin",
+					description: "Component 2",
+					files: ["plugin/comp2.ts"],
+					dependencies: [],
+				},
+			],
+		}
+
+		const result = detectCircularDependencies(registry)
+
+		expect(result.errors).toEqual([])
+	})
+
+	it("should detect direct circular dependency", () => {
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/comp1.ts"],
+					dependencies: ["comp2"],
+				},
+				{
+					name: "comp2",
+					type: "ocx:plugin",
+					description: "Component 2",
+					files: ["plugin/comp2.ts"],
+					dependencies: ["comp1"],
+				},
+			],
+		}
+
+		const result = detectCircularDependencies(registry)
+
+		expect(result.errors.length).toBeGreaterThan(0)
+		expect(result.errors[0]?.type).toBe("circular_dependency")
+		expect(result.errors[0]?.message).toContain("comp1")
+		expect(result.errors[0]?.message).toContain("comp2")
+	})
+
+	it("should detect indirect circular dependency", () => {
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/comp1.ts"],
+					dependencies: ["comp2"],
+				},
+				{
+					name: "comp2",
+					type: "ocx:plugin",
+					description: "Component 2",
+					files: ["plugin/comp2.ts"],
+					dependencies: ["comp3"],
+				},
+				{
+					name: "comp3",
+					type: "ocx:plugin",
+					description: "Component 3",
+					files: ["plugin/comp3.ts"],
+					dependencies: ["comp1"],
+				},
+			],
+		}
+
+		const result = detectCircularDependencies(registry)
+
+		expect(result.errors.length).toBeGreaterThan(0)
+		expect(result.errors[0]?.type).toBe("circular_dependency")
+		expect(result.errors[0]?.message).toContain("comp1")
+		expect(result.errors[0]?.message).toContain("comp2")
+		expect(result.errors[0]?.message).toContain("comp3")
+	})
+
+	it("should ignore cross-namespace dependencies", () => {
+		const registry: Registry = {
+			name: "Test",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test",
+			components: [
+				{
+					name: "comp1",
+					type: "ocx:plugin",
+					description: "Component 1",
+					files: ["plugin/comp1.ts"],
+					dependencies: ["other/comp2"],
+				},
+			],
+		}
+
+		const result = detectCircularDependencies(registry)
+
+		expect(result.errors).toEqual([])
 	})
 })

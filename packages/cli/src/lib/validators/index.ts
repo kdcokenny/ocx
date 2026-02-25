@@ -24,6 +24,13 @@ export interface FileExistenceValidationResult {
 }
 
 /**
+ * Validation result for circular dependency detection
+ */
+export interface CircularDependencyValidationResult {
+	errors: ValidationError[]
+}
+
+/**
  * Validate registry data against the schema
  *
  * @param registryData - The parsed registry data to validate
@@ -80,4 +87,48 @@ export async function validateFileExistence(
 	}
 
 	return { errors, filesCount: totalFiles }
+}
+
+/**
+ * Detect circular dependencies in registry components
+ *
+ * @param registry - The validated registry data
+ * @returns Validation result with circular dependency errors
+ */
+export function detectCircularDependencies(registry: Registry): CircularDependencyValidationResult {
+	const errors: ValidationError[] = []
+	const visited = new Set<string>()
+	const visiting = new Set<string>()
+
+	function detectCycle(componentName: string, path: string[] = []): boolean {
+		if (visiting.has(componentName)) {
+			errors.push({
+				type: "circular_dependency",
+				message: `Circular dependency: ${[...path, componentName].join(" → ")}`,
+				component: componentName,
+			})
+			return true
+		}
+		if (visited.has(componentName)) return false
+
+		visiting.add(componentName)
+		const component = registry.components.find((c) => c.name === componentName)
+		if (component?.dependencies) {
+			for (const dep of component.dependencies) {
+				if (dep.includes("/")) continue // Skip cross-namespace dependencies
+				if (detectCycle(dep, [...path, componentName])) {
+					return true
+				}
+			}
+		}
+		visiting.delete(componentName)
+		visited.add(componentName)
+		return false
+	}
+
+	for (const component of registry.components) {
+		detectCycle(component.name)
+	}
+
+	return { errors }
 }
