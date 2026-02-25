@@ -84,6 +84,40 @@ export async function validateRegistryLocal(sourcePath: string): Promise<Validat
 		}
 	}
 
+	// 5. Detect circular dependencies
+	const visited = new Set<string>()
+	const visiting = new Set<string>()
+
+	function detectCycle(componentName: string, path: string[] = []): boolean {
+		if (visiting.has(componentName)) {
+			errors.push({
+				type: "circular_dependency",
+				message: `Circular dependency: ${[...path, componentName].join(" → ")}`,
+				component: componentName,
+			})
+			return true
+		}
+		if (visited.has(componentName)) return false
+
+		visiting.add(componentName)
+		const component = registry.components.find((c) => c.name === componentName)
+		if (component?.dependencies) {
+			for (const dep of component.dependencies) {
+				if (dep.includes("/")) continue // Skip cross-namespace dependencies
+				if (detectCycle(dep, [...path, componentName])) {
+					return true
+				}
+			}
+		}
+		visiting.delete(componentName)
+		visited.add(componentName)
+		return false
+	}
+
+	for (const component of registry.components) {
+		detectCycle(component.name)
+	}
+
 	return {
 		valid: errors.length === 0,
 		errors,

@@ -82,4 +82,52 @@ describe("validateRegistryLocal", () => {
 		expect(result.errors[0].type).toBe("missing_file")
 		expect(result.errors[0].component).toBe("test-component")
 	})
+
+	it("should detect circular dependencies", async () => {
+		// Create registry with A -> B -> C -> A cycle
+		const registryJson = {
+			name: "Test Registry",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "comp-a",
+					type: "ocx:plugin",
+					description: "Component A",
+					files: ["plugin/a.ts"],
+					dependencies: ["comp-b"],
+				},
+				{
+					name: "comp-b",
+					type: "ocx:plugin",
+					description: "Component B",
+					files: ["plugin/b.ts"],
+					dependencies: ["comp-c"],
+				},
+				{
+					name: "comp-c",
+					type: "ocx:plugin",
+					description: "Component C",
+					files: ["plugin/c.ts"],
+					dependencies: ["comp-a"], // Creates cycle
+				},
+			],
+		}
+
+		await writeFile(join(testDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create all source files so missing_file errors don't interfere
+		const filesDir = join(testDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await mkdir(join(filesDir, "plugin"), { recursive: true })
+		await writeFile(join(filesDir, "plugin", "a.ts"), "// Component A")
+		await writeFile(join(filesDir, "plugin", "b.ts"), "// Component B")
+		await writeFile(join(filesDir, "plugin", "c.ts"), "// Component C")
+
+		const result = await validateRegistryLocal(testDir)
+
+		expect(result.valid).toBe(false)
+		expect(result.errors.some((e) => e.type === "circular_dependency")).toBe(true)
+	})
 })
