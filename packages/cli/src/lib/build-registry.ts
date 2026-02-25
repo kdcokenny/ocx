@@ -34,12 +34,20 @@ export interface BuildRegistryResult {
 }
 
 export class BuildRegistryError extends Error {
-	constructor(
-		message: string,
-		public readonly errors: string[] = [],
-	) {
+	public readonly errors: string[]
+	public readonly validationResult?: ValidationResult
+
+	constructor(message: string, errorsOrValidation: string[] | ValidationResult = []) {
 		super(message)
 		this.name = "BuildRegistryError"
+
+		// Handle ValidationResult or string array for backward compatibility
+		if (Array.isArray(errorsOrValidation)) {
+			this.errors = errorsOrValidation
+		} else {
+			this.validationResult = errorsOrValidation
+			this.errors = errorsOrValidation.errors.map((e) => e.message)
+		}
 	}
 }
 

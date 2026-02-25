@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import { BuildRegistryError } from "../src/lib/build-registry"
+import type { ValidationResult } from "../src/lib/validate-registry-types"
 import { cleanupTempDir, createTempDir, runCLI } from "./helpers"
 
 describe("ocx build", () => {
@@ -351,5 +353,42 @@ describe("ocx build", () => {
 		expect(output).toContain("Built 2 components")
 		// Should show duplicate target warning
 		expect(output).toContain("multiple components")
+	})
+})
+
+describe("BuildRegistryError", () => {
+	it("should accept ValidationResult as parameter", () => {
+		const validationResult: ValidationResult = {
+			valid: false,
+			errors: [
+				{
+					type: "invalid_schema",
+					message: "Component name is invalid",
+					component: "test-comp",
+				},
+			],
+			warnings: [],
+			stats: {
+				componentsCount: 1,
+				filesCount: 0,
+			},
+		}
+
+		const error = new BuildRegistryError("Validation failed", validationResult)
+
+		expect(error.message).toBe("Validation failed")
+		expect(error.validationResult).toBeDefined()
+		expect(error.validationResult?.valid).toBe(false)
+		expect(error.validationResult?.errors).toHaveLength(1)
+		expect(error.validationResult?.errors[0].message).toBe("Component name is invalid")
+	})
+
+	it("should maintain backward compatibility with string array", () => {
+		const errors = ["Error 1", "Error 2"]
+		const error = new BuildRegistryError("Build failed", errors)
+
+		expect(error.message).toBe("Build failed")
+		expect(error.errors).toEqual(errors)
+		expect(error.validationResult).toBeUndefined()
 	})
 })
