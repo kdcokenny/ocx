@@ -255,4 +255,53 @@ describe("ocx build", () => {
 		expect(index.name).toBe("JSONC Registry Preferred")
 		expect(index.components[0].name).toBe("from-jsonc")
 	})
+
+	it("should fail on circular dependencies", async () => {
+		const sourceDir = join(testDir, "registry-circular")
+		await mkdir(sourceDir, { recursive: true })
+
+		const registryJson = {
+			name: "Circular Registry",
+			namespace: "test",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "comp-a",
+					type: "ocx:plugin",
+					description: "Component A",
+					files: [{ path: "a.ts", target: ".opencode/plugin/a.ts" }],
+					dependencies: ["comp-b"],
+				},
+				{
+					name: "comp-b",
+					type: "ocx:plugin",
+					description: "Component B",
+					files: [{ path: "b.ts", target: ".opencode/plugin/b.ts" }],
+					dependencies: ["comp-c"],
+				},
+				{
+					name: "comp-c",
+					type: "ocx:plugin",
+					description: "Component C",
+					files: [{ path: "c.ts", target: ".opencode/plugin/c.ts" }],
+					dependencies: ["comp-a"],
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		// Create the files directory and source files
+		const filesDir = join(sourceDir, "files")
+		await mkdir(filesDir, { recursive: true })
+		await writeFile(join(filesDir, "a.ts"), "// Component A")
+		await writeFile(join(filesDir, "b.ts"), "// Component B")
+		await writeFile(join(filesDir, "c.ts"), "// Component C")
+
+		const { exitCode, output } = await runCLI(["build", "registry-circular"], testDir)
+
+		expect(exitCode).not.toBe(0)
+		expect(output).toContain("Circular dependency")
+	})
 })

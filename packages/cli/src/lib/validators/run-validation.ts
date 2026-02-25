@@ -7,7 +7,11 @@
 import { join } from "node:path"
 import { parse } from "jsonc-parser"
 import { registrySchema } from "../../schemas/registry"
-import type { ValidationResult } from "../validate-registry-types"
+import type {
+	ValidationError,
+	ValidationResult,
+	ValidationWarning,
+} from "../validate-registry-types"
 import {
 	detectCircularDependencies,
 	detectDuplicateTargets,
@@ -37,9 +41,29 @@ export async function runValidation(
 	const errors: ValidationError[] = []
 	const warnings: ValidationWarning[] = []
 
-	// Read registry.json
-	const registryFilePath = join(sourcePath, "registry.json")
-	const registryFile = Bun.file(registryFilePath)
+	// Read registry file from source (prefer .jsonc over .json)
+	const jsoncFile = Bun.file(join(sourcePath, "registry.jsonc"))
+	const jsonFile = Bun.file(join(sourcePath, "registry.json"))
+	const jsoncExists = await jsoncFile.exists()
+	const jsonExists = await jsonFile.exists()
+
+	if (!jsoncExists && !jsonExists) {
+		errors.push({
+			type: "invalid_schema",
+			message: "No registry.jsonc or registry.json found in source directory",
+		})
+		return {
+			valid: false,
+			errors,
+			warnings,
+			stats: {
+				componentsCount: 0,
+				filesCount: 0,
+			},
+		}
+	}
+
+	const registryFile = jsoncExists ? jsoncFile : jsonFile
 	const registryText = await registryFile.text()
 	const registryData = parse(registryText)
 
