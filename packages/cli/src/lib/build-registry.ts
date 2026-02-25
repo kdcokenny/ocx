@@ -64,8 +64,7 @@ export async function buildRegistry(options: BuildRegistryOptions): Promise<Buil
 	// Run validation before building
 	const validationResult = await runValidation(sourcePath)
 	if (!validationResult.valid) {
-		const errors = validationResult.errors.map((e) => e.message)
-		throw new BuildRegistryError("Registry validation failed", errors)
+		throw new BuildRegistryError("Registry validation failed", validationResult)
 	}
 
 	// Capture warnings (non-blocking)

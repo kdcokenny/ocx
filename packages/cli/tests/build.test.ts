@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { BuildRegistryError } from "../src/lib/build-registry"
+import { BuildRegistryError, buildRegistry } from "../src/lib/build-registry"
 import type { ValidationResult } from "../src/lib/validate-registry-types"
 import { cleanupTempDir, createTempDir, runCLI } from "./helpers"
 
@@ -390,5 +390,54 @@ describe("BuildRegistryError", () => {
 		expect(error.message).toBe("Build failed")
 		expect(error.errors).toEqual(errors)
 		expect(error.validationResult).toBeUndefined()
+	})
+})
+
+describe("buildRegistry function", () => {
+	let testDir: string
+
+	beforeEach(async () => {
+		testDir = await createTempDir("buildRegistry-test")
+	})
+
+	afterEach(async () => {
+		await cleanupTempDir(testDir)
+	})
+
+	it("should throw BuildRegistryError with ValidationResult on validation failure", async () => {
+		const sourceDir = join(testDir, "invalid-registry")
+		await mkdir(sourceDir, { recursive: true })
+
+		// Create registry with invalid schema (missing required field)
+		const registryJson = {
+			name: "Invalid Registry",
+			namespace: "test",
+			version: "1.0.0",
+			// Missing 'author' field
+			components: [
+				{
+					name: "test-comp",
+					type: "ocx:plugin",
+					description: "Test component",
+					files: [{ path: "index.ts", target: ".opencode/plugin/test.ts" }],
+					dependencies: [],
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		const outDir = join(testDir, "out")
+
+		try {
+			await buildRegistry({ source: sourceDir, out: outDir })
+			expect(true).toBe(false) // Should not reach here
+		} catch (error) {
+			expect(error).toBeInstanceOf(BuildRegistryError)
+			const buildError = error as BuildRegistryError
+			expect(buildError.validationResult).toBeDefined()
+			expect(buildError.validationResult?.valid).toBe(false)
+			expect(buildError.validationResult?.errors.length).toBeGreaterThan(0)
+		}
 	})
 })
