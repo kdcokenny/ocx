@@ -14,5 +14,25 @@
 	"capabilities.md": {
 		"gpt4o": 339,
 		"tolerance": 5
+	},
+	"agent-main.md": {
+		"gpt4o": 600,
+		"tolerance": 10
+	},
+	"skill-dep.md": {
+		"gpt4o": 400,
+		"tolerance": 10
+	},
+	"multi-main.md": {
+		"gpt4o": 500,
+		"tolerance": 10
+	},
+	"level-2.md": {
+		"gpt4o": 300,
+		"tolerance": 10
+	},
+	"level-3.md": {
+		"gpt4o": 200,
+		"tolerance": 10
 	}
 }

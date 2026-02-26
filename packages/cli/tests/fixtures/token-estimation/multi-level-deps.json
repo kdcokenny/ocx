@@ -1,0 +1,8 @@
+{
+	"$schema": "https://ocx.sh/schema.json",
+	"name": "test-multi-level",
+	"type": "ocx:agent",
+	"description": "Test multi-level dependencies",
+	"files": ["multi-main.md"],
+	"dependencies": ["test-level-2"]
+}

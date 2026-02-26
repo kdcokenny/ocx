@@ -1,0 +1,8 @@
+{
+	"$schema": "https://ocx.sh/schema.json",
+	"name": "test-level-3",
+	"type": "ocx:tool",
+	"description": "Level 3 dependency",
+	"files": ["level-3.md"],
+	"dependencies": []
+}

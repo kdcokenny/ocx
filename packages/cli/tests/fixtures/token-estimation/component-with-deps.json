@@ -1,0 +1,8 @@
+{
+	"$schema": "https://ocx.sh/schema.json",
+	"name": "test-agent-with-deps",
+	"type": "ocx:agent",
+	"description": "Test agent with skill dependency",
+	"files": ["agent-main.md"],
+	"dependencies": ["test-skill-dep"]
+}
