@@ -124,7 +124,7 @@ export function formatComponentInfoOutput(
 
 	if (options.json) {
 		// JSON output
-		const output = {
+		const output: Record<string, unknown> = {
 			success: true,
 			component: {
 				name: result.component.name,
@@ -137,6 +137,27 @@ export function formatComponentInfoOutput(
 				totalBytes: result.totalBytes,
 			},
 		}
+
+		// Include dependencies if present
+		if (result.dependencies) {
+			output.dependencies = {
+				components: result.dependencies.components.map((dep) => ({
+					name: dep.name,
+					qualifiedName: dep.qualifiedName,
+					type: dep.type,
+					description: dep.description,
+					tokenEstimates: dep.tokenEstimates,
+					totalFiles: dep.totalFiles,
+					totalBytes: dep.totalBytes,
+				})),
+				cumulative: {
+					tokenEstimates: result.dependencies.cumulative.tokenEstimates,
+					totalFiles: result.dependencies.cumulative.totalFiles,
+					totalBytes: result.dependencies.cumulative.totalBytes,
+				},
+			}
+		}
+
 		outputJson(output)
 	} else {
 		// Human-readable output
@@ -145,8 +166,34 @@ export function formatComponentInfoOutput(
 		console.log(`Component: ${kleur.cyan(result.component.name)}`)
 		console.log(`Type: ${kleur.dim(result.component.type)}`)
 		console.log(`Description: ${result.component.description}`)
+
+		// Show dependencies if present
+		if (result.dependencies && result.dependencies.components.length > 0) {
+			console.log()
+			console.log("Dependencies:")
+			for (let i = 0; i < result.dependencies.components.length; i++) {
+				const dep = result.dependencies.components[i]
+				if (!dep) continue
+
+				const isLast = i === result.dependencies.components.length - 1
+				const prefix = isLast ? "└─" : "├─"
+				const depColorFn = getTokenColor(dep.tokenEstimates.average)
+				const roundedAvg = Math.round(dep.tokenEstimates.average / 100) * 100
+
+				console.log(`  ${prefix} ${kleur.cyan(dep.qualifiedName)}`)
+				console.log(`     Type: ${kleur.dim(dep.type)}`)
+				console.log(`     Tokens: ${depColorFn(`~${formatNumber(roundedAvg)}`)} (avg)`)
+				console.log(`     Files: ${dep.totalFiles} | Size: ${formatBytes(dep.totalBytes)}`)
+			}
+		}
+
 		console.log()
-		console.log("Token Estimates:")
+		const hasDeps = result.dependencies && result.dependencies.components.length > 0
+		const mainLabel = hasDeps
+			? `Token Estimates (${result.component.name} only):`
+			: "Token Estimates:"
+
+		console.log(mainLabel)
 		console.log(
 			`  Claude (Sonnet)    │ ${colorFn(formatNumber(result.tokenEstimates.claude))} tokens`,
 		)
@@ -154,12 +201,39 @@ export function formatComponentInfoOutput(
 			`  GPT-4o             │ ${colorFn(formatNumber(result.tokenEstimates.gpt4o))} tokens`,
 		)
 
-		console.log()
-		const roundedAverage = Math.round(result.tokenEstimates.average / 100) * 100
-		console.log(
-			`Estimated Context: ${kleur.bold(colorFn(`~${formatNumber(roundedAverage)}`))} tokens (avg)`,
-		)
-		console.log(kleur.dim(`Files: ${result.totalFiles} | Size: ${formatBytes(result.totalBytes)}`))
+		// Show cumulative estimates if dependencies exist
+		if (result.dependencies) {
+			const cumulativeColorFn = getTokenColor(result.dependencies.cumulative.tokenEstimates.average)
+			console.log()
+			console.log("Cumulative Estimates (with dependencies):")
+			console.log(
+				`  Claude (Sonnet)    │ ${cumulativeColorFn(formatNumber(result.dependencies.cumulative.tokenEstimates.claude))} tokens`,
+			)
+			console.log(
+				`  GPT-4o             │ ${cumulativeColorFn(formatNumber(result.dependencies.cumulative.tokenEstimates.gpt4o))} tokens`,
+			)
+
+			console.log()
+			const roundedCumulative =
+				Math.round(result.dependencies.cumulative.tokenEstimates.average / 100) * 100
+			console.log(
+				`Total Context: ${kleur.bold(cumulativeColorFn(`~${formatNumber(roundedCumulative)}`))} tokens (avg)`,
+			)
+			console.log(
+				kleur.dim(
+					`Files: ${result.dependencies.cumulative.totalFiles} | Size: ${formatBytes(result.dependencies.cumulative.totalBytes)}`,
+				),
+			)
+		} else {
+			console.log()
+			const roundedAverage = Math.round(result.tokenEstimates.average / 100) * 100
+			console.log(
+				`Estimated Context: ${kleur.bold(colorFn(`~${formatNumber(roundedAverage)}`))} tokens (avg)`,
+			)
+			console.log(
+				kleur.dim(`Files: ${result.totalFiles} | Size: ${formatBytes(result.totalBytes)}`),
+			)
+		}
 	}
 }
 
