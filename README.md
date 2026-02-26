@@ -100,6 +100,7 @@ ocx diff kdco/workspace
 | `ocx add <component>` | Add components or npm plugins (`npm:package`) |
 | `ocx update [component]` | Update to latest version |
 | `ocx diff [component]` | Show upstream changes before updating |
+| `ocx component info <component>` | Display token cost estimates for a component |
 | `ocx profile <cmd>` | Manage global profiles (`add`, `list`, `remove`, `show`) |
 | `ocx opencode` / `ocx oc` | Launch OpenCode with profile |
 | `ocx registry add <url>` | Add a component registry (`--global` for global, `-p` for profile) |
