@@ -240,22 +240,24 @@ export async function runComponentInfoCore(
  * Register the component info command.
  */
 export function registerComponentInfoCommand(program: Command): void {
-	const cmd = program
-		.command("component")
-		.alias("c")
+	const componentCmd = program.command("component").alias("c").description("Component utilities")
+
+	const infoCmd = componentCmd
 		.command("info <component>")
 		.description("Display token cost estimates for a component")
 		.option("-p, --profile <name>", "Use specific profile")
 
-	addCommonOptions(cmd)
-	addVerboseOption(cmd)
+	addCommonOptions(infoCmd)
+	addVerboseOption(infoCmd)
 
-	cmd.action(
-		handleError(async (componentName: string, options: ComponentInfoOptions) => {
+	infoCmd.action(async (componentName: string, options: ComponentInfoOptions) => {
+		try {
 			const { LocalConfigProvider } = await import("../../config/provider")
 			const provider = await LocalConfigProvider.requireInitialized(options.cwd)
 			const result = await runComponentInfoCore(componentName, options, provider)
 			formatComponentInfoOutput(result, options)
-		}),
-	)
+		} catch (error) {
+			handleError(error, { json: options.json })
+		}
+	})
 }
