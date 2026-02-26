@@ -44,8 +44,8 @@ export async function estimateTokens(text: string, model: ModelType): Promise<nu
 	switch (model) {
 		case "gpt4o":
 		case "claude": {
-			// Use cl100k_base encoding for both GPT-4o (exact) and Claude (approximation)
-			// Note: Claude uses a different tokenizer, but cl100k_base provides
+			// Use o200k_base encoding for both GPT-4o (exact) and Claude (approximation)
+			// Note: Claude uses a different tokenizer, but o200k_base provides
 			// a reasonable approximation (typically within ±10-15%)
 			// Lazy-load tiktoken to avoid loading 24MB WASM at CLI startup
 			const { encoding_for_model } = await import("tiktoken")
