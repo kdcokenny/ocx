@@ -17,7 +17,6 @@ import { logger } from "../../utils/logger"
 import { addCommonOptions, addVerboseOption } from "../../utils/shared-options"
 import { createSpinner } from "../../utils/spinner"
 import type { TokenEstimate } from "../../utils/token-estimation"
-import { estimateTokensMultiModel } from "../../utils/token-estimation"
 
 /**
  * Options for the component info command.
@@ -246,6 +245,9 @@ export async function runComponentInfoCore(
 	options: Partial<ComponentInfoOptions>,
 	provider: ConfigProvider,
 ): Promise<ComponentInfoResult> {
+	// Lazy-load token estimation to avoid loading tiktoken at CLI startup
+	const { estimateTokensMultiModel } = await import("../../utils/token-estimation")
+
 	const registries = provider.getRegistries()
 	const registryNames = Object.keys(registries)
 
