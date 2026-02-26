@@ -21,7 +21,6 @@
         "ocx": "./dist/index.js",
       },
       "dependencies": {
-        "@google/generative-ai": "^0.24.1",
         "chokidar": "^5.0.0",
         "commander": "^14.0.0",
         "diff": "^8.0.0",
@@ -199,8 +198,6 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.27.0", "https://nexus.corp.redhat.com/repository/npmjs/@esbuild/win32-ia32/-/win32-ia32-0.27.0.tgz", { "os": "win32", "cpu": "ia32" }, "sha512-30z1aKL9h22kQhilnYkORFYt+3wp7yZsHWus+wSKAJR8JtdfI76LJ4SBdMsCopTR3z/ORqVu5L1vtnHZWVj4cQ=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.27.0", "https://nexus.corp.redhat.com/repository/npmjs/@esbuild/win32-x64/-/win32-x64-0.27.0.tgz", { "os": "win32", "cpu": "x64" }, "sha512-aIitBcjQeyOhMTImhLZmtxfdOcuNRpwlPNmlFKPcHQYPhEssw75Cl1TSXJXpMkzaua9FUetx/4OQKq7eJul5Cg=="],
-
-    "@google/generative-ai": ["@google/generative-ai@0.24.1", "https://nexus.corp.redhat.com/repository/npmjs/@google/generative-ai/-/generative-ai-0.24.1.tgz", {}, "sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q=="],
 
     "@hono/zod-validator": ["@hono/zod-validator@0.7.6", "https://nexus.corp.redhat.com/repository/npmjs/@hono/zod-validator/-/zod-validator-0.7.6.tgz", { "peerDependencies": { "hono": ">=3.9.0", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-Io1B6d011Gj1KknV4rXYz4le5+5EubcWEU/speUjuw9XMMIaP3n78yXLhjd2A3PXaXaUwEAluOiAyLqhBEJgsw=="],
 
