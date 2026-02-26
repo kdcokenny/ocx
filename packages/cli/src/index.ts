@@ -9,7 +9,6 @@
 import { Command } from "commander"
 import { registerAddCommand } from "./commands/add"
 import { registerBuildCommand } from "./commands/build"
-import { registerComponentInfoCommand } from "./commands/component/info"
 import { registerConfigCommand } from "./commands/config/index"
 import { registerDiffCommand } from "./commands/diff"
 import { registerGhostCommand } from "./commands/ghost/index"
@@ -42,7 +41,45 @@ async function main() {
 	registerRegistryCommand(program)
 	registerBuildCommand(program)
 	registerSelfCommand(program)
-	registerComponentInfoCommand(program)
+
+	// Lazy-load component command to avoid loading token-estimation at startup
+	const componentCmd = program.command("component").alias("c").description("Component utilities")
+	componentCmd
+		.command("info <component>")
+		.description("Display token cost estimates for a component")
+		.option("-p, --profile <name>", "Use specific profile")
+		.option("--with-dependencies", "Include token estimates for all dependencies")
+		.option("--cwd <path>", "Working directory", process.cwd())
+		.option("--json", "Output in JSON format")
+		.option("--quiet", "Suppress output")
+		.option("--verbose", "Verbose output")
+		.action(
+			async (
+				componentName: string,
+				options: {
+					profile?: string
+					withDependencies?: boolean
+					cwd: string
+					json: boolean
+					quiet: boolean
+					verbose: boolean
+				},
+			) => {
+				const { runComponentInfoCore, formatComponentInfoOutput } = await import(
+					"./commands/component/info"
+				)
+				const { LocalConfigProvider } = await import("./config/provider")
+				const { handleError } = await import("./utils/handle-error")
+
+				try {
+					const provider = await LocalConfigProvider.requireInitialized(options.cwd)
+					const result = await runComponentInfoCore(componentName, options, provider)
+					formatComponentInfoOutput(result, options)
+				} catch (error) {
+					handleError(error, { json: options.json })
+				}
+			},
+		)
 
 	// New top-level commands (Phase 5)
 	registerProfileCommand(program)
