@@ -29,7 +29,7 @@ export type TokenEstimate = {
  *
  * @param text - The text to estimate tokens for
  * @param model - The model type to use for estimation
- * @returns Promise resolving to token count, or null if estimation fails (Gemini only)
+ * @returns Promise resolving to token count
  *
  * @example
  * ```typescript
@@ -37,7 +37,7 @@ export type TokenEstimate = {
  * console.log(count) // e.g., 2
  * ```
  */
-export async function estimateTokens(text: string, model: ModelType): Promise<number | null> {
+export async function estimateTokens(text: string, model: ModelType): Promise<number> {
 	// Handle empty string
 	if (text.length === 0) {
 		return 0
@@ -75,7 +75,7 @@ export async function estimateTokens(text: string, model: ModelType): Promise<nu
  * ```typescript
  * const estimates = await estimateTokensMultiModel("Hello world")
  * console.log(estimates)
- * // { claude: 2, gpt4o: 2, gemini: 3, average: 2.33 }
+ * // { claude: 2, gpt4o: 2, average: 2 }
  * ```
  */
 export async function estimateTokensMultiModel(text: string): Promise<TokenEstimate> {
@@ -86,15 +86,11 @@ export async function estimateTokensMultiModel(text: string): Promise<TokenEstim
 	])
 
 	// Calculate average of claude and gpt4o
-	const counts: number[] = []
-	if (claude !== null) counts.push(claude)
-	if (gpt4o !== null) counts.push(gpt4o)
-
-	const average = counts.length > 0 ? counts.reduce((a, b) => a + b, 0) / counts.length : 0
+	const average = (claude + gpt4o) / 2
 
 	return {
-		claude: claude ?? 0,
-		gpt4o: gpt4o ?? 0,
+		claude,
+		gpt4o,
 		average,
 	}
 }
