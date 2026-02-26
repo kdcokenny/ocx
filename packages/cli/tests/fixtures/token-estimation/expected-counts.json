@@ -1,0 +1,18 @@
+{
+	"skill-guide.md": {
+		"gpt4o": 335,
+		"tolerance": 5
+	},
+	"examples.md": {
+		"gpt4o": 718,
+		"tolerance": 5
+	},
+	"agent-instructions.md": {
+		"gpt4o": 911,
+		"tolerance": 5
+	},
+	"capabilities.md": {
+		"gpt4o": 339,
+		"tolerance": 5
+	}
+}

@@ -1,0 +1,7 @@
+{
+	"$schema": "https://ocx.sh/schema.json",
+	"name": "test-skill",
+	"type": "ocx:skill",
+	"description": "Test skill for token estimation",
+	"files": ["skill-guide.md", "examples.md"]
+}
