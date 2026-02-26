@@ -48,7 +48,6 @@
 		"test": "bun test"
 	},
 	"dependencies": {
-		"@google/generative-ai": "^0.24.1",
 		"chokidar": "^5.0.0",
 		"commander": "^14.0.0",
 		"diff": "^8.0.0",

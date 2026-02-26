@@ -26,14 +26,13 @@ describe("token estimation", () => {
 	})
 
 	describe("estimateTokensMultiModel", () => {
-		it("should return estimates for claude and gpt4o only", async () => {
+		it("should return estimates for claude and gpt4o", async () => {
 			const text = "Hello, world! This is a test."
 			const estimates = await estimateTokensMultiModel(text)
 
 			expect(estimates).toHaveProperty("claude")
 			expect(estimates).toHaveProperty("gpt4o")
 			expect(estimates).toHaveProperty("average")
-			expect(estimates).not.toHaveProperty("gemini")
 
 			expect(typeof estimates.claude).toBe("number")
 			expect(typeof estimates.gpt4o).toBe("number")

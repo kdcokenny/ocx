@@ -44,7 +44,6 @@ describe("component info output formatting", () => {
 			expect(parsed.tokenEstimates).toHaveProperty("claude", 2847)
 			expect(parsed.tokenEstimates).toHaveProperty("gpt4o", 2912)
 			expect(parsed.tokenEstimates).toHaveProperty("average", 2880)
-			expect(parsed.tokenEstimates).not.toHaveProperty("gemini")
 			expect(parsed).toHaveProperty("stats")
 			expect(parsed.stats).toHaveProperty("totalFiles", 2)
 			expect(parsed.stats).toHaveProperty("totalBytes", 12480)
@@ -88,7 +87,6 @@ describe("component info output formatting", () => {
 			expect(fullOutput).toContain("Token Estimates")
 			expect(fullOutput).toContain("Claude")
 			expect(fullOutput).toContain("GPT-4o")
-			expect(fullOutput).not.toContain("Gemini")
 			expect(fullOutput).toContain("2,847")
 			expect(fullOutput).toContain("2,912")
 
