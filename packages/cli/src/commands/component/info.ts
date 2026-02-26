@@ -19,19 +19,63 @@ import { createSpinner } from "../../utils/spinner"
 import type { TokenEstimate } from "../../utils/token-estimation"
 import { estimateTokensMultiModel } from "../../utils/token-estimation"
 
+/**
+ * Options for the component info command.
+ */
 export interface ComponentInfoOptions {
 	cwd: string
 	json: boolean
 	quiet: boolean
 	verbose: boolean
 	profile?: string
+	/** Include token estimates for all dependencies (optional) */
+	withDependencies?: boolean
 }
 
-export interface ComponentInfoResult {
-	component: ComponentManifest
+/**
+ * Token information for a single dependency component.
+ */
+export interface DependencyTokenInfo {
+	/** Unqualified component name (e.g., "web-search") */
+	name: string
+	/** Qualified component name with namespace (e.g., "kdco/web-search") */
+	qualifiedName: string
+	/** Component type */
+	type: string
+	/** Component description */
+	description: string
+	/** Token estimates for this dependency */
 	tokenEstimates: TokenEstimate
+	/** Number of files in this dependency */
 	totalFiles: number
+	/** Total bytes for this dependency */
 	totalBytes: number
+}
+
+/**
+ * Result of the component info command.
+ * When withDependencies is true, includes dependency tree information.
+ */
+export interface ComponentInfoResult {
+	/** The main component manifest */
+	component: ComponentManifest
+	/** Token estimates for the main component only */
+	tokenEstimates: TokenEstimate
+	/** Number of files in the main component */
+	totalFiles: number
+	/** Total bytes for the main component */
+	totalBytes: number
+	/** Optional dependency tree information (only when --with-dependencies flag is used) */
+	dependencies?: {
+		/** All dependency components in resolution order */
+		components: DependencyTokenInfo[]
+		/** Cumulative totals including main component + all dependencies */
+		cumulative: {
+			tokenEstimates: TokenEstimate
+			totalFiles: number
+			totalBytes: number
+		}
+	}
 }
 
 export interface FormatOptions {
