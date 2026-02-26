@@ -1,10 +1,9 @@
-import { GoogleGenerativeAI } from "@google/generative-ai"
 import { encoding_for_model } from "tiktoken"
 
 /**
  * Supported model types for token estimation.
  */
-export type ModelType = "claude" | "gpt4o" | "gemini"
+export type ModelType = "claude" | "gpt4o"
 
 /**
  * Token estimation result for multiple models.
@@ -20,37 +19,9 @@ export type TokenEstimate = {
 	 */
 	gpt4o: number
 	/**
-	 * Token count for Gemini 2.0 Flash.
-	 * May be null if API initialization fails.
-	 */
-	gemini: number | null
-	/**
-	 * Average token count across available models.
-	 * Excludes null values from calculation.
+	 * Average token count across models.
 	 */
 	average: number
-}
-
-let geminiModel: ReturnType<GoogleGenerativeAI["getGenerativeModel"]> | null = null
-let geminiInitError: Error | null = null
-
-/**
- * Initialize Gemini model for token counting.
- * This is lazy-initialized on first use.
- */
-function initGeminiModel() {
-	if (geminiModel || geminiInitError) {
-		return
-	}
-
-	try {
-		// Gemini API key is not required for countTokens in some configurations
-		// We'll try to initialize without an API key first
-		const genAI = new GoogleGenerativeAI("")
-		geminiModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" })
-	} catch (error) {
-		geminiInitError = error instanceof Error ? error : new Error(String(error))
-	}
 }
 
 /**
@@ -87,26 +58,6 @@ export async function estimateTokens(text: string, model: ModelType): Promise<nu
 			}
 		}
 
-		case "gemini": {
-			// Initialize Gemini model if not already done
-			initGeminiModel()
-
-			// Return null if initialization failed
-			if (geminiInitError || !geminiModel) {
-				return null
-			}
-
-			try {
-				// Use Gemini's countTokens API for accurate token counting
-				const result = await geminiModel.countTokens(text)
-				return result.totalTokens
-			} catch {
-				// If token counting fails, return null
-				// This can happen if API is not available or other network issues
-				return null
-			}
-		}
-
 		default: {
 			const _exhaustive: never = model
 			throw new Error(`Unknown model type: ${_exhaustive}`)
@@ -129,24 +80,21 @@ export async function estimateTokens(text: string, model: ModelType): Promise<nu
  */
 export async function estimateTokensMultiModel(text: string): Promise<TokenEstimate> {
 	// Get estimates for all models in parallel
-	const [claude, gpt4o, gemini] = await Promise.all([
+	const [claude, gpt4o] = await Promise.all([
 		estimateTokens(text, "claude"),
 		estimateTokens(text, "gpt4o"),
-		estimateTokens(text, "gemini"),
 	])
 
-	// Calculate average excluding null values
+	// Calculate average of claude and gpt4o
 	const counts: number[] = []
 	if (claude !== null) counts.push(claude)
 	if (gpt4o !== null) counts.push(gpt4o)
-	if (gemini !== null) counts.push(gemini)
 
 	const average = counts.length > 0 ? counts.reduce((a, b) => a + b, 0) / counts.length : 0
 
 	return {
 		claude: claude ?? 0,
 		gpt4o: gpt4o ?? 0,
-		gemini,
 		average,
 	}
 }

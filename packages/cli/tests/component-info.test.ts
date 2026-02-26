@@ -79,10 +79,8 @@ describe("ocx component info", () => {
 		expect(json.tokenEstimates).toBeDefined()
 		expect(typeof json.tokenEstimates.claude).toBe("number")
 		expect(typeof json.tokenEstimates.gpt4o).toBe("number")
-		expect(
-			json.tokenEstimates.gemini === null || typeof json.tokenEstimates.gemini === "number",
-		).toBe(true)
 		expect(typeof json.tokenEstimates.average).toBe("number")
+		expect(json.tokenEstimates).not.toHaveProperty("gemini")
 
 		// Validate stats
 		expect(json.stats).toBeDefined()

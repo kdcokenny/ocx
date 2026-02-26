@@ -16,8 +16,7 @@ describe("component info output formatting", () => {
 				tokenEstimates: {
 					claude: 2847,
 					gpt4o: 2912,
-					gemini: 2831,
-					average: 2863,
+					average: 2880,
 				},
 				totalFiles: 2,
 				totalBytes: 12480,
@@ -44,8 +43,8 @@ describe("component info output formatting", () => {
 			expect(parsed).toHaveProperty("tokenEstimates")
 			expect(parsed.tokenEstimates).toHaveProperty("claude", 2847)
 			expect(parsed.tokenEstimates).toHaveProperty("gpt4o", 2912)
-			expect(parsed.tokenEstimates).toHaveProperty("gemini", 2831)
-			expect(parsed.tokenEstimates).toHaveProperty("average", 2863)
+			expect(parsed.tokenEstimates).toHaveProperty("average", 2880)
+			expect(parsed.tokenEstimates).not.toHaveProperty("gemini")
 			expect(parsed).toHaveProperty("stats")
 			expect(parsed.stats).toHaveProperty("totalFiles", 2)
 			expect(parsed.stats).toHaveProperty("totalBytes", 12480)
@@ -65,8 +64,7 @@ describe("component info output formatting", () => {
 				tokenEstimates: {
 					claude: 2847,
 					gpt4o: 2912,
-					gemini: 2831,
-					average: 2863,
+					average: 2880,
 				},
 				totalFiles: 3,
 				totalBytes: 12480,
@@ -90,10 +88,9 @@ describe("component info output formatting", () => {
 			expect(fullOutput).toContain("Token Estimates")
 			expect(fullOutput).toContain("Claude")
 			expect(fullOutput).toContain("GPT-4o")
-			expect(fullOutput).toContain("Gemini")
+			expect(fullOutput).not.toContain("Gemini")
 			expect(fullOutput).toContain("2,847")
 			expect(fullOutput).toContain("2,912")
-			expect(fullOutput).toContain("2,831")
 
 			consoleSpy.mockRestore()
 		})

@@ -110,14 +110,6 @@ export function formatComponentInfoOutput(
 			`  GPT-4o             │ ${colorFn(formatNumber(result.tokenEstimates.gpt4o))} tokens`,
 		)
 
-		if (result.tokenEstimates.gemini !== null) {
-			console.log(
-				`  Gemini 2.0 Flash   │ ${colorFn(formatNumber(result.tokenEstimates.gemini))} tokens`,
-			)
-		} else {
-			console.log("  Gemini 2.0 Flash   │ N/A")
-		}
-
 		console.log()
 		const roundedAverage = Math.round(result.tokenEstimates.average / 100) * 100
 		console.log(
