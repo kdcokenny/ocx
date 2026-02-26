@@ -34,6 +34,42 @@ export function startMockRegistry(): MockRegistry {
 			dependencies: [],
 			npmDependencies: ["lodash@^4.17.21"],
 		},
+		// Test components for dependency tree testing
+		"test-agent-with-deps": {
+			name: "test-agent-with-deps",
+			type: "ocx:agent",
+			description: "Test agent with skill dependency",
+			files: [{ path: "agent-main.md", target: ".opencode/agent/agent-main.md" }],
+			dependencies: ["test-skill-dep"],
+		},
+		"test-skill-dep": {
+			name: "test-skill-dep",
+			type: "ocx:skill",
+			description: "Test skill dependency",
+			files: [{ path: "skill-dep.md", target: ".opencode/skills/test-skill-dep/skill-dep.md" }],
+			dependencies: [],
+		},
+		"test-multi-level": {
+			name: "test-multi-level",
+			type: "ocx:agent",
+			description: "Test multi-level dependencies",
+			files: [{ path: "multi-main.md", target: ".opencode/agent/multi-main.md" }],
+			dependencies: ["test-level-2"],
+		},
+		"test-level-2": {
+			name: "test-level-2",
+			type: "ocx:skill",
+			description: "Level 2 dependency",
+			files: [{ path: "level-2.md", target: ".opencode/skills/test-level-2/level-2.md" }],
+			dependencies: ["test-level-3"],
+		},
+		"test-level-3": {
+			name: "test-level-3",
+			type: "ocx:tool",
+			description: "Level 3 dependency",
+			files: [{ path: "level-3.md", target: ".opencode/tool/level-3.md" }],
+			dependencies: [],
+		},
 		"test-skill": {
 			name: "test-skill",
 			type: "ocx:skill",

@@ -260,7 +260,139 @@ export async function runComponentInfoCore(
 		logger.info(`Component has ${manifest.files.length} files`)
 	}
 
-	// Fetch all file contents
+	// Handle dependency resolution if --with-dependencies flag is set
+	if (options.withDependencies) {
+		const { resolveDependencies } = await import("../../registry/resolver")
+		const { createQualifiedComponent } = await import("../../schemas/registry")
+
+		// Update spinner for dependency resolution
+		if (spinner) {
+			spinner.text = "Resolving dependencies..."
+		}
+
+		if (options.verbose) {
+			logger.info("Resolving dependency tree...")
+		}
+
+		// Create qualified name for the main component
+		const qualifiedName = createQualifiedComponent(foundRegistry, searchName)
+
+		// Resolve all dependencies
+		const resolved = await resolveDependencies(registries, [qualifiedName])
+
+		if (options.verbose) {
+			logger.info(`Found ${resolved.components.length - 1} dependencies`)
+		}
+
+		// Update spinner for file fetching
+		if (spinner) {
+			spinner.text = `Fetching ${resolved.components.length} components...`
+		}
+
+		// Process all components (main + dependencies)
+		const allDependencyTokenInfo: DependencyTokenInfo[] = []
+		const allFileContents: string[] = []
+		let cumulativeTotalFiles = 0
+		let cumulativeTotalBytes = 0
+
+		// Track main component for later
+		let mainComponent: {
+			tokenEstimates: TokenEstimate
+			totalFiles: number
+			totalBytes: number
+		} | null = null
+
+		for (const component of resolved.components) {
+			if (options.verbose) {
+				logger.info(`Processing component: ${component.qualifiedName}`)
+			}
+
+			// Fetch all file contents for this component
+			const componentFileContents: string[] = []
+			let componentBytes = 0
+
+			for (const file of component.files) {
+				const filePath = typeof file === "string" ? file : file.path
+				try {
+					const content = await fetchFileContent(component.baseUrl, component.name, filePath)
+					componentFileContents.push(content)
+					componentBytes += Buffer.byteLength(content, "utf8")
+				} catch (error) {
+					throw new NetworkError(
+						`Failed to fetch file '${filePath}' for component '${component.name}': ${error instanceof Error ? error.message : String(error)}`,
+					)
+				}
+			}
+
+			// Estimate tokens for this component
+			const componentContent = componentFileContents.join("\n")
+			const componentTokens = await estimateTokensMultiModel(componentContent)
+
+			// Add to cumulative totals
+			allFileContents.push(...componentFileContents)
+			cumulativeTotalFiles += component.files.length
+			cumulativeTotalBytes += componentBytes
+
+			// Check if this is the main component
+			if (component.qualifiedName === qualifiedName) {
+				// Save main component info
+				mainComponent = {
+					tokenEstimates: componentTokens,
+					totalFiles: component.files.length,
+					totalBytes: componentBytes,
+				}
+			} else {
+				// Add to dependencies list
+				allDependencyTokenInfo.push({
+					name: component.name,
+					qualifiedName: component.qualifiedName,
+					type: component.type,
+					description: component.description,
+					tokenEstimates: componentTokens,
+					totalFiles: component.files.length,
+					totalBytes: componentBytes,
+				})
+			}
+		}
+
+		// Update spinner for final token estimation
+		if (spinner) {
+			spinner.text = "Analyzing cumulative token costs..."
+		}
+
+		// Calculate cumulative token estimates from all content
+		const allContent = allFileContents.join("\n")
+		const cumulativeTokens = await estimateTokensMultiModel(allContent)
+
+		spinner?.stop()
+
+		if (options.verbose) {
+			logger.info("Token estimation complete")
+			logger.info(`Cumulative tokens: ~${Math.round(cumulativeTokens.average / 100) * 100}`)
+		}
+
+		// Return result with dependencies
+		if (!mainComponent) {
+			throw new Error("Main component not found in resolved dependencies")
+		}
+
+		return {
+			component: manifest,
+			tokenEstimates: mainComponent.tokenEstimates,
+			totalFiles: mainComponent.totalFiles,
+			totalBytes: mainComponent.totalBytes,
+			dependencies: {
+				components: allDependencyTokenInfo,
+				cumulative: {
+					tokenEstimates: cumulativeTokens,
+					totalFiles: cumulativeTotalFiles,
+					totalBytes: cumulativeTotalBytes,
+				},
+			},
+		}
+	}
+
+	// Original logic for non-dependency mode
 	const registryConfig = registries[foundRegistry]
 	if (!registryConfig) {
 		throw new NotFoundError(`Registry configuration not found for '${foundRegistry}'`)
