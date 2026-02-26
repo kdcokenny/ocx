@@ -144,3 +144,136 @@ describe("ocx component info", () => {
 		expect(result.output).toContain("Token Estimates:")
 	})
 })
+
+describe("ocx component info --with-dependencies", () => {
+	let testDir: string
+	let registry: MockRegistry
+
+	beforeEach(async () => {
+		testDir = await createTempDir("component-info-deps-test")
+		registry = startMockRegistry()
+		await runCLI(["init", "--force"], testDir)
+		const addResult = await runCLI(["registry", "add", registry.url, "--name", "test"], testDir)
+		if (addResult.exitCode !== 0) {
+			console.log("Failed to add registry in component-info-deps test:", addResult.output)
+		}
+	})
+
+	afterEach(async () => {
+		registry.stop()
+		await cleanupTempDir(testDir)
+	})
+
+	// Test case 1: Display dependency tree with --with-dependencies flag
+	it("should display dependency tree with --with-dependencies flag", async () => {
+		const result = await runCLI(
+			["component", "info", "test-agent-with-deps", "--with-dependencies"],
+			testDir,
+		)
+
+		expect(result.exitCode).toBe(0)
+
+		// Should contain Dependencies section
+		expect(result.output).toContain("Dependencies:")
+
+		// Should list the dependency
+		expect(result.output).toContain("test-skill-dep")
+
+		// Should contain Cumulative Estimates section
+		expect(result.output).toContain("Cumulative Estimates (with dependencies):")
+
+		// Should show main component qualifier
+		expect(result.output).toContain("(test-agent-with-deps only):")
+
+		// Should show total context
+		expect(result.output).toContain("Total Context:")
+	})
+
+	// Test case 2: Output valid JSON with --with-dependencies --json
+	it("should output valid JSON with --with-dependencies --json", async () => {
+		const result = await runCLI(
+			["component", "info", "test-agent-with-deps", "--with-dependencies", "--json"],
+			testDir,
+		)
+
+		expect(result.exitCode).toBe(0)
+
+		// Parse output as JSON
+		const json = JSON.parse(result.stdout)
+
+		// Validate structure
+		expect(json.success).toBe(true)
+		expect(json.dependencies).toBeDefined()
+		expect(json.dependencies.components).toBeInstanceOf(Array)
+		expect(json.dependencies.components.length).toBeGreaterThan(0)
+
+		// Validate dependency structure
+		const dep = json.dependencies.components[0]
+		expect(dep.name).toBeDefined()
+		expect(dep.qualifiedName).toBeDefined()
+		expect(dep.type).toBeDefined()
+		expect(dep.tokenEstimates).toBeDefined()
+		expect(dep.totalFiles).toBeDefined()
+		expect(dep.totalBytes).toBeDefined()
+
+		// Validate cumulative structure
+		expect(json.dependencies.cumulative).toBeDefined()
+		expect(json.dependencies.cumulative.tokenEstimates).toBeDefined()
+		expect(json.dependencies.cumulative.totalFiles).toBeDefined()
+		expect(json.dependencies.cumulative.totalBytes).toBeDefined()
+	})
+
+	// Test case 3: Handle multi-level dependencies correctly
+	it("should handle multi-level dependencies correctly", async () => {
+		const result = await runCLI(
+			["component", "info", "test-multi-level", "--with-dependencies"],
+			testDir,
+		)
+
+		expect(result.exitCode).toBe(0)
+
+		// Should show multiple dependencies in output
+		expect(result.output).toContain("Dependencies:")
+
+		// Both level-2 and level-3 should be shown
+		expect(result.output).toContain("test-level-2")
+		expect(result.output).toContain("test-level-3")
+
+		// Should show cumulative estimates
+		expect(result.output).toContain("Cumulative Estimates (with dependencies):")
+	})
+
+	// Test case 4: Don't show dependencies without flag
+	it("should not show dependencies without flag", async () => {
+		const result = await runCLI(["component", "info", "test-agent-with-deps"], testDir)
+
+		expect(result.exitCode).toBe(0)
+
+		// Should NOT contain Dependencies section
+		expect(result.output).not.toContain("Dependencies:")
+
+		// Should NOT contain qualifier
+		expect(result.output).not.toContain("(test-agent-with-deps only):")
+
+		// Should use original label
+		expect(result.output).toContain("Token Estimates:")
+		expect(result.output).toContain("Estimated Context:")
+	})
+
+	// Test case 5: Handle component with no dependencies gracefully
+	it("should handle component with no dependencies gracefully", async () => {
+		const result = await runCLI(
+			["component", "info", "test-skill-dep", "--with-dependencies"],
+			testDir,
+		)
+
+		expect(result.exitCode).toBe(0)
+
+		// Should succeed without errors
+		expect(result.output).toContain("test-skill-dep")
+
+		// For components with no dependencies, should still show token estimates
+		// but not have a Dependencies section with items
+		expect(result.output).toContain("Token Estimates:")
+	})
+})
