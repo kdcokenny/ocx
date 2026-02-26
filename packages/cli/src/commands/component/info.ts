@@ -13,7 +13,9 @@ import { parseQualifiedComponent } from "../../schemas/registry"
 import { NetworkError, NotFoundError } from "../../utils/errors"
 import { handleError } from "../../utils/handle-error"
 import { outputJson } from "../../utils/json-output"
+import { logger } from "../../utils/logger"
 import { addCommonOptions, addVerboseOption } from "../../utils/shared-options"
+import { createSpinner } from "../../utils/spinner"
 import type { TokenEstimate } from "../../utils/token-estimation"
 import { estimateTokensMultiModel } from "../../utils/token-estimation"
 
@@ -131,7 +133,7 @@ export function formatComponentInfoOutput(
  */
 export async function runComponentInfoCore(
 	componentName: string,
-	_options: Partial<ComponentInfoOptions>,
+	options: Partial<ComponentInfoOptions>,
 	provider: ConfigProvider,
 ): Promise<ComponentInfoResult> {
 	const registries = provider.getRegistries()
@@ -153,12 +155,28 @@ export async function runComponentInfoCore(
 		searchName = componentName
 	}
 
+	// Show spinner unless quiet or verbose mode
+	const showSpinner = !options.quiet && !options.verbose
+	const spinner = showSpinner
+		? createSpinner({ text: "Fetching component...", quiet: options.quiet })
+		: null
+	spinner?.start()
+
+	// Verbose logging
+	if (options.verbose) {
+		logger.info(`Searching for component: ${componentName}`)
+		logger.info(`Configured registries: ${registryNames.join(", ")}`)
+	}
+
 	// Try to find component in registries
 	let manifest: ComponentManifest | null = null
 	let foundRegistry: string | null = null
 
 	// If registry is specified, only check that registry
 	if (specifiedRegistry) {
+		if (options.verbose) {
+			logger.info(`Using specified registry: ${specifiedRegistry}`)
+		}
 		const registryConfig = registries[specifiedRegistry]
 		if (!registryConfig) {
 			throw new NotFoundError(`Registry '${specifiedRegistry}' not found in configuration`)
@@ -197,7 +215,13 @@ export async function runComponentInfoCore(
 	}
 
 	if (!manifest || !foundRegistry) {
+		spinner?.stop()
 		throw new NotFoundError(`Component '${componentName}' not found in any configured registry`)
+	}
+
+	if (options.verbose) {
+		logger.info(`Found component in registry: ${foundRegistry}`)
+		logger.info(`Component has ${manifest.files.length} files`)
 	}
 
 	// Fetch all file contents
@@ -222,11 +246,27 @@ export async function runComponentInfoCore(
 		}
 	}
 
+	// Update spinner for token estimation phase
+	if (spinner) {
+		spinner.text = "Analyzing token costs..."
+	}
+
+	if (options.verbose) {
+		logger.info(`Fetched ${fileContents.length} files (${totalBytes} bytes)`)
+		logger.info("Estimating token counts...")
+	}
+
 	// Concatenate all file contents
 	const concatenatedContent = fileContents.join("\n")
 
 	// Estimate tokens
 	const tokenEstimates = await estimateTokensMultiModel(concatenatedContent)
+
+	spinner?.stop()
+
+	if (options.verbose) {
+		logger.info("Token estimation complete")
+	}
 
 	return {
 		component: manifest,
