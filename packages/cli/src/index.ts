@@ -9,6 +9,7 @@
 import { Command } from "commander"
 import { registerAddCommand } from "./commands/add"
 import { registerBuildCommand } from "./commands/build"
+import { registerComponentInfoCommand } from "./commands/component/info"
 import { registerConfigCommand } from "./commands/config/index"
 import { registerDiffCommand } from "./commands/diff"
 import { registerGhostCommand } from "./commands/ghost/index"
@@ -41,6 +42,7 @@ async function main() {
 	registerRegistryCommand(program)
 	registerBuildCommand(program)
 	registerSelfCommand(program)
+	registerComponentInfoCommand(program)
 
 	// New top-level commands (Phase 5)
 	registerProfileCommand(program)
