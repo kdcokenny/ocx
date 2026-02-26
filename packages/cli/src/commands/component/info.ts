@@ -11,6 +11,7 @@ import type { ComponentManifest } from "../../schemas/registry"
 import { parseQualifiedComponent } from "../../schemas/registry"
 import { NetworkError, NotFoundError } from "../../utils/errors"
 import { handleError } from "../../utils/handle-error"
+import { outputJson } from "../../utils/json-output"
 import { addCommonOptions, addVerboseOption } from "../../utils/shared-options"
 import type { TokenEstimate } from "../../utils/token-estimation"
 import { estimateTokensMultiModel } from "../../utils/token-estimation"
@@ -28,6 +29,39 @@ export interface ComponentInfoResult {
 	tokenEstimates: TokenEstimate
 	totalFiles: number
 	totalBytes: number
+}
+
+export interface FormatOptions {
+	json: boolean
+	quiet: boolean
+	verbose: boolean
+}
+
+/**
+ * Format and output component info results.
+ * Handles both JSON and human-readable output modes.
+ */
+export function formatComponentInfoOutput(
+	result: ComponentInfoResult,
+	options: FormatOptions,
+): void {
+	if (options.json) {
+		// JSON output
+		const output = {
+			success: true,
+			component: {
+				name: result.component.name,
+				type: result.component.type,
+				description: result.component.description,
+			},
+			tokenEstimates: result.tokenEstimates,
+			stats: {
+				totalFiles: result.totalFiles,
+				totalBytes: result.totalBytes,
+			},
+		}
+		outputJson(output)
+	}
 }
 
 /**
