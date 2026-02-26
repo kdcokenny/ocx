@@ -52,5 +52,50 @@ describe("component info output formatting", () => {
 
 			consoleSpy.mockRestore()
 		})
+
+		it("should format human-readable output when json flag is false", () => {
+			const result: ComponentInfoResult = {
+				component: {
+					name: "personal-coding-standards",
+					type: "ocx:skill",
+					description: "Design principles and testing style guidelines",
+					files: ["skill-guide.md", "examples.md", "test-guide.md"],
+					dependencies: [],
+				},
+				tokenEstimates: {
+					claude: 2847,
+					gpt4o: 2912,
+					gemini: 2831,
+					average: 2863,
+				},
+				totalFiles: 3,
+				totalBytes: 12480,
+			}
+
+			// Spy on console.log to capture output
+			const consoleSpy = spyOn(console, "log")
+
+			formatComponentInfoOutput(result, { json: false, quiet: false, verbose: false })
+
+			// Should have called console.log multiple times for formatted output
+			expect(consoleSpy.mock.calls.length).toBeGreaterThan(0)
+
+			// Combine all output
+			const fullOutput = consoleSpy.mock.calls.map((call) => call[0]).join("\n")
+
+			// Verify key content is present
+			expect(fullOutput).toContain("personal-coding-standards")
+			expect(fullOutput).toContain("ocx:skill")
+			expect(fullOutput).toContain("Design principles and testing style guidelines")
+			expect(fullOutput).toContain("Token Estimates")
+			expect(fullOutput).toContain("Claude")
+			expect(fullOutput).toContain("GPT-4o")
+			expect(fullOutput).toContain("Gemini")
+			expect(fullOutput).toContain("2,847")
+			expect(fullOutput).toContain("2,912")
+			expect(fullOutput).toContain("2,831")
+
+			consoleSpy.mockRestore()
+		})
 	})
 })

@@ -5,6 +5,7 @@
  */
 
 import type { Command } from "commander"
+import kleur from "kleur"
 import type { ConfigProvider } from "../../config/provider"
 import { fetchComponent, fetchFileContent } from "../../registry/fetcher"
 import type { ComponentManifest } from "../../schemas/registry"
@@ -38,6 +39,22 @@ export interface FormatOptions {
 }
 
 /**
+ * Format a number with comma separators.
+ */
+function formatNumber(num: number): string {
+	return new Intl.NumberFormat("en-US").format(num)
+}
+
+/**
+ * Format file size in human-readable units.
+ */
+function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/**
  * Format and output component info results.
  * Handles both JSON and human-readable output modes.
  */
@@ -61,6 +78,26 @@ export function formatComponentInfoOutput(
 			},
 		}
 		outputJson(output)
+	} else {
+		// Human-readable output
+		console.log(`Component: ${kleur.cyan(result.component.name)}`)
+		console.log(`Type: ${kleur.dim(result.component.type)}`)
+		console.log(`Description: ${result.component.description}`)
+		console.log()
+		console.log("Token Estimates:")
+		console.log(`  Claude (Sonnet)    │ ${formatNumber(result.tokenEstimates.claude)} tokens`)
+		console.log(`  GPT-4o             │ ${formatNumber(result.tokenEstimates.gpt4o)} tokens`)
+
+		if (result.tokenEstimates.gemini !== null) {
+			console.log(`  Gemini 2.0 Flash   │ ${formatNumber(result.tokenEstimates.gemini)} tokens`)
+		} else {
+			console.log("  Gemini 2.0 Flash   │ N/A")
+		}
+
+		console.log()
+		const roundedAverage = Math.round(result.tokenEstimates.average / 100) * 100
+		console.log(`Estimated Context: ${kleur.bold(`~${formatNumber(roundedAverage)}`)} tokens (avg)`)
+		console.log(kleur.dim(`Files: ${result.totalFiles} | Size: ${formatBytes(result.totalBytes)}`))
 	}
 }
 
