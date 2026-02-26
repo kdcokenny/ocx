@@ -2,6 +2,31 @@ import { describe, expect, it } from "bun:test"
 import { estimateTokens, estimateTokensMultiModel } from "../src/utils/token-estimation"
 
 describe("token estimation", () => {
+	describe("lazy loading", () => {
+		it("should not load tiktoken module until estimateTokens is called", async () => {
+			// This test verifies that tiktoken is loaded lazily (dynamic import)
+			// to avoid the 24MB WASM binary loading at CLI startup
+
+			// Check that tiktoken is not in the require cache before we call estimateTokens
+			const tiktokenModuleName = "tiktoken"
+			const initialModules = Object.keys(require.cache || {})
+			const hasTiktokenBeforeCall = initialModules.some((path) => path.includes(tiktokenModuleName))
+
+			// tiktoken should NOT be loaded yet (this will fail with static import)
+			expect(hasTiktokenBeforeCall).toBe(false)
+
+			// Now call estimateTokens - this should trigger the lazy load
+			await estimateTokens("test", "gpt4o")
+
+			// After calling, tiktoken should now be loaded
+			const modulesAfterCall = Object.keys(require.cache || {})
+			const hasTiktokenAfterCall = modulesAfterCall.some((path) =>
+				path.includes(tiktokenModuleName),
+			)
+			expect(hasTiktokenAfterCall).toBe(true)
+		})
+	})
+
 	describe("estimateTokens", () => {
 		it("should count GPT-4o tokens accurately", async () => {
 			const text = "Hello, world! This is a test."
