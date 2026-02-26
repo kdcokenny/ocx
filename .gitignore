@@ -12,3 +12,6 @@ workers/kdco-registry/dist/
 
 # Coverage
 coverage/
+
+# Planning documents
+.planning/
