@@ -55,6 +55,15 @@ function formatBytes(bytes: number): string {
 }
 
 /**
+ * Get color for token count based on thresholds.
+ */
+function getTokenColor(count: number): (str: string) => string {
+	if (count < 3000) return kleur.green
+	if (count <= 8000) return kleur.yellow
+	return kleur.red
+}
+
+/**
  * Format and output component info results.
  * Handles both JSON and human-readable output modes.
  */
@@ -62,6 +71,11 @@ export function formatComponentInfoOutput(
 	result: ComponentInfoResult,
 	options: FormatOptions,
 ): void {
+	// Handle quiet mode - suppress all output unless JSON mode
+	if (options.quiet && !options.json) {
+		return
+	}
+
 	if (options.json) {
 		// JSON output
 		const output = {
@@ -80,23 +94,33 @@ export function formatComponentInfoOutput(
 		outputJson(output)
 	} else {
 		// Human-readable output
+		const colorFn = getTokenColor(result.tokenEstimates.average)
+
 		console.log(`Component: ${kleur.cyan(result.component.name)}`)
 		console.log(`Type: ${kleur.dim(result.component.type)}`)
 		console.log(`Description: ${result.component.description}`)
 		console.log()
 		console.log("Token Estimates:")
-		console.log(`  Claude (Sonnet)    │ ${formatNumber(result.tokenEstimates.claude)} tokens`)
-		console.log(`  GPT-4o             │ ${formatNumber(result.tokenEstimates.gpt4o)} tokens`)
+		console.log(
+			`  Claude (Sonnet)    │ ${colorFn(formatNumber(result.tokenEstimates.claude))} tokens`,
+		)
+		console.log(
+			`  GPT-4o             │ ${colorFn(formatNumber(result.tokenEstimates.gpt4o))} tokens`,
+		)
 
 		if (result.tokenEstimates.gemini !== null) {
-			console.log(`  Gemini 2.0 Flash   │ ${formatNumber(result.tokenEstimates.gemini)} tokens`)
+			console.log(
+				`  Gemini 2.0 Flash   │ ${colorFn(formatNumber(result.tokenEstimates.gemini))} tokens`,
+			)
 		} else {
 			console.log("  Gemini 2.0 Flash   │ N/A")
 		}
 
 		console.log()
 		const roundedAverage = Math.round(result.tokenEstimates.average / 100) * 100
-		console.log(`Estimated Context: ${kleur.bold(`~${formatNumber(roundedAverage)}`)} tokens (avg)`)
+		console.log(
+			`Estimated Context: ${kleur.bold(colorFn(`~${formatNumber(roundedAverage)}`))} tokens (avg)`,
+		)
 		console.log(kleur.dim(`Files: ${result.totalFiles} | Size: ${formatBytes(result.totalBytes)}`))
 	}
 }
@@ -228,11 +252,10 @@ export function registerComponentInfoCommand(program: Command): void {
 
 	cmd.action(
 		handleError(async (componentName: string, options: ComponentInfoOptions) => {
-			// For now, just run the core logic
-			// Output formatting will be added in Story 5
 			const { LocalConfigProvider } = await import("../../config/provider")
 			const provider = await LocalConfigProvider.requireInitialized(options.cwd)
-			await runComponentInfoCore(componentName, options, provider)
+			const result = await runComponentInfoCore(componentName, options, provider)
+			formatComponentInfoOutput(result, options)
 		}),
 	)
 }
