@@ -20,6 +20,7 @@ ocx <command>
 - [`ocx update`](#ocx-update) - Update installed components
 - [`ocx diff`](#ocx-diff) - Compare installed vs upstream
 - [`ocx search`](#ocx-search) - Search for components
+- [`ocx component info`](#ocx-component-info) - Display token cost estimates for a component
 - [`ocx registry`](#ocx-registry) - Manage registries
 - [`ocx build`](#ocx-build) - Build a registry from source
 - [`ocx self update`](#ocx-self-update) - Update OCX to latest version
@@ -491,6 +492,124 @@ Installed components (2):
 |-------|-------|----------|
 | `No ocx.jsonc found` | Not initialized | Run `ocx init` first |
 | `No components installed` | Lock file empty | Run `ocx add` first |
+
+---
+
+## ocx component info
+
+Display token cost estimates for a component before installation.
+
+### Usage
+
+```bash
+ocx component info <component> [options]
+```
+
+### Aliases
+
+```bash
+ocx c info <component> [options]
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `component` | Component name (qualified or unqualified) |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--cwd <path>` | Working directory (default: current directory) |
+| `-p, --profile <name>` | Use specific global profile for registry resolution |
+| `--with-dependencies` | Include token estimates for all transitive dependencies |
+| `--json` | Output as JSON |
+| `-q, --quiet` | Suppress output |
+| `-v, --verbose` | Verbose output with detailed file information |
+
+### Examples
+
+```bash
+# Show token estimates for a component
+ocx component info kdco/researcher
+
+# Include dependency costs (cumulative estimate)
+ocx component info kdco/researcher --with-dependencies
+
+# Get machine-readable JSON output
+ocx component info kdco/researcher --json
+
+# Show verbose details with per-file breakdown
+ocx component info kdco/researcher --verbose
+```
+
+### Output
+
+**Basic output:**
+```bash
+$ ocx component info kdco/researcher
+Component: researcher
+Type: ocx:agent
+Description: Research agent with web search capabilities
+
+Token Estimates:
+  Claude (Sonnet)    │ 2,847 tokens
+  GPT-4o             │ 2,912 tokens
+
+Estimated Context: ~2,900 tokens (avg)
+Files: 3 | Size: 8.2 KB
+```
+
+**With dependencies:**
+```bash
+$ ocx component info kdco/researcher --with-dependencies
+Component: researcher
+Type: ocx:agent
+Description: Research agent with web search capabilities
+
+Dependencies:
+  └─ kdco/web-search
+     Type: ocx:tool
+     Tokens: ~1,200 (avg)
+     Files: 2 | Size: 4.2 KB
+
+Token Estimates (researcher only):
+  Claude (Sonnet)    │ 2,847 tokens
+  GPT-4o             │ 2,912 tokens
+
+Cumulative Estimates (with dependencies):
+  Claude (Sonnet)    │ 4,047 tokens
+  GPT-4o             │ 4,162 tokens
+
+Total Context: ~4,100 tokens (avg)
+Files: 5 | Size: 12.4 KB
+```
+
+### Understanding Dependency Token Costs
+
+When you install a component with dependencies (e.g., an agent that uses skills), all dependency files are installed and may impact your OpenCode context size. Use `--with-dependencies` to see the cumulative token cost before installation.
+
+This helps you:
+- Budget your total context window
+- Understand the full impact of installing a component
+- Compare alternatives based on token efficiency
+- Plan for context limits in different LLM models
+
+### Token Color Coding
+
+Token estimates are color-coded in terminal output:
+- **Green** (< 3,000 tokens): Low impact
+- **Yellow** (3,000 - 8,000 tokens): Moderate impact
+- **Red** (> 8,000 tokens): High impact - may require larger context windows
+
+### Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `No ocx.jsonc found` | Not initialized | Run `ocx init` first |
+| `Component not found` | Component doesn't exist | Check spelling or try `ocx search` |
+| `Circular dependency detected` | Invalid dependency chain | Report to registry maintainer |
 
 ---
 

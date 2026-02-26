@@ -528,6 +528,7 @@ export function registerComponentInfoCommand(program: Command): void {
 		.command("info <component>")
 		.description("Display token cost estimates for a component")
 		.option("-p, --profile <name>", "Use specific profile")
+		.option("--with-dependencies", "Include token estimates for all dependencies")
 
 	addCommonOptions(infoCmd)
 	addVerboseOption(infoCmd)
