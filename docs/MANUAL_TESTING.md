@@ -1904,6 +1904,185 @@ All variations from `cli/commands.mdx` (opencode section).
 
 ---
 
+## 12A. Profile Overlay Mode (Issue #142)
+
+Profile-mode loading of project agents/skills via include/exclude semantics. When
+running `ocx oc --profile <name>`, OCX:
+
+- sets `OPENCODE_DISABLE_PROJECT_CONFIG=true`
+- sets `OPENCODE_CONFIG_DIR` to a merged temporary directory
+- overlays project `.opencode/{agent,agents,skill,skills}` onto profile files
+- reads overlay policy from **project** `.opencode/ocx.jsonc`
+
+Policy semantics:
+
+- Default include-all when `include` is empty
+- `exclude` is a deny list
+- `include` wins over `exclude` overlaps
+- Patterns are relative overlay paths (for example `agents/**`, `skills/**`)
+
+> **Section Setup:** Run cleanup (Section 1.2) before starting this section to ensure deterministic overlay behavior.
+>
+> **Sequential-run guardrails:**
+> - If an earlier section exported `OCX_PROFILE`, run `unset OCX_PROFILE` before this section.
+> - If Section 12.12 previously exported `OPENCODE_BIN`, run `unset OPENCODE_BIN` before this section.
+> - If `OPENCODE_DISABLE_PROJECT_CONFIG` is set from earlier work, run `unset OPENCODE_DISABLE_PROJECT_CONFIG` before this section.
+> - Section 12A.5 temporarily switches `XDG_CONFIG_HOME`; Section 12A.6 restores `/tmp/ocx-v2-test` before global profile cleanup.
+
+### 12A.1 Allowed Project Agent/Skill is Visible
+
+- [ ] **Setup:** Global profile exists; project has local overlay files and explicit empty policy
+  ```bash
+  # Clean start
+  rm -rf /tmp/ocx-v2-test
+  rm -rf /tmp/ocx-v2-test-project
+  mkdir -p /tmp/ocx-v2-test-project
+  cd /tmp/ocx-v2-test-project
+  git init
+  unset OCX_PROFILE
+  unset OPENCODE_BIN
+  unset OPENCODE_DISABLE_PROJECT_CONFIG
+  export XDG_CONFIG_HOME=/tmp/ocx-v2-test
+
+  $OCX_BIN init --global 2>/dev/null || true
+  $OCX_BIN profile rm overlay-test --global 2>/dev/null || true
+  $OCX_BIN profile add overlay-test --global
+  echo '{"model": "opencode/big-pickle", "small_model": "opencode/big-pickle"}' > "$XDG_CONFIG_HOME/opencode/profiles/overlay-test/opencode.jsonc"
+
+  mkdir -p .opencode/agents .opencode/skills
+  echo '{"include": [], "exclude": []}' > .opencode/ocx.jsonc
+  echo "# Project Agent" > .opencode/agents/project-agent.md
+  echo "# Project Skill" > .opencode/skills/project-skill.md
+  ```
+- [ ] **Commands:**
+  ```bash
+  $OCX_BIN oc --profile overlay-test run 'find "$OPENCODE_CONFIG_DIR" -maxdepth 3 -type f | sort'
+  ```
+- [ ] **Expected:** Output includes project overlay files in merged config dir
+- [ ] **Verify:** Output contains `agents/project-agent.md` and `skills/project-skill.md`
+- [ ] **Run result:** _PENDING_
+- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+
+### 12A.2 Exclude Blocks Project Candidate
+
+- [ ] **Setup:** Exclude project agents via **project** `.opencode/ocx.jsonc`
+  ```bash
+  cd /tmp/ocx-v2-test-project
+  export XDG_CONFIG_HOME=/tmp/ocx-v2-test
+
+  mkdir -p .opencode/agents .opencode/skills
+  echo '{"exclude": ["agents/**"], "include": []}' > .opencode/ocx.jsonc
+  echo "# Blocked Agent" > .opencode/agents/blocked-agent.md
+  echo "# Allowed Skill" > .opencode/skills/allowed-skill.md
+  ```
+- [ ] **Commands:**
+  ```bash
+  $OCX_BIN oc --profile overlay-test run 'find "$OPENCODE_CONFIG_DIR" -maxdepth 3 -type f | sort'
+  ```
+- [ ] **Expected:** `agents/blocked-agent.md` is excluded; `skills/allowed-skill.md` remains visible
+- [ ] **Verify:** Output does **not** contain `agents/blocked-agent.md` and **does** contain `skills/allowed-skill.md`
+- [ ] **Run result:** _PENDING_
+- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+
+### 12A.3 Include Re-includes Excluded Candidate (Include Wins)
+
+- [ ] **Setup:** Exclude all agents, explicitly include one agent path (relative patterns)
+  ```bash
+  cd /tmp/ocx-v2-test-project
+  export XDG_CONFIG_HOME=/tmp/ocx-v2-test
+
+  mkdir -p .opencode/agents
+  echo '{"exclude": ["agents/**"], "include": ["agents/reincluded-agent.md"]}' > .opencode/ocx.jsonc
+  echo "# Excluded Agent" > .opencode/agents/excluded-agent.md
+  echo "# Re-included Agent" > .opencode/agents/reincluded-agent.md
+  ```
+- [ ] **Commands:**
+  ```bash
+  $OCX_BIN oc --profile overlay-test run 'find "$OPENCODE_CONFIG_DIR" -maxdepth 3 -type f | sort'
+  ```
+- [ ] **Expected:** Include wins over overlapping exclude
+- [ ] **Verify:** Output contains `agents/reincluded-agent.md` and does **not** contain `agents/excluded-agent.md`
+- [ ] **Run result:** _PENDING_
+- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+
+### 12A.4 Collision: Project Overrides Profile Candidate
+
+- [ ] **Setup:** Same relative overlay path exists in both profile and project
+  ```bash
+  cd /tmp/ocx-v2-test-project
+  export XDG_CONFIG_HOME=/tmp/ocx-v2-test
+
+  mkdir -p "$XDG_CONFIG_HOME/opencode/profiles/overlay-test/agents"
+  echo "# Profile Version" > "$XDG_CONFIG_HOME/opencode/profiles/overlay-test/agents/collision-agent.md"
+
+  mkdir -p .opencode/agents
+  echo '{}' > .opencode/ocx.jsonc
+  echo "# Project Version" > .opencode/agents/collision-agent.md
+  ```
+- [ ] **Commands:**
+  ```bash
+  $OCX_BIN oc --profile overlay-test run 'cat "$OPENCODE_CONFIG_DIR/agents/collision-agent.md"'
+  ```
+- [ ] **Expected:** Project file wins when merged path collides
+- [ ] **Verify:** Output is `# Project Version`
+- [ ] **Run result:** _PENDING_
+- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+
+### 12A.5 No-Profile Regression Sanity Check
+
+- [ ] **Setup:** Fresh XDG_CONFIG_HOME with no initialized profiles to avoid default profile interference
+  ```bash
+  cd /tmp/ocx-v2-test-project
+  unset OCX_PROFILE
+  unset OPENCODE_DISABLE_PROJECT_CONFIG
+  export XDG_CONFIG_HOME=/tmp/ocx-v2-test-no-profile
+  rm -rf "$XDG_CONFIG_HOME"
+  mkdir -p "$XDG_CONFIG_HOME"
+  ```
+- [ ] **Commands:**
+  ```bash
+  $OCX_BIN oc run 'printf "OPENCODE_DISABLE_PROJECT_CONFIG=%s\n" "${OPENCODE_DISABLE_PROJECT_CONFIG:-<unset>}"'
+  ```
+- [ ] **Expected:** No profile mode keeps project-config disable flag unset
+- [ ] **Verify:** Output contains `OPENCODE_DISABLE_PROJECT_CONFIG=<unset>`
+- [ ] **Run result:** _PENDING_
+- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+
+### 12A.6 Cleanup Overlay Test State
+
+- [ ] **Setup:** After completing overlay tests
+- [ ] **Commands:**
+  ```bash
+  # Restore XDG_CONFIG_HOME before global profile cleanup (12A.5 may have switched it)
+  export XDG_CONFIG_HOME=/tmp/ocx-v2-test
+  # Remove test profile
+  $OCX_BIN profile rm overlay-test --global 2>/dev/null || true
+  # Clean all overlay artifacts created in Section 12A (including singular and plural agent/skill dirs)
+  rm -rf /tmp/ocx-v2-test-project/.opencode/agent
+  rm -rf /tmp/ocx-v2-test-project/.opencode/agents
+  rm -rf /tmp/ocx-v2-test-project/.opencode/skill
+  rm -rf /tmp/ocx-v2-test-project/.opencode/skills
+  rm -f /tmp/ocx-v2-test-project/.opencode/ocx.jsonc
+  # Clean up extra XDG dir used by 12A.5
+  rm -rf /tmp/ocx-v2-test-no-profile
+  ```
+- [ ] **Expected:** Test profile and artifacts removed
+- [ ] **Verify:**
+  ```bash
+  export XDG_CONFIG_HOME=/tmp/ocx-v2-test
+  $OCX_BIN profile list --global | grep -q "overlay-test" && echo "FAIL: profile still exists" || echo "OK: profile removed"
+  test -d /tmp/ocx-v2-test-project/.opencode/agent && echo "FAIL: overlay agent directory still exists" || echo "OK: overlay agent removed"
+  test -d /tmp/ocx-v2-test-project/.opencode/agents && echo "FAIL: overlay agents directory still exists" || echo "OK: overlay agents removed"
+  test -d /tmp/ocx-v2-test-project/.opencode/skill && echo "FAIL: overlay skill directory still exists" || echo "OK: overlay skill removed"
+  test -d /tmp/ocx-v2-test-project/.opencode/skills && echo "FAIL: overlay skills directory still exists" || echo "OK: overlay skills removed"
+  test -f /tmp/ocx-v2-test-project/.opencode/ocx.jsonc && echo "FAIL: overlay policy file still exists" || echo "OK: overlay policy removed"
+  test -d /tmp/ocx-v2-test-no-profile && echo "FAIL: extra XDG dir still exists" || echo "OK: extra XDG dir removed"
+  ```
+- [ ] **Run result:** _PENDING_
+- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+
+---
+
 ## 13. Profile System Tests
 
 From `profiles/overview.mdx` and `profiles/security.mdx` — advanced profile behaviors.
@@ -2605,6 +2784,7 @@ Master summary for full test sessions.
 - [x] ocx profile (Section 10): 15 test cases (revised for global-only model)
 - [x] ocx config (Section 11): 7 test cases
 - [ ] ocx opencode (Section 12): PARTIAL — 11/12 executed; Section 12.12 is skipped under waiver (custom `OPENCODE_BIN` placeholder path unavailable in this environment)
+- [ ] Profile Overlay Mode (Section 12A): 6 test cases — Issue #142 include/exclude semantics
 - [x] **Run result (2026-02-24):** PARTIAL — Sections 4–11 are complete; Section 12 is partial due to the documented 12.12 skip waiver.
 - [x] **Run result (2026-02-26):** PARTIAL — remove coverage (Section 5A) is now tracked and passing; overall CLI status remains partial only due to the documented Section 12.12 waiver.
 
@@ -2665,6 +2845,7 @@ For maintainability when commands change.
 | Section 10 | [CLI Commands](./cli/commands.mdx) | profile section |
 | Section 11 | [CLI Commands](./cli/commands.mdx) | config section |
 | Section 12 | [CLI Commands](./cli/commands.mdx) | opencode section |
+| Section 12A | Issue #142 | Profile overlay mode with include/exclude semantics |
 | Section 13 | [Profiles Overview](./profiles/overview.mdx), [Profiles Security](./profiles/security.mdx) | Full docs |
 | Section 14 | [CLI Commands](./cli/commands.mdx) | Error tables |
 | Section 15 | [README.md](../README.md), [CLI Commands](./cli/commands.mdx) | migration + command docs |
@@ -2741,5 +2922,5 @@ When adding new test cases:
 
 **End of Manual Testing Guide**
 
-_Last updated: 2026-02-26_
-_Document version: 1.0_
+_Last updated: 2026-03-06_
+_Document version: 1.1_

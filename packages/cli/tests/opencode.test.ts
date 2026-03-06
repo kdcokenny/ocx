@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { mkdir } from "node:fs/promises"
+import { mkdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { buildOpenCodeEnv, dedupeLastWins, resolveOpenCodeBinary } from "../src/commands/opencode"
 import { EXIT_CODES } from "../src/utils/errors"
@@ -121,6 +121,19 @@ describe("buildOpenCodeEnv", () => {
 		expect(result.OPENCODE_DISABLE_PROJECT_CONFIG).toBeUndefined()
 	})
 
+	it("removes inherited OPENCODE_DISABLE_PROJECT_CONFIG when no profile active", () => {
+		const result = buildOpenCodeEnv({
+			baseEnv: {
+				OPENCODE_DISABLE_PROJECT_CONFIG: "true",
+				PATH: "/usr/bin",
+			},
+		})
+
+		expect(result.OPENCODE_DISABLE_PROJECT_CONFIG).toBeUndefined()
+		expect("OPENCODE_DISABLE_PROJECT_CONFIG" in result).toBe(false)
+		expect(result.PATH).toBe("/usr/bin")
+	})
+
 	it("sets OPENCODE_CONFIG_DIR to global config path when no profile active", () => {
 		const result = buildOpenCodeEnv({
 			baseEnv: {},
@@ -135,11 +148,22 @@ describe("buildOpenCodeEnv", () => {
 		const config = { theme: "dark", nested: { key: "value" } }
 		const result = buildOpenCodeEnv({
 			baseEnv: {},
+			configDir: "/tmp/ocx-merged-config",
 			configContent: JSON.stringify(config),
 		})
 		// Parse and compare objects - NOT string comparison
 		expect(result.OPENCODE_CONFIG_CONTENT).toBeDefined()
 		expect(JSON.parse(result.OPENCODE_CONFIG_CONTENT as string)).toEqual(config)
+	})
+
+	it("uses explicit configDir override when provided", () => {
+		const result = buildOpenCodeEnv({
+			baseEnv: {},
+			profileName: "work",
+			configDir: "/tmp/ocx-merged-config",
+		})
+
+		expect(result.OPENCODE_CONFIG_DIR).toBe("/tmp/ocx-merged-config")
 	})
 
 	it("sets OCX_PROFILE when profileName provided", () => {
@@ -209,6 +233,34 @@ describe("buildOpenCodeEnv", () => {
 })
 
 describe("oc command CLI contract", () => {
+	it("registers signal handlers before merged overlay preparation (regression #142)", async () => {
+		const commandPath = join(import.meta.dir, "..", "src", "commands", "opencode.ts")
+		const source = await readFile(commandPath, "utf8")
+
+		const runOpencodeStart = source.indexOf("async function runOpencode")
+		expect(runOpencodeStart).toBeGreaterThan(-1)
+
+		const runOpencodeSource = source.slice(runOpencodeStart)
+		const sigintRegistrationIndex = runOpencodeSource.indexOf('process.on("SIGINT", sigintHandler)')
+		const prepareMergedIndex = runOpencodeSource.indexOf(
+			"mergedConfig = await prepareMergedConfigDirForProfile",
+		)
+		const lifecycleTryIndex = runOpencodeSource.indexOf("try {")
+		const lifecycleFinallyIndex = runOpencodeSource.indexOf("} finally {")
+
+		expect(sigintRegistrationIndex).toBeGreaterThan(-1)
+		expect(prepareMergedIndex).toBeGreaterThan(-1)
+		expect(lifecycleTryIndex).toBeGreaterThan(-1)
+		expect(lifecycleFinallyIndex).toBeGreaterThan(lifecycleTryIndex)
+
+		const beforeSignalRegistration = runOpencodeSource.slice(0, sigintRegistrationIndex)
+		expect(beforeSignalRegistration).not.toContain("prepareMergedConfigDirForProfile")
+
+		expect(prepareMergedIndex).toBeGreaterThan(sigintRegistrationIndex)
+		expect(prepareMergedIndex).toBeGreaterThan(lifecycleTryIndex)
+		expect(prepareMergedIndex).toBeLessThan(lifecycleFinallyIndex)
+	})
+
 	it("help shows supported flags and not [path]", async () => {
 		const result = await runCLI(["oc", "--help"], process.cwd())
 		expect(result.stdout).toContain("--profile")

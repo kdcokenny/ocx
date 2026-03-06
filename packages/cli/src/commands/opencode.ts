@@ -19,6 +19,11 @@ import {
 	saveTerminalTitle,
 	setTerminalName,
 } from "../utils/terminal-title"
+import {
+	createOpencodeOcError,
+	type PreparedMergedConfigDir,
+	prepareMergedConfigDirForProfile,
+} from "./opencode-overlay"
 
 interface OpencodeOptions {
 	profile?: string
@@ -72,25 +77,31 @@ export function resolveOpenCodeBinary(opts: { configBin?: string; envBin?: strin
  * - Overwrites OCX_PROFILE, OPENCODE_* keys with new values
  * - OPENCODE_DISABLE_PROJECT_CONFIG: set to "true" ONLY when a profile is active
  *   (profileName is provided). When no profile, project config is NOT disabled.
- * - OPENCODE_CONFIG_DIR: when profile active → profile-specific dir;
- *   when no profile → global config dir (XDG-aware)
+ * - OPENCODE_CONFIG_DIR: when configDir is provided → use it;
+ *   otherwise profile active → profile-specific dir; no profile → global config dir
  * - configContent is a pre-serialized JSON string; upstream OpenCode handles
  *   {env:...} / {file:...} token resolution in OPENCODE_CONFIG_CONTENT
  */
 export function buildOpenCodeEnv(opts: {
 	baseEnv: Record<string, string | undefined>
 	profileName?: string
+	configDir?: string
 	configContent?: string
 }): Record<string, string | undefined> {
 	// Profile presence gates both OPENCODE_DISABLE_PROJECT_CONFIG and OPENCODE_CONFIG_DIR
 	const hasProfile = Boolean(opts.profileName)
+	// Never leak stale inherited disable flag into no-profile launches.
+	const {
+		OPENCODE_DISABLE_PROJECT_CONFIG: _inheritedDisableProjectConfig,
+		...baseEnvWithoutDisableProjectConfig
+	} = opts.baseEnv
 
 	return {
-		...opts.baseEnv,
+		...baseEnvWithoutDisableProjectConfig,
 		...(hasProfile && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
-		OPENCODE_CONFIG_DIR: hasProfile
-			? getProfileDir(opts.profileName as string)
-			: getGlobalConfigPath(),
+		OPENCODE_CONFIG_DIR:
+			opts.configDir ??
+			(hasProfile ? getProfileDir(opts.profileName as string) : getGlobalConfigPath()),
 		...(opts.configContent && { OPENCODE_CONFIG_CONTENT: opts.configContent }),
 		...(opts.profileName && { OCX_PROFILE: opts.profileName }),
 	}
@@ -165,16 +176,16 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 
 	// Setup signal handlers BEFORE spawn to avoid race condition
 	let proc: ReturnType<typeof Bun.spawn> | null = null
+	let mergedConfig: PreparedMergedConfigDir | null = null
+	let primaryFailure: Error | null = null
+	let childExitCode: number | null = null
+	let preSpawnSignalExitCode: number | null = null
 
 	const sigintHandler = () => {
 		if (proc) {
 			proc.kill("SIGINT")
 		} else {
-			// No child yet - restore terminal and exit with standard SIGINT code
-			if (shouldRename) {
-				restoreTerminalTitle()
-			}
-			process.exit(130)
+			preSpawnSignalExitCode = 130
 		}
 	}
 
@@ -182,79 +193,134 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 		if (proc) {
 			proc.kill("SIGTERM")
 		} else {
-			// No child yet - restore terminal and exit with standard SIGTERM code
-			if (shouldRename) {
-				restoreTerminalTitle()
-			}
-			process.exit(143)
+			preSpawnSignalExitCode = 143
 		}
 	}
 
-	process.on("SIGINT", sigintHandler)
-	process.on("SIGTERM", sigtermHandler)
-
-	// Exit handler for terminal title restoration
 	const exitHandler = () => {
 		if (shouldRename) {
 			restoreTerminalTitle()
 		}
 	}
-	process.on("exit", exitHandler)
-
-	// Set terminal name only if enabled
-	if (shouldRename) {
-		saveTerminalTitle()
-		const gitInfo = await getGitInfo(projectDir)
-		setTerminalName(formatTerminalName(projectDir, config.profileName ?? "default", gitInfo))
-	}
-
-	// Determine OpenCode binary
-	const bin = resolveOpenCodeBinary({
-		configBin: ocxConfig?.bin,
-		envBin: process.env.OPENCODE_BIN,
-	})
-
-	// Spawn OpenCode directly in the project directory with config via environment
-	const configContent = configToPass ? JSON.stringify(configToPass) : undefined
-
-	proc = Bun.spawn({
-		cmd: [bin, ...args],
-		cwd: projectDir,
-		env: buildOpenCodeEnv({
-			baseEnv: process.env as Record<string, string | undefined>,
-			profileName: config.profileName ?? undefined,
-			configContent,
-		}),
-		stdin: "inherit",
-		stdout: "inherit",
-		stderr: "inherit",
-	})
 
 	try {
-		// Wait for child to exit
-		const exitCode = await proc.exited
+		process.on("SIGINT", sigintHandler)
+		process.on("SIGTERM", sigtermHandler)
+		process.on("exit", exitHandler)
 
+		if (preSpawnSignalExitCode !== null) {
+			childExitCode = preSpawnSignalExitCode
+			return
+		}
+
+		if (config.profileName) {
+			mergedConfig = await prepareMergedConfigDirForProfile({
+				projectDir,
+				profileDir: getProfileDir(config.profileName),
+			})
+		}
+
+		if (preSpawnSignalExitCode !== null) {
+			childExitCode = preSpawnSignalExitCode
+			return
+		}
+
+		// Set terminal name only if enabled
+		if (shouldRename) {
+			saveTerminalTitle()
+			const gitInfo = await getGitInfo(projectDir)
+			if (preSpawnSignalExitCode !== null) {
+				childExitCode = preSpawnSignalExitCode
+				return
+			}
+
+			setTerminalName(formatTerminalName(projectDir, config.profileName ?? "default", gitInfo))
+		}
+
+		if (preSpawnSignalExitCode !== null) {
+			childExitCode = preSpawnSignalExitCode
+			return
+		}
+
+		// Determine OpenCode binary
+		const bin = resolveOpenCodeBinary({
+			configBin: ocxConfig?.bin,
+			envBin: process.env.OPENCODE_BIN,
+		})
+
+		// Spawn OpenCode directly in the project directory with config via environment
+		const configContent = configToPass ? JSON.stringify(configToPass) : undefined
+
+		try {
+			proc = Bun.spawn({
+				cmd: [bin, ...args],
+				cwd: projectDir,
+				env: buildOpenCodeEnv({
+					baseEnv: process.env as Record<string, string | undefined>,
+					profileName: config.profileName ?? undefined,
+					configDir: mergedConfig?.path,
+					configContent,
+				}),
+				stdin: "inherit",
+				stdout: "inherit",
+				stderr: "inherit",
+			})
+		} catch (error: unknown) {
+			throw createOpencodeOcError(
+				"spawn",
+				`Failed to launch OpenCode binary "${bin}": ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+
+		// Wait for child to exit
+		childExitCode = await proc.exited
+	} catch (error: unknown) {
+		primaryFailure =
+			error instanceof Error
+				? error
+				: createOpencodeOcError("spawn", `OpenCode process failed: ${String(error)}`)
+	} finally {
 		// Cleanup signal handlers
 		process.off("SIGINT", sigintHandler)
 		process.off("SIGTERM", sigtermHandler)
 		process.off("exit", exitHandler)
 
-		// Restore terminal title if we renamed it
 		if (shouldRename) {
 			restoreTerminalTitle()
 		}
 
-		process.exit(exitCode)
-	} catch (error) {
-		// Error during spawn/wait - cleanup handlers
-		process.off("SIGINT", sigintHandler)
-		process.off("SIGTERM", sigtermHandler)
-		process.off("exit", exitHandler)
+		if (mergedConfig) {
+			try {
+				await mergedConfig.cleanup()
+			} catch (cleanupError: unknown) {
+				const hasPrimaryFailure =
+					primaryFailure !== null ||
+					preSpawnSignalExitCode !== null ||
+					(childExitCode !== null && childExitCode !== 0)
 
-		if (shouldRename) {
-			restoreTerminalTitle()
+				if (hasPrimaryFailure) {
+					logger.warn(
+						`Cleanup warning: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+					)
+				} else {
+					const cleanupFailure: Error =
+						cleanupError instanceof Error
+							? cleanupError
+							: createOpencodeOcError(
+									"cleanup",
+									`Failed to remove temporary merged config directory: ${String(cleanupError)}`,
+								)
+					primaryFailure = cleanupFailure
+				}
+			}
 		}
+	}
 
-		throw error
+	if (primaryFailure) {
+		throw primaryFailure
+	}
+
+	if (childExitCode !== null) {
+		process.exit(childExitCode)
 	}
 }
