@@ -1,5 +1,14 @@
 import { describe, expect, it } from "bun:test"
-import { chmod, mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises"
+import {
+	chmod,
+	copyFile,
+	lstat,
+	mkdir,
+	readdir,
+	readFile,
+	symlink,
+	writeFile,
+} from "node:fs/promises"
 import { join } from "node:path"
 import {
 	applyOverlayCopyOperations,
@@ -182,6 +191,203 @@ describe("opencode overlay planner", () => {
 					mergedDir,
 				),
 			).rejects.toThrow(/validate error/i)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("rejects root destination symlink and preserves outside target", async () => {
+		const testDir = await createTempDir("oc-overlay-destination-root-symlink")
+		try {
+			const sourcePath = join(testDir, "source.md")
+			const mergedDir = join(testDir, "merged")
+			const outsideDir = join(testDir, "outside")
+			const outsideTargetPath = join(outsideDir, "agent.md")
+
+			await mkdir(mergedDir, { recursive: true })
+			await mkdir(outsideDir, { recursive: true })
+			await writeFile(sourcePath, "safe")
+			await writeFile(outsideTargetPath, "outside-before")
+			await symlink(outsideDir, join(mergedDir, "agents"))
+
+			await expect(
+				applyOverlayCopyOperations(
+					[
+						{
+							sourcePath,
+							destinationRelativePath: "agents/agent.md",
+						},
+					],
+					mergedDir,
+				),
+			).rejects.toThrow(/validate error/i)
+
+			expect(await readFile(outsideTargetPath, "utf8")).toBe("outside-before")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("rejects nested destination symlink and preserves outside target", async () => {
+		const testDir = await createTempDir("oc-overlay-destination-nested-symlink")
+		try {
+			const sourcePath = join(testDir, "source.md")
+			const mergedDir = join(testDir, "merged")
+			const outsideDir = join(testDir, "outside")
+			const outsideTargetPath = join(outsideDir, "nested-agent.md")
+
+			await mkdir(join(mergedDir, "agents"), { recursive: true })
+			await mkdir(outsideDir, { recursive: true })
+			await writeFile(sourcePath, "safe")
+			await writeFile(outsideTargetPath, "outside-before")
+			await symlink(outsideDir, join(mergedDir, "agents", "nested"))
+
+			await expect(
+				applyOverlayCopyOperations(
+					[
+						{
+							sourcePath,
+							destinationRelativePath: "agents/nested/nested-agent.md",
+						},
+					],
+					mergedDir,
+				),
+			).rejects.toThrow(/validate error/i)
+
+			expect(await readFile(outsideTargetPath, "utf8")).toBe("outside-before")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("rejects existing destination leaf symlink and preserves outside target", async () => {
+		const testDir = await createTempDir("oc-overlay-destination-leaf-symlink")
+		try {
+			const sourcePath = join(testDir, "source.md")
+			const mergedDir = join(testDir, "merged")
+			const outsideTargetPath = join(testDir, "outside-leaf.md")
+
+			await mkdir(join(mergedDir, "agents"), { recursive: true })
+			await writeFile(sourcePath, "safe")
+			await writeFile(outsideTargetPath, "outside-before")
+			await symlink(outsideTargetPath, join(mergedDir, "agents", "leaf.md"))
+
+			await expect(
+				applyOverlayCopyOperations(
+					[
+						{
+							sourcePath,
+							destinationRelativePath: "agents/leaf.md",
+						},
+					],
+					mergedDir,
+				),
+			).rejects.toThrow(/validate error/i)
+
+			expect(await readFile(outsideTargetPath, "utf8")).toBe("outside-before")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("allows overlay copy into normal real destination directories", async () => {
+		const testDir = await createTempDir("oc-overlay-destination-real-directories")
+		try {
+			const sourcePath = join(testDir, "source.md")
+			const mergedDir = join(testDir, "merged")
+			const destinationPath = join(mergedDir, "agents", "new", "path", "agent.md")
+
+			await mkdir(join(mergedDir, "agents"), { recursive: true })
+			await writeFile(sourcePath, "safe")
+
+			await applyOverlayCopyOperations(
+				[
+					{
+						sourcePath,
+						destinationRelativePath: "agents/new/path/agent.md",
+					},
+				],
+				mergedDir,
+			)
+
+			expect(await readFile(destinationPath, "utf8")).toBe("safe")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("uses injected atomic publication seam for destination writes", async () => {
+		const testDir = await createTempDir("oc-overlay-atomic-publication-seam")
+		try {
+			const sourcePath = join(testDir, "source.md")
+			const mergedDir = join(testDir, "merged")
+			const destinationPath = join(mergedDir, "agents", "agent.md")
+			const seamCalls: Array<{ sourcePath: string; destinationPath: string }> = []
+
+			await mkdir(join(mergedDir, "agents"), { recursive: true })
+			await writeFile(sourcePath, "safe")
+
+			await applyOverlayCopyOperations(
+				[
+					{
+						sourcePath,
+						destinationRelativePath: "agents/agent.md",
+					},
+				],
+				mergedDir,
+				{
+					publishAtomically: async (capturedSourcePath, capturedDestinationPath) => {
+						seamCalls.push({
+							sourcePath: capturedSourcePath,
+							destinationPath: capturedDestinationPath,
+						})
+						await copyFile(capturedSourcePath, capturedDestinationPath)
+					},
+				},
+			)
+
+			expect(seamCalls).toEqual([
+				{
+					sourcePath,
+					destinationPath,
+				},
+			])
+			expect(await readFile(destinationPath, "utf8")).toBe("safe")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("removes temp publication sibling when atomic rename fails", async () => {
+		const testDir = await createTempDir("oc-overlay-atomic-publication-cleanup")
+		try {
+			const sourcePath = join(testDir, "source.md")
+			const mergedDir = join(testDir, "merged")
+			const destinationDirPath = join(mergedDir, "agents")
+			const destinationPath = join(destinationDirPath, "agent.md")
+
+			await mkdir(destinationPath, { recursive: true })
+			await writeFile(sourcePath, "safe")
+
+			await expect(
+				applyOverlayCopyOperations(
+					[
+						{
+							sourcePath,
+							destinationRelativePath: "agents/agent.md",
+						},
+					],
+					mergedDir,
+				),
+			).rejects.toThrow(/copy error/i)
+
+			const destinationStats = await lstat(destinationPath)
+			expect(destinationStats.isDirectory()).toBe(true)
+
+			const destinationSiblings = await readdir(destinationDirPath)
+			expect(destinationSiblings.filter((name) => name.startsWith(".agent.md.ocx-tmp-"))).toEqual(
+				[],
+			)
 		} finally {
 			await cleanupTempDir(testDir)
 		}
@@ -581,6 +787,48 @@ describe("ocx oc profile overlay integration", () => {
 
 			expect(result.exitCode).toBe(EXIT_CODES.CONFIG)
 			expect(result.output).toContain("ocx oc copy error")
+
+			const leftovers = await listMergedDirs(tmpRoot)
+			expect(leftovers).toEqual([])
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("cleans merged temp dir when destination symlink validation fails", async () => {
+		const testDir = await createTempDir("oc-overlay-destination-symlink-cleanup")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+
+			const outsideDir = join(testDir, "outside")
+			await mkdir(outsideDir, { recursive: true })
+			const outsideTargetPath = join(outsideDir, "agent.md")
+			await Bun.write(outsideTargetPath, "outside-before")
+			await symlink(outsideDir, join(profileDir, "agents"))
+
+			const tmpRoot = join(testDir, "tmp")
+			await mkdir(tmpRoot, { recursive: true })
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(join(localConfigDir, "agents"), { recursive: true })
+			await Bun.write(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await Bun.write(join(localConfigDir, "agents", "agent.md"), "from-project")
+
+			const { result } = await runOcCapture({
+				testDir,
+				profileName: "work",
+				env: {
+					TMPDIR: tmpRoot,
+				},
+			})
+
+			expect(result.exitCode).toBe(EXIT_CODES.CONFIG)
+			expect(result.output).toContain("ocx oc validate error")
+			expect(result.output).not.toContain("ocx oc copy error")
+			expect(await readFile(outsideTargetPath, "utf8")).toBe("outside-before")
 
 			const leftovers = await listMergedDirs(tmpRoot)
 			expect(leftovers).toEqual([])

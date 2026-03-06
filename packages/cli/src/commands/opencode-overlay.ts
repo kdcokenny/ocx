@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import {
 	copyFile,
 	cp,
@@ -7,10 +8,12 @@ import {
 	readdir,
 	readFile,
 	realpath,
+	rename,
 	rm,
+	unlink,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, isAbsolute, join, relative } from "node:path"
+import { basename, dirname, isAbsolute, join, relative } from "node:path"
 import { Glob } from "bun"
 import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
 import { z } from "zod"
@@ -81,6 +84,44 @@ export interface OverlayCandidate {
 export interface OverlayCopyOperation {
 	sourcePath: string
 	destinationRelativePath: string
+}
+
+async function assertSafeOverlayDestinationPath(
+	mergedConfigDir: string,
+	destinationPath: string,
+	destinationRelativePath: string,
+): Promise<void> {
+	const relativeDestinationPath = toPosixPath(relative(mergedConfigDir, destinationPath))
+	const pathComponents = relativeDestinationPath
+		.split("/")
+		.filter((component) => component.length > 0)
+
+	let currentPath = mergedConfigDir
+	for (const component of pathComponents) {
+		currentPath = join(currentPath, component)
+
+		let currentStats: Awaited<ReturnType<typeof lstat>>
+		try {
+			currentStats = await lstat(currentPath)
+		} catch (error) {
+			const errorCode = (error as NodeJS.ErrnoException).code
+			if (errorCode === "ENOENT") {
+				return
+			}
+
+			throw createOpencodeOcError(
+				"validate",
+				`Failed to inspect overlay destination path (${destinationRelativePath}): ${formatUnknownError(error)}`,
+			)
+		}
+
+		if (currentStats.isSymbolicLink()) {
+			throw createOpencodeOcError(
+				"validate",
+				`Overlay destination path contains existing symlink (${destinationRelativePath})`,
+			)
+		}
+	}
 }
 
 const projectOverlayPolicySchema = z
@@ -396,10 +437,46 @@ async function collectOverlayCandidates(projectConfigDir: string): Promise<Overl
 	return candidates
 }
 
+export type OverlayAtomicPublisher = (sourcePath: string, destinationPath: string) => Promise<void>
+
+export interface OverlayCopyOperationSeams {
+	publishAtomically?: OverlayAtomicPublisher
+}
+
+function buildOverlayTempPublicationPath(destinationPath: string): string {
+	const destinationDirPath = dirname(destinationPath)
+	const destinationBaseName = basename(destinationPath)
+	const atomicSuffix = `${process.pid}-${randomUUID()}`
+	return join(destinationDirPath, `.${destinationBaseName}.ocx-tmp-${atomicSuffix}`)
+}
+
+async function publishOverlayFileAtomically(
+	sourcePath: string,
+	destinationPath: string,
+): Promise<void> {
+	const tempPublicationPath = buildOverlayTempPublicationPath(destinationPath)
+
+	try {
+		await copyFile(sourcePath, tempPublicationPath)
+		await rename(tempPublicationPath, destinationPath)
+	} catch (error) {
+		try {
+			await unlink(tempPublicationPath)
+		} catch {
+			// Ignore temp cleanup failures and preserve primary error.
+		}
+
+		throw error
+	}
+}
+
 export async function applyOverlayCopyOperations(
 	operations: readonly OverlayCopyOperation[],
 	mergedConfigDir: string,
+	seams: OverlayCopyOperationSeams = {},
 ): Promise<void> {
+	const publishAtomically = seams.publishAtomically ?? publishOverlayFileAtomically
+
 	for (const operation of operations) {
 		let destinationPath: string
 		try {
@@ -411,9 +488,15 @@ export async function applyOverlayCopyOperations(
 			)
 		}
 
+		await assertSafeOverlayDestinationPath(
+			mergedConfigDir,
+			destinationPath,
+			operation.destinationRelativePath,
+		)
+
 		try {
 			await mkdir(dirname(destinationPath), { recursive: true })
-			await copyFile(operation.sourcePath, destinationPath)
+			await publishAtomically(operation.sourcePath, destinationPath)
 		} catch (error) {
 			throw createOpencodeOcError(
 				"copy",
