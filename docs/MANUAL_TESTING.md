@@ -1931,7 +1931,7 @@ Policy semantics:
 
 ### 12A.1 Allowed Project Agent/Skill is Visible
 
-- [ ] **Setup:** Global profile exists; project has local overlay files and explicit empty policy
+- [x] **Setup:** Global profile exists; project has local overlay files and explicit empty policy
   ```bash
   # Clean start
   rm -rf /tmp/ocx-v2-test
@@ -1954,18 +1954,18 @@ Policy semantics:
   echo "# Project Agent" > .opencode/agents/project-agent.md
   echo "# Project Skill" > .opencode/skills/project-skill.md
   ```
-- [ ] **Commands:**
+- [x] **Commands:**
   ```bash
   $OCX_BIN oc --profile overlay-test run 'find "$OPENCODE_CONFIG_DIR" -maxdepth 3 -type f | sort'
   ```
-- [ ] **Expected:** Output includes project overlay files in merged config dir
-- [ ] **Verify:** Output contains `agents/project-agent.md` and `skills/project-skill.md`
-- [ ] **Run result:** _PENDING_
-- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+- [x] **Expected:** Output includes project overlay files in merged config dir
+- [x] **Verify:** Output contains `agents/project-agent.md` and `skills/project-skill.md`
+- [x] **Run result (2026-03-06):** PASS
+- [x] **Last tested:** _v2.0.0 on 2026-03-06_
 
 ### 12A.2 Exclude Blocks Project Candidate
 
-- [ ] **Setup:** Exclude project agents via **project** `.opencode/ocx.jsonc`
+- [x] **Setup:** Exclude project agents via **project** `.opencode/ocx.jsonc`
   ```bash
   cd /tmp/ocx-v2-test-project
   export XDG_CONFIG_HOME=/tmp/ocx-v2-test
@@ -1975,18 +1975,18 @@ Policy semantics:
   echo "# Blocked Agent" > .opencode/agents/blocked-agent.md
   echo "# Allowed Skill" > .opencode/skills/allowed-skill.md
   ```
-- [ ] **Commands:**
+- [x] **Commands:**
   ```bash
   $OCX_BIN oc --profile overlay-test run 'find "$OPENCODE_CONFIG_DIR" -maxdepth 3 -type f | sort'
   ```
-- [ ] **Expected:** `agents/blocked-agent.md` is excluded; `skills/allowed-skill.md` remains visible
-- [ ] **Verify:** Output does **not** contain `agents/blocked-agent.md` and **does** contain `skills/allowed-skill.md`
-- [ ] **Run result:** _PENDING_
-- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+- [x] **Expected:** `agents/blocked-agent.md` is excluded; `skills/allowed-skill.md` remains visible
+- [x] **Verify:** Output does **not** contain `agents/blocked-agent.md` and **does** contain `skills/allowed-skill.md`
+- [x] **Run result (2026-03-06):** PASS
+- [x] **Last tested:** _v2.0.0 on 2026-03-06_
 
 ### 12A.3 Include Re-includes Excluded Candidate (Include Wins)
 
-- [ ] **Setup:** Exclude all agents, explicitly include one agent path (relative patterns)
+- [x] **Setup:** Exclude all agents, explicitly include one agent path (relative patterns)
   ```bash
   cd /tmp/ocx-v2-test-project
   export XDG_CONFIG_HOME=/tmp/ocx-v2-test
@@ -1996,18 +1996,18 @@ Policy semantics:
   echo "# Excluded Agent" > .opencode/agents/excluded-agent.md
   echo "# Re-included Agent" > .opencode/agents/reincluded-agent.md
   ```
-- [ ] **Commands:**
+- [x] **Commands:**
   ```bash
   $OCX_BIN oc --profile overlay-test run 'find "$OPENCODE_CONFIG_DIR" -maxdepth 3 -type f | sort'
   ```
-- [ ] **Expected:** Include wins over overlapping exclude
-- [ ] **Verify:** Output contains `agents/reincluded-agent.md` and does **not** contain `agents/excluded-agent.md`
-- [ ] **Run result:** _PENDING_
-- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+- [x] **Expected:** Include wins over overlapping exclude
+- [x] **Verify:** Output contains `agents/reincluded-agent.md` and does **not** contain `agents/excluded-agent.md`
+- [x] **Run result (2026-03-06):** PASS
+- [x] **Last tested:** _v2.0.0 on 2026-03-06_
 
 ### 12A.4 Collision: Project Overrides Profile Candidate
 
-- [ ] **Setup:** Same relative overlay path exists in both profile and project
+- [x] **Setup:** Same relative overlay path exists in both profile and project
   ```bash
   cd /tmp/ocx-v2-test-project
   export XDG_CONFIG_HOME=/tmp/ocx-v2-test
@@ -2019,18 +2019,18 @@ Policy semantics:
   echo '{}' > .opencode/ocx.jsonc
   echo "# Project Version" > .opencode/agents/collision-agent.md
   ```
-- [ ] **Commands:**
+- [x] **Commands:**
   ```bash
   $OCX_BIN oc --profile overlay-test run 'cat "$OPENCODE_CONFIG_DIR/agents/collision-agent.md"'
   ```
-- [ ] **Expected:** Project file wins when merged path collides
-- [ ] **Verify:** Output is `# Project Version`
-- [ ] **Run result:** _PENDING_
-- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+- [x] **Expected:** Project file wins when merged path collides
+- [x] **Verify:** Output is `# Project Version`
+- [x] **Run result (2026-03-06):** PASS
+- [x] **Last tested:** _v2.0.0 on 2026-03-06_
 
 ### 12A.5 No-Profile Regression Sanity Check
 
-- [ ] **Setup:** Fresh XDG_CONFIG_HOME with no initialized profiles to avoid default profile interference
+- [x] **Setup:** Fresh XDG_CONFIG_HOME with no initialized profiles to avoid default profile interference
   ```bash
   cd /tmp/ocx-v2-test-project
   unset OCX_PROFILE
@@ -2039,19 +2039,19 @@ Policy semantics:
   rm -rf "$XDG_CONFIG_HOME"
   mkdir -p "$XDG_CONFIG_HOME"
   ```
-- [ ] **Commands:**
+- [x] **Commands:**
   ```bash
   $OCX_BIN oc run 'printf "OPENCODE_DISABLE_PROJECT_CONFIG=%s\n" "${OPENCODE_DISABLE_PROJECT_CONFIG:-<unset>}"'
   ```
-- [ ] **Expected:** No profile mode keeps project-config disable flag unset
-- [ ] **Verify:** Output contains `OPENCODE_DISABLE_PROJECT_CONFIG=<unset>`
-- [ ] **Run result:** _PENDING_
-- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+- [x] **Expected:** No profile mode keeps project-config disable flag unset
+- [x] **Verify:** Output contains `OPENCODE_DISABLE_PROJECT_CONFIG=<unset>`
+- [x] **Run result (2026-03-06):** PASS
+- [x] **Last tested:** _v2.0.0 on 2026-03-06_
 
 ### 12A.6 Cleanup Overlay Test State
 
-- [ ] **Setup:** After completing overlay tests
-- [ ] **Commands:**
+- [x] **Setup:** After completing overlay tests
+- [x] **Commands:**
   ```bash
   # Restore XDG_CONFIG_HOME before global profile cleanup (12A.5 may have switched it)
   export XDG_CONFIG_HOME=/tmp/ocx-v2-test
@@ -2066,8 +2066,8 @@ Policy semantics:
   # Clean up extra XDG dir used by 12A.5
   rm -rf /tmp/ocx-v2-test-no-profile
   ```
-- [ ] **Expected:** Test profile and artifacts removed
-- [ ] **Verify:**
+- [x] **Expected:** Test profile and artifacts removed
+- [x] **Verify:**
   ```bash
   export XDG_CONFIG_HOME=/tmp/ocx-v2-test
   $OCX_BIN profile list --global | grep -q "overlay-test" && echo "FAIL: profile still exists" || echo "OK: profile removed"
@@ -2078,8 +2078,8 @@ Policy semantics:
   test -f /tmp/ocx-v2-test-project/.opencode/ocx.jsonc && echo "FAIL: overlay policy file still exists" || echo "OK: overlay policy removed"
   test -d /tmp/ocx-v2-test-no-profile && echo "FAIL: extra XDG dir still exists" || echo "OK: extra XDG dir removed"
   ```
-- [ ] **Run result:** _PENDING_
-- [ ] **Last tested:** _v2.0.0 on YYYY-MM-DD_
+- [x] **Run result (2026-03-06):** PASS
+- [x] **Last tested:** _v2.0.0 on 2026-03-06_
 
 ---
 
