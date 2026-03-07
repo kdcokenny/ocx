@@ -1782,7 +1782,7 @@ All variations from `cli/commands.mdx` (opencode section).
 - [x] **Command:** `$OCX_BIN oc --no-rename run "echo hello"`
 - [x] **Expected:** Skips automatic window renaming
 - [x] **Verify:** Terminal window name unchanged
-- [x] **Run result (2026-03-07):** PASS — command succeeded and printed `hello`; terminal-title behavior is not directly observable in the non-interactive harness.
+- [x] **Run result (2026-03-07):** Command succeeded and printed `hello`; terminal-title verify condition remains unconfirmed in the non-interactive harness.
 - [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.6 `ocx oc -- --help` (Pass-Through to OpenCode)
@@ -1846,7 +1846,7 @@ All variations from `cli/commands.mdx` (opencode section).
   cat $XDG_CONFIG_HOME/opencode/profiles/work/opencode.jsonc  # Should contain model pins
   # oc run output should indicate work profile is being used
   ```
-- [x] **Run result (2026-03-07):** PASS — local `.opencode/ocx.jsonc` with `{"profile":"work"}` selected the work profile; model pins were verified and output included `hello`.
+- [x] **Run result (2026-03-07):** PASS — observed local `.opencode/ocx.jsonc` with `{"profile":"work"}` and verified model pins; command output included `hello` while using the work profile.
 - [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.10 Profile Resolution: Default Profile Fallback
@@ -1866,7 +1866,7 @@ All variations from `cli/commands.mdx` (opencode section).
   cat .opencode/ocx.jsonc  # Should NOT contain "profile" field
   # Command executes successfully using default profile
   ```
-- [x] **Run result (2026-03-07):** PASS — local config was reset to `{}`; command fell back to the default profile and printed `hello`.
+- [x] **Run result (2026-03-07):** PASS — observed local config reset to `{}` (no profile override); command fell back to the default profile and printed `hello`.
 - [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.11 Custom Binary via Profile Config
