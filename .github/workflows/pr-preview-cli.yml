@@ -42,6 +42,6 @@ jobs:
 
       # Use repo-locked pkg-pr-new from devDependencies.
       - name: Publish PR preview package
-        run: npx --no-install pkg-pr-new publish --bun --bin --packageManager=npm,pnpm,bun ./packages/cli
+        run: npx --no-install pkg-pr-new publish --bin --packageManager=npm,pnpm,bun ./packages/cli
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
