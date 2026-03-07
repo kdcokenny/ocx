@@ -1752,7 +1752,8 @@ All variations from `cli/commands.mdx` (opencode section).
 - [x] **Command:** `$OCX_BIN oc -p work run "echo hello"`
 - [x] **Expected:** Launches with work profile explicitly
 - [x] **Verify:** Command executes successfully
-- [x] **Last tested:** _v2.0.0 on 2026-02-24_
+- [x] **Run result (2026-03-07):** PASS — `Using profile: work` was shown and output included `hello`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.3 `ocx opencode` with `OCX_PROFILE` Environment
 
@@ -1764,7 +1765,8 @@ All variations from `cli/commands.mdx` (opencode section).
   ```
 - [x] **Expected:** Uses profile from environment variable
 - [x] **Verify:** Command executes with work profile
-- [x] **Last tested:** _v2.0.0 on 2026-02-24_
+- [x] **Run result (2026-03-07):** PASS — `OCX_PROFILE=work` was respected; output showed `Using profile: work` and `hello`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.4 `ocx oc` (Alias)
 
@@ -1780,8 +1782,8 @@ All variations from `cli/commands.mdx` (opencode section).
 - [x] **Command:** `$OCX_BIN oc --no-rename run "echo hello"`
 - [x] **Expected:** Skips automatic window renaming
 - [x] **Verify:** Terminal window name unchanged
-- [x] **Run result (2026-02-24):** PASS — with Section 12 deterministic precondition (`unset OCX_PROFILE`), command executed successfully and returned `hello`.
-- [x] **Last tested:** _v2.0.0 on 2026-02-24_
+- [x] **Run result (2026-03-07):** PASS — command succeeded and printed `hello`; terminal-title behavior is not directly observable in the non-interactive harness.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.6 `ocx oc -- --help` (Pass-Through to OpenCode)
 
@@ -1803,7 +1805,8 @@ All variations from `cli/commands.mdx` (opencode section).
   ```
 - [x] **Expected:** Uses work profile (flag overrides env)
 - [x] **Verify:** Work profile used
-- [x] **Last tested:** _v2.0.0 on 2026-02-24_
+- [x] **Run result (2026-03-07):** PASS — with `OCX_PROFILE=default`, `-p work` won; output showed `Using profile: work` and `hello`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.8 Profile Resolution: Environment Variable
 
@@ -1843,7 +1846,8 @@ All variations from `cli/commands.mdx` (opencode section).
   cat $XDG_CONFIG_HOME/opencode/profiles/work/opencode.jsonc  # Should contain model pins
   # oc run output should indicate work profile is being used
   ```
-- [x] **Last tested:** _v2.0.0 on 2026-02-24_
+- [x] **Run result (2026-03-07):** PASS — local `.opencode/ocx.jsonc` with `{"profile":"work"}` selected the work profile; model pins were verified and output included `hello`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.10 Profile Resolution: Default Profile Fallback
 
@@ -1862,7 +1866,8 @@ All variations from `cli/commands.mdx` (opencode section).
   cat .opencode/ocx.jsonc  # Should NOT contain "profile" field
   # Command executes successfully using default profile
   ```
-- [x] **Last tested:** _v2.0.0 on 2026-02-24_
+- [x] **Run result (2026-03-07):** PASS — local config was reset to `{}`; command fell back to the default profile and printed `hello`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12.11 Custom Binary via Profile Config
 
@@ -1960,8 +1965,8 @@ Policy semantics:
   ```
 - [x] **Expected:** Output includes project overlay files in merged config dir
 - [x] **Verify:** Output contains `agents/project-agent.md` and `skills/project-skill.md`
-- [x] **Run result (2026-03-06):** PASS
-- [x] **Last tested:** _v2.0.0 on 2026-03-06_
+- [x] **Run result (2026-03-07):** PASS — merged config output included `agents/project-agent.md` and `skills/project-skill.md`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12A.2 Exclude Blocks Project Candidate
 
@@ -1981,8 +1986,8 @@ Policy semantics:
   ```
 - [x] **Expected:** `agents/blocked-agent.md` is excluded; `skills/allowed-skill.md` remains visible
 - [x] **Verify:** Output does **not** contain `agents/blocked-agent.md` and **does** contain `skills/allowed-skill.md`
-- [x] **Run result (2026-03-06):** PASS
-- [x] **Last tested:** _v2.0.0 on 2026-03-06_
+- [x] **Run result (2026-03-07):** PASS — `agents/blocked-agent.md` was absent and `skills/allowed-skill.md` remained present.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12A.3 Include Re-includes Excluded Candidate (Include Wins)
 
@@ -2002,8 +2007,8 @@ Policy semantics:
   ```
 - [x] **Expected:** Include wins over overlapping exclude
 - [x] **Verify:** Output contains `agents/reincluded-agent.md` and does **not** contain `agents/excluded-agent.md`
-- [x] **Run result (2026-03-06):** PASS
-- [x] **Last tested:** _v2.0.0 on 2026-03-06_
+- [x] **Run result (2026-03-07):** PASS — output contained `agents/reincluded-agent.md` and did not contain `agents/excluded-agent.md`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12A.4 Collision: Project Overrides Profile Candidate
 
@@ -2025,8 +2030,8 @@ Policy semantics:
   ```
 - [x] **Expected:** Project file wins when merged path collides
 - [x] **Verify:** Output is `# Project Version`
-- [x] **Run result (2026-03-06):** PASS
-- [x] **Last tested:** _v2.0.0 on 2026-03-06_
+- [x] **Run result (2026-03-07):** PASS — collision file output was `# Project Version`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12A.5 No-Profile Regression Sanity Check
 
@@ -2045,8 +2050,8 @@ Policy semantics:
   ```
 - [x] **Expected:** No profile mode keeps project-config disable flag unset
 - [x] **Verify:** Output contains `OPENCODE_DISABLE_PROJECT_CONFIG=<unset>`
-- [x] **Run result (2026-03-06):** PASS
-- [x] **Last tested:** _v2.0.0 on 2026-03-06_
+- [x] **Run result (2026-03-07):** PASS — output contained `OPENCODE_DISABLE_PROJECT_CONFIG=<unset>`.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 12A.6 Cleanup Overlay Test State
 
@@ -2078,8 +2083,8 @@ Policy semantics:
   test -f /tmp/ocx-v2-test-project/.opencode/ocx.jsonc && echo "FAIL: overlay policy file still exists" || echo "OK: overlay policy removed"
   test -d /tmp/ocx-v2-test-no-profile && echo "FAIL: extra XDG dir still exists" || echo "OK: extra XDG dir removed"
   ```
-- [x] **Run result (2026-03-06):** PASS
-- [x] **Last tested:** _v2.0.0 on 2026-03-06_
+- [x] **Run result (2026-03-07):** PASS — `overlay-test` was removed, overlay directories/policy file were gone, and `/tmp/ocx-v2-test-no-profile` was removed.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ---
 
@@ -2338,8 +2343,8 @@ From `profiles/overview.mdx` and `profiles/security.mdx` — advanced profile be
   ```
 - [x] **Expected:** Resolved instructions include both profile and project AGENTS.md entries with profile source ordered before project source
 - [x] **Verify:** `/tmp/ocx-13.10-config.txt` contains both entries and shows profile source ordering ahead of project
-- [x] **Run result (2026-02-24):** PASS — global `work` profile was recreated with pinned model and profile/project AGENTS files; deterministic config output showed both sources with profile entry ordered before project entry.
-- [x] **Last tested:** _v2.0.0 on 2026-02-24_
+- [x] **Run result (2026-03-07):** PASS — deterministic config verification showed the profile AGENTS source before the project AGENTS source.
+- [x] **Last tested:** _v2.0.0 on 2026-03-07_
 
 ### 13.11 Global-Only Profile Model
 

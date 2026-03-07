@@ -6,15 +6,18 @@ import {
 	mkdir,
 	readdir,
 	readFile,
+	rename,
+	rm,
 	symlink,
 	writeFile,
 } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import {
 	applyOverlayCopyOperations,
 	loadProjectOverlayPolicy,
 	OPENCODE_MERGED_DIR_PREFIX,
 	planOverlayCopyOperations,
+	prepareMergedConfigDirForProfile,
 } from "../src/commands/opencode-overlay"
 import { EXIT_CODES } from "../src/utils/errors"
 import { cleanupTempDir, createTempDir, runCLIIsolated } from "./helpers"
@@ -388,6 +391,345 @@ describe("opencode overlay planner", () => {
 			expect(destinationSiblings.filter((name) => name.startsWith(".agent.md.ocx-tmp-"))).toEqual(
 				[],
 			)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("detects deterministic destination ancestor swap before parent mkdir", async () => {
+		const testDir = await createTempDir("oc-overlay-destination-swap-before-parent-mkdir")
+		try {
+			const sourcePath = join(testDir, "source.md")
+			const mergedDir = join(testDir, "merged")
+			const outsideDir = join(testDir, "outside")
+			const outsideNestedPath = join(outsideDir, "nested")
+			const outsideTargetPath = join(outsideDir, "agent.md")
+
+			await mkdir(join(mergedDir, "agents"), { recursive: true })
+			await mkdir(outsideDir, { recursive: true })
+			await writeFile(sourcePath, "safe")
+			await writeFile(outsideTargetPath, "outside-before")
+
+			let didSwapDestinationAncestor = false
+			await expect(
+				applyOverlayCopyOperations(
+					[
+						{
+							sourcePath,
+							destinationRelativePath: "agents/nested/agent.md",
+						},
+					],
+					mergedDir,
+					{
+						beforeDestinationParentCreate: async ({ destinationParentPath }) => {
+							if (didSwapDestinationAncestor) {
+								return
+							}
+
+							didSwapDestinationAncestor = true
+							const destinationAncestorPath = dirname(destinationParentPath)
+							await rm(destinationAncestorPath, { recursive: true, force: true })
+							await symlink(outsideDir, destinationAncestorPath)
+						},
+					},
+				),
+			).rejects.toThrow(/validate error/i)
+
+			expect(didSwapDestinationAncestor).toBe(true)
+			expect(await readFile(outsideTargetPath, "utf8")).toBe("outside-before")
+			await expect(lstat(outsideNestedPath)).rejects.toMatchObject({ code: "ENOENT" })
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("fails closed when native-fd hardening mode is required without helper support", async () => {
+		const testDir = await createTempDir("oc-overlay-native-required-no-helper")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(join(localConfigDir, "agents"), { recursive: true })
+			await writeFile(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await writeFile(join(localConfigDir, "agents", "agent.md"), "project-agent")
+
+			await expect(
+				prepareMergedConfigDirForProfile({
+					projectDir: testDir,
+					profileDir,
+					hardeningMode: "native-fd-required",
+				}),
+			).rejects.toThrow(/Native fd helper required for overlay merge/i)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("allows native-fd-required mode when overlay manifest is empty", async () => {
+		const testDir = await createTempDir("oc-overlay-native-required-empty-manifest")
+		let prepared: Awaited<ReturnType<typeof prepareMergedConfigDirForProfile>> | null = null
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(localConfigDir, { recursive: true })
+			await writeFile(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+
+			prepared = await prepareMergedConfigDirForProfile({
+				projectDir: testDir,
+				profileDir,
+				hardeningMode: "native-fd-required",
+			})
+
+			expect(prepared.hardeningLevel).toBe("best-effort-js")
+			expect(await readFile(join(prepared.path, "ocx.jsonc"), "utf8")).toContain("profileMarker")
+		} finally {
+			if (prepared) {
+				await prepared.cleanup()
+			}
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("passes parsed relative manifest operations to injected native helper contract", async () => {
+		const testDir = await createTempDir("oc-overlay-native-helper-contract")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(join(localConfigDir, "agents"), { recursive: true })
+			await writeFile(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await writeFile(join(localConfigDir, "agents", "agent.md"), "project-agent")
+
+			const helperCalls: Array<{ sourceRelativePath: string; destinationRelativePath: string }> = []
+
+			const prepared = await prepareMergedConfigDirForProfile({
+				projectDir: testDir,
+				profileDir,
+				seams: {
+					nativeHelper: {
+						name: "test-native-helper",
+						applyManifest: async (manifest, mergedConfigDir) => {
+							helperCalls.push(
+								...manifest.operations.map((operation) => ({
+									sourceRelativePath: operation.sourceRelativePath,
+									destinationRelativePath: operation.destinationRelativePath,
+								})),
+							)
+
+							for (const operation of manifest.operations) {
+								const sourcePath = join(manifest.projectConfigDir, operation.sourceRelativePath)
+								const destinationPath = join(mergedConfigDir, operation.destinationRelativePath)
+								await mkdir(dirname(destinationPath), { recursive: true })
+								await copyFile(sourcePath, destinationPath)
+							}
+						},
+					},
+				},
+			})
+
+			try {
+				expect(prepared.hardeningLevel).toBe("native-fd")
+				expect(helperCalls).toContainEqual({
+					sourceRelativePath: "agents/agent.md",
+					destinationRelativePath: "agents/agent.md",
+				})
+				expect(await readFile(join(prepared.path, "agents", "agent.md"), "utf8")).toBe(
+					"project-agent",
+				)
+			} finally {
+				await prepared.cleanup()
+			}
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("detects deterministic project overlay root swap during discovery", async () => {
+		const testDir = await createTempDir("oc-overlay-root-swap-during-discovery")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			const localConfigDir = join(testDir, ".opencode")
+			const originalConfigDirBackup = join(testDir, ".opencode-before-swap")
+			const outsideConfigDir = join(testDir, "outside-config")
+
+			await mkdir(join(localConfigDir, "agents"), { recursive: true })
+			await writeFile(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await writeFile(join(localConfigDir, "agents", "agent.md"), "project-agent")
+
+			await mkdir(join(outsideConfigDir, "agents"), { recursive: true })
+			await writeFile(join(outsideConfigDir, "agents", "outside.md"), "outside-agent")
+
+			let didSwapRoot = false
+			await expect(
+				prepareMergedConfigDirForProfile({
+					projectDir: testDir,
+					profileDir,
+					seams: {
+						collection: {
+							beforeScopeInspect: async () => {
+								if (didSwapRoot) {
+									return
+								}
+
+								didSwapRoot = true
+								await rename(localConfigDir, originalConfigDirBackup)
+								await symlink(outsideConfigDir, localConfigDir)
+							},
+						},
+					},
+				}),
+			).rejects.toThrow(/Overlay path changed during overlay discovery/i)
+
+			expect(didSwapRoot).toBe(true)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("detects deterministic ancestor directory swap during discovery", async () => {
+		const testDir = await createTempDir("oc-overlay-ancestor-swap-during-discovery")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			const localConfigDir = join(testDir, ".opencode")
+			const nestedDir = join(localConfigDir, "agents", "nested")
+			const outsideDirectory = join(testDir, "outside-discovery")
+
+			await mkdir(nestedDir, { recursive: true })
+			await writeFile(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await writeFile(join(nestedDir, "agent.md"), "nested-agent")
+
+			await mkdir(outsideDirectory, { recursive: true })
+			await writeFile(join(outsideDirectory, "outside.md"), "outside-agent")
+
+			let didSwapAncestor = false
+			await expect(
+				prepareMergedConfigDirForProfile({
+					projectDir: testDir,
+					profileDir,
+					seams: {
+						collection: {
+							beforeDirectoryRead: async (context: {
+								absolutePath: string
+								overlayRelativePath: string
+							}) => {
+								const { absolutePath, overlayRelativePath } = context
+								if (didSwapAncestor || overlayRelativePath !== "agents/nested") {
+									return
+								}
+
+								didSwapAncestor = true
+								await rm(absolutePath, { recursive: true, force: true })
+								await symlink(outsideDirectory, absolutePath)
+							},
+						},
+					},
+				}),
+			).rejects.toThrow(/Overlay path changed during overlay discovery/i)
+
+			expect(didSwapAncestor).toBe(true)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("detects deterministic source swap between discovery and publish", async () => {
+		const testDir = await createTempDir("oc-overlay-source-swap-before-copy")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			const localConfigDir = join(testDir, ".opencode")
+			const sourcePath = join(localConfigDir, "agents", "agent.md")
+			const outsideSourcePath = join(testDir, "outside-source.md")
+
+			await mkdir(join(localConfigDir, "agents"), { recursive: true })
+			await writeFile(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await writeFile(sourcePath, "project-agent")
+			await writeFile(outsideSourcePath, "outside-agent")
+
+			let didSwapSource = false
+			await expect(
+				prepareMergedConfigDirForProfile({
+					projectDir: testDir,
+					profileDir,
+					seams: {
+						copy: {
+							beforeSourceVerification: async (operation: {
+								sourcePath: string
+								destinationRelativePath: string
+							}) => {
+								if (didSwapSource || operation.destinationRelativePath !== "agents/agent.md") {
+									return
+								}
+
+								didSwapSource = true
+								await rm(operation.sourcePath, { force: true })
+								await symlink(outsideSourcePath, operation.sourcePath)
+							},
+						},
+					},
+				}),
+			).rejects.toThrow(/Overlay path changed during overlay source verification/i)
+
+			expect(didSwapSource).toBe(true)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("detects deterministic destination ancestor swap before publish", async () => {
+		const testDir = await createTempDir("oc-overlay-destination-swap-before-publish")
+		try {
+			const sourcePath = join(testDir, "source.md")
+			const mergedDir = join(testDir, "merged")
+			const outsideDir = join(testDir, "outside")
+			const outsideTargetPath = join(outsideDir, "agent.md")
+
+			await mkdir(join(mergedDir, "agents"), { recursive: true })
+			await mkdir(outsideDir, { recursive: true })
+			await writeFile(sourcePath, "safe")
+			await writeFile(outsideTargetPath, "outside-before")
+
+			let didSwapDestination = false
+			await expect(
+				applyOverlayCopyOperations(
+					[
+						{
+							sourcePath,
+							destinationRelativePath: "agents/agent.md",
+						},
+					],
+					mergedDir,
+					{
+						beforeDestinationPublish: async ({ destinationParentPath }) => {
+							if (didSwapDestination) {
+								return
+							}
+
+							didSwapDestination = true
+							await rm(destinationParentPath, { recursive: true, force: true })
+							await symlink(outsideDir, destinationParentPath)
+						},
+					},
+				),
+			).rejects.toThrow(/Overlay path changed during overlay destination publish/i)
+
+			expect(didSwapDestination).toBe(true)
+			expect(await readFile(outsideTargetPath, "utf8")).toBe("outside-before")
 		} finally {
 			await cleanupTempDir(testDir)
 		}

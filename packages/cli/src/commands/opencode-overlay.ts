@@ -23,8 +23,44 @@ import { validatePath } from "../utils/path-security"
 
 export const OPENCODE_OVERLAY_SOURCE_SCOPES = ["agent", "agents", "skill", "skills"] as const
 export const OPENCODE_MERGED_DIR_PREFIX = "ocx-oc-merged-"
+export const OVERLAY_TRANSACTION_MANIFEST_VERSION = 1
+
+const OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE =
+	"Full TOCTOU/symlink-swap hardening requires an fd-based native helper transaction."
 
 export type OpencodeOcErrorClass = "read" | "parse" | "validate" | "copy" | "spawn" | "cleanup"
+type Awaitable<T> = T | Promise<T>
+
+type OverlayEntryType = "file" | "directory" | "symlink" | "other"
+
+export interface OverlayManifestSourceSnapshot {
+	entryType: OverlayEntryType
+	device: string
+	inode: string
+	mode: string
+	size: string
+	mtimeMs: string
+}
+
+export interface OverlayTransactionManifestOperation {
+	sourceRelativePath: string
+	destinationRelativePath: string
+	sourceSnapshot: OverlayManifestSourceSnapshot
+}
+
+export interface OverlayTransactionManifest {
+	version: typeof OVERLAY_TRANSACTION_MANIFEST_VERSION
+	projectConfigDir: string
+	operations: OverlayTransactionManifestOperation[]
+}
+
+export type OverlayHardeningMode = "best-effort-js" | "native-fd-required"
+export type OverlayHardeningLevel = "best-effort-js" | "native-fd"
+
+export interface OverlayNativeTransactionHelper {
+	readonly name: string
+	applyManifest(manifest: OverlayTransactionManifest, mergedConfigDir: string): Promise<void>
+}
 
 export function createOpencodeOcError(
 	errorClass: OpencodeOcErrorClass,
@@ -71,6 +107,102 @@ function isPathWithin(parentPath: string, childPath: string): boolean {
 	return !relativePath.startsWith("..") && !isAbsolute(relativePath)
 }
 
+function getOverlayEntryType(stats: Awaited<ReturnType<typeof lstat>>): OverlayEntryType {
+	if (stats.isFile()) {
+		return "file"
+	}
+
+	if (stats.isDirectory()) {
+		return "directory"
+	}
+
+	if (stats.isSymbolicLink()) {
+		return "symlink"
+	}
+
+	return "other"
+}
+
+function captureOverlaySnapshot(
+	stats: Awaited<ReturnType<typeof lstat>>,
+): OverlayManifestSourceSnapshot {
+	return {
+		entryType: getOverlayEntryType(stats),
+		device: String(stats.dev),
+		inode: String(stats.ino),
+		mode: String(stats.mode),
+		size: String(stats.size),
+		mtimeMs: String(stats.mtimeMs),
+	}
+}
+
+function overlaySnapshotIdentityMatches(
+	expected: OverlayManifestSourceSnapshot,
+	actual: OverlayManifestSourceSnapshot,
+): boolean {
+	return (
+		expected.entryType === actual.entryType &&
+		expected.device === actual.device &&
+		expected.inode === actual.inode &&
+		expected.mode === actual.mode
+	)
+}
+
+function overlaySnapshotContentMatches(
+	expected: OverlayManifestSourceSnapshot,
+	actual: OverlayManifestSourceSnapshot,
+): boolean {
+	return expected.size === actual.size && expected.mtimeMs === actual.mtimeMs
+}
+
+async function assertPathSnapshotUnchanged(options: {
+	absolutePath: string
+	overlayRelativePath: string
+	expectedSnapshot: OverlayManifestSourceSnapshot
+	phase: string
+	mustRemainDirectory?: boolean
+	mustRemainFile?: boolean
+	compareContent?: boolean
+}): Promise<void> {
+	let currentStats: Awaited<ReturnType<typeof lstat>>
+	try {
+		currentStats = await lstat(options.absolutePath)
+	} catch {
+		throw createOpencodeOcError(
+			"validate",
+			`Overlay path changed during ${options.phase}: ${options.overlayRelativePath}. ${OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE}`,
+		)
+	}
+
+	if (options.mustRemainDirectory && !currentStats.isDirectory()) {
+		throw createOpencodeOcError(
+			"validate",
+			`Overlay path changed during ${options.phase}: ${options.overlayRelativePath}. ${OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE}`,
+		)
+	}
+
+	if (options.mustRemainFile && !currentStats.isFile()) {
+		throw createOpencodeOcError(
+			"validate",
+			`Overlay path changed during ${options.phase}: ${options.overlayRelativePath}. ${OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE}`,
+		)
+	}
+
+	const currentSnapshot = captureOverlaySnapshot(currentStats)
+	const identityMatches = overlaySnapshotIdentityMatches(options.expectedSnapshot, currentSnapshot)
+	const shouldCompareContent = options.compareContent ?? true
+	const contentMatches = !shouldCompareContent
+		? true
+		: overlaySnapshotContentMatches(options.expectedSnapshot, currentSnapshot)
+
+	if (!identityMatches || !contentMatches) {
+		throw createOpencodeOcError(
+			"validate",
+			`Overlay path changed during ${options.phase}: ${options.overlayRelativePath}. ${OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE}`,
+		)
+	}
+}
+
 export interface ProjectOverlayPolicy {
 	include: string[]
 	exclude: string[]
@@ -79,11 +211,25 @@ export interface ProjectOverlayPolicy {
 export interface OverlayCandidate {
 	sourcePath: string
 	overlayRelativePath: string
+	sourceSnapshot?: OverlayManifestSourceSnapshot
 }
 
 export interface OverlayCopyOperation {
 	sourcePath: string
 	destinationRelativePath: string
+	sourceSnapshot?: OverlayManifestSourceSnapshot
+}
+
+export interface OverlayCollectionSeams {
+	beforeScopeInspect?: (context: {
+		scope: (typeof OPENCODE_OVERLAY_SOURCE_SCOPES)[number]
+		scopeAbsolutePath: string
+		projectConfigDir: string
+	}) => Awaitable<void>
+	beforeDirectoryRead?: (context: {
+		absolutePath: string
+		overlayRelativePath: string
+	}) => Awaitable<void>
 }
 
 async function assertSafeOverlayDestinationPath(
@@ -295,6 +441,7 @@ export function planOverlayCopyOperations(
 		.map((candidate) => ({
 			sourcePath: candidate.sourcePath,
 			destinationRelativePath: candidate.overlayRelativePath,
+			sourceSnapshot: candidate.sourceSnapshot,
 		}))
 }
 
@@ -339,6 +486,7 @@ async function collectOverlayCandidatesFromPath(
 	absPath: string,
 	overlayRelativePath: string,
 	collector: OverlayCandidate[],
+	seams: OverlayCollectionSeams,
 ): Promise<void> {
 	let stats: Awaited<ReturnType<typeof lstat>>
 	try {
@@ -354,7 +502,14 @@ async function collectOverlayCandidatesFromPath(
 		await rejectSymlinkEntry(projectConfigRealPath, absPath, overlayRelativePath)
 	}
 
+	const discoveredSnapshot = captureOverlaySnapshot(stats)
+
 	if (stats.isDirectory()) {
+		await seams.beforeDirectoryRead?.({
+			absolutePath: absPath,
+			overlayRelativePath,
+		})
+
 		let children: string[]
 		try {
 			children = await readdir(absPath)
@@ -374,8 +529,17 @@ async function collectOverlayCandidatesFromPath(
 				childAbsolutePath,
 				childRelativePath,
 				collector,
+				seams,
 			)
 		}
+
+		await assertPathSnapshotUnchanged({
+			absolutePath: absPath,
+			overlayRelativePath,
+			expectedSnapshot: discoveredSnapshot,
+			phase: "overlay discovery",
+			mustRemainDirectory: true,
+		})
 		return
 	}
 
@@ -386,10 +550,14 @@ async function collectOverlayCandidatesFromPath(
 	collector.push({
 		sourcePath: absPath,
 		overlayRelativePath: toPosixPath(overlayRelativePath),
+		sourceSnapshot: discoveredSnapshot,
 	})
 }
 
-async function collectOverlayCandidates(projectConfigDir: string): Promise<OverlayCandidate[]> {
+async function collectOverlayCandidates(
+	projectConfigDir: string,
+	seams: OverlayCollectionSeams = {},
+): Promise<OverlayCandidate[]> {
 	let projectConfigRealPath: string
 	try {
 		projectConfigRealPath = await realpath(projectConfigDir)
@@ -400,9 +568,42 @@ async function collectOverlayCandidates(projectConfigDir: string): Promise<Overl
 		)
 	}
 
+	let projectConfigRootStats: Awaited<ReturnType<typeof lstat>>
+	try {
+		projectConfigRootStats = await lstat(projectConfigDir)
+	} catch (error) {
+		throw createOpencodeOcError(
+			"validate",
+			`Unable to inspect project overlay root ${projectConfigDir}: ${formatUnknownError(error)}`,
+		)
+	}
+
+	if (!projectConfigRootStats.isDirectory()) {
+		throw createOpencodeOcError(
+			"validate",
+			`Project overlay root changed before discovery: ${projectConfigDir}. ${OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE}`,
+		)
+	}
+
+	const projectConfigRootSnapshot = captureOverlaySnapshot(projectConfigRootStats)
+
 	const candidates: OverlayCandidate[] = []
 	for (const scope of OPENCODE_OVERLAY_SOURCE_SCOPES) {
 		const scopeAbsolutePath = join(projectConfigDir, scope)
+
+		await seams.beforeScopeInspect?.({
+			scope,
+			scopeAbsolutePath,
+			projectConfigDir,
+		})
+
+		await assertPathSnapshotUnchanged({
+			absolutePath: projectConfigDir,
+			overlayRelativePath: ".opencode",
+			expectedSnapshot: projectConfigRootSnapshot,
+			phase: "overlay discovery",
+			mustRemainDirectory: true,
+		})
 
 		let scopeStats: Awaited<ReturnType<typeof lstat>>
 		try {
@@ -428,6 +629,7 @@ async function collectOverlayCandidates(projectConfigDir: string): Promise<Overl
 			scopeAbsolutePath,
 			scope,
 			candidates,
+			seams,
 		)
 	}
 
@@ -441,6 +643,17 @@ export type OverlayAtomicPublisher = (sourcePath: string, destinationPath: strin
 
 export interface OverlayCopyOperationSeams {
 	publishAtomically?: OverlayAtomicPublisher
+	beforeSourceVerification?: (operation: OverlayCopyOperation) => Awaitable<void>
+	beforeDestinationParentCreate?: (context: {
+		operation: OverlayCopyOperation
+		destinationPath: string
+		destinationParentPath: string
+	}) => Awaitable<void>
+	beforeDestinationPublish?: (context: {
+		operation: OverlayCopyOperation
+		destinationPath: string
+		destinationParentPath: string
+	}) => Awaitable<void>
 }
 
 function buildOverlayTempPublicationPath(destinationPath: string): string {
@@ -477,7 +690,47 @@ export async function applyOverlayCopyOperations(
 ): Promise<void> {
 	const publishAtomically = seams.publishAtomically ?? publishOverlayFileAtomically
 
+	let mergedRootStats: Awaited<ReturnType<typeof lstat>>
+	try {
+		mergedRootStats = await lstat(mergedConfigDir)
+	} catch (error) {
+		throw createOpencodeOcError(
+			"validate",
+			`Unable to inspect merged overlay root ${mergedConfigDir}: ${formatUnknownError(error)}`,
+		)
+	}
+
+	if (!mergedRootStats.isDirectory()) {
+		throw createOpencodeOcError(
+			"validate",
+			`Merged overlay root is not a directory: ${mergedConfigDir}`,
+		)
+	}
+
+	const mergedRootSnapshot = captureOverlaySnapshot(mergedRootStats)
+
 	for (const operation of operations) {
+		await seams.beforeSourceVerification?.(operation)
+
+		if (operation.sourceSnapshot) {
+			await assertPathSnapshotUnchanged({
+				absolutePath: operation.sourcePath,
+				overlayRelativePath: operation.destinationRelativePath,
+				expectedSnapshot: operation.sourceSnapshot,
+				phase: "overlay source verification",
+				mustRemainFile: true,
+			})
+		}
+
+		await assertPathSnapshotUnchanged({
+			absolutePath: mergedConfigDir,
+			overlayRelativePath: ".merged",
+			expectedSnapshot: mergedRootSnapshot,
+			phase: "overlay destination verification",
+			mustRemainDirectory: true,
+			compareContent: false,
+		})
+
 		let destinationPath: string
 		try {
 			destinationPath = validatePath(mergedConfigDir, operation.destinationRelativePath)
@@ -494,10 +747,91 @@ export async function applyOverlayCopyOperations(
 			operation.destinationRelativePath,
 		)
 
+		const destinationParentPath = dirname(destinationPath)
+
+		await seams.beforeDestinationParentCreate?.({
+			operation,
+			destinationPath,
+			destinationParentPath,
+		})
+
+		await assertSafeOverlayDestinationPath(
+			mergedConfigDir,
+			destinationPath,
+			operation.destinationRelativePath,
+		)
+
 		try {
-			await mkdir(dirname(destinationPath), { recursive: true })
+			await mkdir(destinationParentPath, { recursive: true })
+		} catch (error) {
+			throw createOpencodeOcError(
+				"copy",
+				`Failed to copy overlay file ${operation.destinationRelativePath}: ${formatUnknownError(error)}`,
+			)
+		}
+
+		await assertSafeOverlayDestinationPath(
+			mergedConfigDir,
+			destinationPath,
+			operation.destinationRelativePath,
+		)
+
+		let destinationParentStats: Awaited<ReturnType<typeof lstat>>
+		try {
+			destinationParentStats = await lstat(destinationParentPath)
+		} catch (error) {
+			throw createOpencodeOcError(
+				"validate",
+				`Failed to inspect overlay destination parent (${operation.destinationRelativePath}): ${formatUnknownError(error)}`,
+			)
+		}
+
+		if (!destinationParentStats.isDirectory()) {
+			throw createOpencodeOcError(
+				"validate",
+				`Overlay destination parent changed before publish (${operation.destinationRelativePath}). ${OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE}`,
+			)
+		}
+
+		const destinationParentSnapshot = captureOverlaySnapshot(destinationParentStats)
+
+		await seams.beforeDestinationPublish?.({
+			operation,
+			destinationPath,
+			destinationParentPath,
+		})
+
+		await assertPathSnapshotUnchanged({
+			absolutePath: mergedConfigDir,
+			overlayRelativePath: ".merged",
+			expectedSnapshot: mergedRootSnapshot,
+			phase: "overlay destination publish",
+			mustRemainDirectory: true,
+			compareContent: false,
+		})
+
+		await assertPathSnapshotUnchanged({
+			absolutePath: destinationParentPath,
+			overlayRelativePath: operation.destinationRelativePath,
+			expectedSnapshot: destinationParentSnapshot,
+			phase: "overlay destination publish",
+			mustRemainDirectory: true,
+			compareContent: false,
+		})
+
+		await assertSafeOverlayDestinationPath(
+			mergedConfigDir,
+			destinationPath,
+			operation.destinationRelativePath,
+		)
+
+		try {
 			await publishAtomically(operation.sourcePath, destinationPath)
 		} catch (error) {
+			if (error instanceof ConfigError) {
+				throw error
+			}
+
 			throw createOpencodeOcError(
 				"copy",
 				`Failed to copy overlay file ${operation.destinationRelativePath}: ${formatUnknownError(error)}`,
@@ -546,9 +880,117 @@ export async function cleanupMergedConfigDir(mergedConfigDir: string): Promise<v
 	}
 }
 
+function toOverlaySourceRelativePath(projectConfigDir: string, sourcePath: string): string {
+	const relativeSourcePath = toPosixPath(relative(projectConfigDir, sourcePath))
+	if (!relativeSourcePath || relativeSourcePath === ".") {
+		throw createOpencodeOcError(
+			"validate",
+			`Overlay source path failed relative parsing: ${sourcePath}`,
+		)
+	}
+
+	if (
+		relativeSourcePath === ".." ||
+		relativeSourcePath.startsWith("../") ||
+		isAbsolute(relativeSourcePath)
+	) {
+		throw createOpencodeOcError(
+			"validate",
+			`Overlay source path escapes project overlay scope: ${sourcePath}`,
+		)
+	}
+
+	return relativeSourcePath
+}
+
+function buildOverlayTransactionManifest(
+	projectConfigDir: string,
+	operations: readonly OverlayCopyOperation[],
+): OverlayTransactionManifest {
+	const parsedOperations = operations.map((operation) => {
+		if (!operation.sourceSnapshot) {
+			throw createOpencodeOcError(
+				"validate",
+				`Overlay source snapshot missing for ${operation.destinationRelativePath}. ${OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE}`,
+			)
+		}
+
+		return {
+			sourceRelativePath: toOverlaySourceRelativePath(projectConfigDir, operation.sourcePath),
+			destinationRelativePath: operation.destinationRelativePath,
+			sourceSnapshot: operation.sourceSnapshot,
+		}
+	})
+
+	return {
+		version: OVERLAY_TRANSACTION_MANIFEST_VERSION,
+		projectConfigDir,
+		operations: parsedOperations,
+	}
+}
+
+function resolveOverlayNativeTransactionHelper(): OverlayNativeTransactionHelper | null {
+	return null
+}
+
+async function applyOverlayTransactionManifestWithJs(options: {
+	manifest: OverlayTransactionManifest
+	mergedConfigDir: string
+	copySeams?: OverlayCopyOperationSeams
+}): Promise<void> {
+	const operations: OverlayCopyOperation[] = options.manifest.operations.map((operation) => ({
+		sourcePath: validatePath(options.manifest.projectConfigDir, operation.sourceRelativePath),
+		destinationRelativePath: operation.destinationRelativePath,
+		sourceSnapshot: operation.sourceSnapshot,
+	}))
+
+	await applyOverlayCopyOperations(operations, options.mergedConfigDir, options.copySeams)
+}
+
+async function executeOverlayMergeTransaction(options: {
+	manifest: OverlayTransactionManifest
+	mergedConfigDir: string
+	hardeningMode: OverlayHardeningMode
+	copySeams?: OverlayCopyOperationSeams
+	nativeHelper?: OverlayNativeTransactionHelper | null
+}): Promise<OverlayHardeningLevel> {
+	if (options.manifest.operations.length === 0) {
+		return "best-effort-js"
+	}
+
+	const nativeHelper = options.nativeHelper ?? resolveOverlayNativeTransactionHelper()
+	if (nativeHelper) {
+		await nativeHelper.applyManifest(options.manifest, options.mergedConfigDir)
+		return "native-fd"
+	}
+
+	if (options.hardeningMode === "native-fd-required") {
+		throw createOpencodeOcError(
+			"validate",
+			`Native fd helper required for overlay merge, but none is available in this Bun/Node runtime. ${OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE}`,
+		)
+	}
+
+	await applyOverlayTransactionManifestWithJs({
+		manifest: options.manifest,
+		mergedConfigDir: options.mergedConfigDir,
+		copySeams: options.copySeams,
+	})
+
+	return "best-effort-js"
+}
+
+export interface OverlayPrepareSeams {
+	collection?: OverlayCollectionSeams
+	copy?: OverlayCopyOperationSeams
+	nativeHelper?: OverlayNativeTransactionHelper | null
+}
+
 interface PrepareMergedConfigDirOptions {
 	projectDir: string
 	profileDir: string
+	hardeningMode?: OverlayHardeningMode
+	seams?: OverlayPrepareSeams
 }
 
 async function resolveProjectOverlayConfigDir(localConfigDir: string): Promise<string> {
@@ -587,6 +1029,7 @@ async function resolveProjectOverlayConfigDir(localConfigDir: string): Promise<s
 export interface PreparedMergedConfigDir {
 	path: string
 	cleanup: () => Promise<void>
+	hardeningLevel: OverlayHardeningLevel
 }
 
 function toPrimaryPrepareError(error: unknown): ConfigError {
@@ -604,6 +1047,7 @@ export async function prepareMergedConfigDirForProfile(
 	options: PrepareMergedConfigDirOptions,
 ): Promise<PreparedMergedConfigDir> {
 	const localConfigDir = findLocalConfigDir(options.projectDir)
+	const hardeningMode = options.hardeningMode ?? "best-effort-js"
 	let mergedConfigDir: string | null = null
 
 	try {
@@ -611,18 +1055,31 @@ export async function prepareMergedConfigDirForProfile(
 
 		await copyProfileBaseToMergedDir(options.profileDir, mergedConfigDir)
 
+		let hardeningLevel: OverlayHardeningLevel = "best-effort-js"
+
 		if (localConfigDir) {
 			const projectOverlayConfigDir = await resolveProjectOverlayConfigDir(localConfigDir)
 			const policy = await loadProjectOverlayPolicy(projectOverlayConfigDir)
-			const candidates = await collectOverlayCandidates(projectOverlayConfigDir)
+			const candidates = await collectOverlayCandidates(
+				projectOverlayConfigDir,
+				options.seams?.collection,
+			)
 			const copyPlan = planOverlayCopyOperations(candidates, policy)
-			await applyOverlayCopyOperations(copyPlan, mergedConfigDir)
+			const manifest = buildOverlayTransactionManifest(projectOverlayConfigDir, copyPlan)
+			hardeningLevel = await executeOverlayMergeTransaction({
+				manifest,
+				mergedConfigDir,
+				hardeningMode,
+				copySeams: options.seams?.copy,
+				nativeHelper: options.seams?.nativeHelper,
+			})
 		}
 
 		const preparedPath = mergedConfigDir
 		return {
 			path: preparedPath,
 			cleanup: () => cleanupMergedConfigDir(preparedPath),
+			hardeningLevel,
 		}
 	} catch (error) {
 		const primaryError = toPrimaryPrepareError(error)
