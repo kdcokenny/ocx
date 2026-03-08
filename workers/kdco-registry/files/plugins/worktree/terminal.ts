@@ -84,6 +84,41 @@ ${script}
 (goto) 2>nul & del "%~f0"`
 }
 
+/** Build Warp launch configuration YAML for Linux. */
+function buildWarpLaunchConfigYaml(
+	name: string,
+	cwd: string,
+	configPath: string,
+	command?: string,
+): string {
+	const quotedName = JSON.stringify(name)
+	const quotedCwd = JSON.stringify(cwd)
+	const cleanupCommand = `rm -f "${escapeBash(configPath)}"`
+	const commands = [cleanupCommand]
+	if (command) {
+		commands.push(command)
+	}
+	const commandsBlock = `\n          commands:${commands
+		.map((cmd) => `\n            - exec: ${JSON.stringify(cmd)}`)
+		.join("")}`
+
+	return `---
+name: ${quotedName}
+active_window_index: 0
+windows:
+  - active_tab_index: 0
+    tabs:
+      - layout:
+          cwd: ${quotedCwd}${commandsBlock}
+`
+}
+
+/** Get Warp launch configuration directory for current platform user. */
+function getWarpLaunchConfigDir(): string {
+	const xdgDataHome = process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local", "share")
+	return path.join(xdgDataHome, "warp-terminal", "launch_configurations")
+}
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -139,6 +174,7 @@ type LinuxTerminal =
 	| "wezterm"
 	| "alacritty"
 	| "ghostty"
+	| "warp"
 	| "foot"
 	| "gnome-terminal"
 	| "konsole"
@@ -563,6 +599,7 @@ function detectCurrentLinuxTerminal(): LinuxTerminal | null {
 
 	// TERM_PROGRAM fallback
 	const termProgram = env.TERM_PROGRAM?.toLowerCase()
+	if (termProgram === "warpterminal") return "warp"
 	if (termProgram === "foot") return "foot"
 
 	return null
@@ -683,6 +720,28 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 				case "ghostty":
 					result = await tryTerminal("ghostty", ["ghostty", "-e", "bash", scriptPath])
 					break
+				case "warp": {
+					const configName = `worktree-${Date.now()}-${Math.random().toString(36).slice(2)}`
+					const configDir = getWarpLaunchConfigDir()
+					const configPath = path.join(configDir, `${configName}.yaml`)
+					const configContent = buildWarpLaunchConfigYaml(configName, cwd, configPath, command)
+
+					await fs.mkdir(configDir, { recursive: true })
+					await Bun.write(configPath, configContent)
+
+					result = await tryTerminal("warp-terminal", [
+						"warp-terminal",
+						`warp://launch/${encodeURIComponent(configName)}`,
+					])
+
+					if (!result.success) {
+						result = await tryTerminal("warp-terminal", [
+							"warp-terminal",
+							`warp://launch/${encodeURIComponent(`${configName}.yaml`)}`,
+						])
+					}
+					break
+				}
 				case "foot":
 					result = await tryTerminal("foot", [
 						"foot",
