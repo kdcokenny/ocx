@@ -630,14 +630,35 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 			: `cd "${escapedCwd}"\nexec bash`,
 	)
 
-	// Write script directly - it self-deletes via trap
-	// DO NOT use withTempScript - all Linux spawns are detached
-	const scriptPath = path.join(
-		getTempDir(),
-		`worktree-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`,
-	)
-	await Bun.write(scriptPath, scriptContent)
-	await fs.chmod(scriptPath, 0o755)
+	let scriptPath: string | null = null
+	let warpConfigPath: string | null = null
+
+	const cleanupFile = async (filePath: string | null): Promise<void> => {
+		if (!filePath) {
+			return
+		}
+		try {
+			await fs.rm(filePath)
+		} catch {
+			// Best-effort cleanup
+		}
+	}
+
+	const ensureScriptPath = async (): Promise<string> => {
+		if (scriptPath) {
+			return scriptPath
+		}
+
+		// Write script directly - it self-deletes via trap
+		// DO NOT use withTempScript - all Linux spawns are detached
+		scriptPath = path.join(
+			getTempDir(),
+			`worktree-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`,
+		)
+		await Bun.write(scriptPath, scriptContent)
+		await fs.chmod(scriptPath, 0o755)
+		return scriptPath
+	}
 
 	try {
 		// Helper to try a terminal (all detached spawns)
@@ -669,6 +690,7 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 
 			switch (currentTerminal) {
 				case "kitty": {
+					const launchScriptPath = await ensureScriptPath()
 					// Try remote control first (synchronous, script still needed after)
 					const kittyRemote = Bun.spawnSync([
 						"kitty",
@@ -680,7 +702,7 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 						cwd,
 						"--",
 						"bash",
-						scriptPath,
+						launchScriptPath,
 					])
 					if (kittyRemote.exitCode === 0) {
 						return { success: true }
@@ -691,11 +713,12 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 						cwd,
 						"-e",
 						"bash",
-						scriptPath,
+						launchScriptPath,
 					])
 					break
 				}
-				case "wezterm":
+				case "wezterm": {
+					const launchScriptPath = await ensureScriptPath()
 					result = await tryTerminal("wezterm", [
 						"wezterm",
 						"cli",
@@ -704,26 +727,32 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 						cwd,
 						"--",
 						"bash",
-						scriptPath,
+						launchScriptPath,
 					])
 					break
-				case "alacritty":
+				}
+				case "alacritty": {
+					const launchScriptPath = await ensureScriptPath()
 					result = await tryTerminal("alacritty", [
 						"alacritty",
 						"--working-directory",
 						cwd,
 						"-e",
 						"bash",
-						scriptPath,
+						launchScriptPath,
 					])
 					break
-				case "ghostty":
-					result = await tryTerminal("ghostty", ["ghostty", "-e", "bash", scriptPath])
+				}
+				case "ghostty": {
+					const launchScriptPath = await ensureScriptPath()
+					result = await tryTerminal("ghostty", ["ghostty", "-e", "bash", launchScriptPath])
 					break
+				}
 				case "warp": {
 					const configName = `worktree-${Date.now()}-${Math.random().toString(36).slice(2)}`
 					const configDir = getWarpLaunchConfigDir()
 					const configPath = path.join(configDir, `${configName}.yaml`)
+					warpConfigPath = configPath
 					const configContent = buildWarpLaunchConfigYaml(configName, cwd, configPath, command)
 
 					await fs.mkdir(configDir, { recursive: true })
@@ -740,37 +769,48 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 							`warp://launch/${encodeURIComponent(`${configName}.yaml`)}`,
 						])
 					}
+
+					if (!result.success) {
+						await cleanupFile(warpConfigPath)
+						warpConfigPath = null
+					}
 					break
 				}
-				case "foot":
+				case "foot": {
+					const launchScriptPath = await ensureScriptPath()
 					result = await tryTerminal("foot", [
 						"foot",
 						"--working-directory",
 						cwd,
 						"bash",
-						scriptPath,
+						launchScriptPath,
 					])
 					break
-				case "gnome-terminal":
+				}
+				case "gnome-terminal": {
+					const launchScriptPath = await ensureScriptPath()
 					result = await tryTerminal("gnome-terminal", [
 						"gnome-terminal",
 						"--working-directory",
 						cwd,
 						"--",
 						"bash",
-						scriptPath,
+						launchScriptPath,
 					])
 					break
-				case "konsole":
+				}
+				case "konsole": {
+					const launchScriptPath = await ensureScriptPath()
 					result = await tryTerminal("konsole", [
 						"konsole",
 						"--workdir",
 						cwd,
 						"-e",
 						"bash",
-						scriptPath,
+						launchScriptPath,
 					])
 					break
+				}
 				default:
 					result = { tried: false, success: false }
 			}
@@ -781,11 +821,13 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 		}
 
 		// 2. xdg-terminal-exec (modern XDG standard)
+		const launchScriptPath = await ensureScriptPath()
+
 		const xdgResult = await tryTerminal("xdg-terminal-exec", [
 			"xdg-terminal-exec",
 			"--",
 			"bash",
-			scriptPath,
+			launchScriptPath,
 		])
 		if (xdgResult.success) return { success: true }
 
@@ -794,23 +836,23 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 			"x-terminal-emulator",
 			"-e",
 			"bash",
-			scriptPath,
+			launchScriptPath,
 		])
 		if (xteResult.success) return { success: true }
 
 		// 4. Modern terminals fallback
 		const modernTerminals: Array<{ name: string; args: string[] }> = [
-			{ name: "kitty", args: ["kitty", "--directory", cwd, "-e", "bash", scriptPath] },
+			{ name: "kitty", args: ["kitty", "--directory", cwd, "-e", "bash", launchScriptPath] },
 			{
 				name: "alacritty",
-				args: ["alacritty", "--working-directory", cwd, "-e", "bash", scriptPath],
+				args: ["alacritty", "--working-directory", cwd, "-e", "bash", launchScriptPath],
 			},
 			{
 				name: "wezterm",
-				args: ["wezterm", "cli", "spawn", "--cwd", cwd, "--", "bash", scriptPath],
+				args: ["wezterm", "cli", "spawn", "--cwd", cwd, "--", "bash", launchScriptPath],
 			},
-			{ name: "ghostty", args: ["ghostty", "-e", "bash", scriptPath] },
-			{ name: "foot", args: ["foot", "--working-directory", cwd, "bash", scriptPath] },
+			{ name: "ghostty", args: ["ghostty", "-e", "bash", launchScriptPath] },
+			{ name: "foot", args: ["foot", "--working-directory", cwd, "bash", launchScriptPath] },
 		]
 
 		for (const { name, args } of modernTerminals) {
@@ -822,12 +864,12 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 		const deTerminals: Array<{ name: string; args: string[] }> = [
 			{
 				name: "gnome-terminal",
-				args: ["gnome-terminal", "--working-directory", cwd, "--", "bash", scriptPath],
+				args: ["gnome-terminal", "--working-directory", cwd, "--", "bash", launchScriptPath],
 			},
-			{ name: "konsole", args: ["konsole", "--workdir", cwd, "-e", "bash", scriptPath] },
+			{ name: "konsole", args: ["konsole", "--workdir", cwd, "-e", "bash", launchScriptPath] },
 			{
 				name: "xfce4-terminal",
-				args: ["xfce4-terminal", "--working-directory", cwd, "-x", "bash", scriptPath],
+				args: ["xfce4-terminal", "--working-directory", cwd, "-x", "bash", launchScriptPath],
 			},
 		]
 
@@ -837,17 +879,18 @@ export async function openLinuxTerminal(cwd: string, command?: string): Promise<
 		}
 
 		// 6. Last resort: xterm
-		const xtermResult = await tryTerminal("xterm", ["xterm", "-e", "bash", scriptPath])
+		const xtermResult = await tryTerminal("xterm", ["xterm", "-e", "bash", launchScriptPath])
 		if (xtermResult.success) return { success: true }
 
-		// No terminal found - clean up the orphaned script
-		try {
-			await fs.rm(scriptPath)
-		} catch {
-			// Best-effort cleanup
-		}
+		// No terminal found - clean up orphaned temp files
+		await cleanupFile(scriptPath)
+		await cleanupFile(warpConfigPath)
+		scriptPath = null
+		warpConfigPath = null
 		return { success: false, error: "No terminal emulator found" }
 	} catch (error) {
+		await cleanupFile(scriptPath)
+		await cleanupFile(warpConfigPath)
 		return {
 			success: false,
 			error: `Failed to spawn terminal: ${error instanceof Error ? error.message : String(error)}`,
