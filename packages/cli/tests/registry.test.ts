@@ -8,7 +8,7 @@ import { type MockRegistry, startMockRegistry } from "./mock-registry"
 
 /** Type for parsed ocx config in tests */
 interface TestOcxConfig {
-	registries: Record<string, { url: string }>
+	registries: Record<string, { url: string; source?: string }>
 	lockRegistries?: boolean
 }
 
@@ -847,6 +847,195 @@ describe("registry commands with --profile", () => {
 		expect(localReg).toBeDefined()
 		// Since both use same alias (kdco), local wins (profile env var ignored)
 		expect(output.data.registries).toHaveLength(1)
+	})
+})
+
+describe("GitHub registry protocol", () => {
+	let testDir: string
+	let mockRegistry: MockRegistry
+
+	beforeEach(async () => {
+		testDir = await createTempDir("registry-github-test")
+		await runCLI(["init"], testDir)
+		mockRegistry = startMockRegistry()
+	})
+
+	afterEach(async () => {
+		mockRegistry.stop()
+		await cleanupTempDir(testDir)
+	})
+
+	it("should store and list GitHub registry with source field", async () => {
+		const configPath = join(testDir, ".opencode", "ocx.jsonc")
+		const configContent = await Bun.file(configPath).text()
+		const config = parseJsonc(configContent) as TestOcxConfig
+
+		config.registries["github-test"] = {
+			url: mockRegistry.url,
+		}
+		config.registries["github-test-with-source"] = {
+			url: mockRegistry.url,
+			source: "github:test-org/test-repo@main",
+		}
+
+		await Bun.write(configPath, JSON.stringify(config, null, 2))
+
+		const { exitCode, stdout } = await runCLI(["registry", "list", "--json"], testDir)
+
+		expect(exitCode).toBe(0)
+		const output = JSON.parse(stdout)
+		const registries = output.data?.registries || []
+
+		const regularReg = registries.find((r: { name: string }) => r.name === "github-test")
+		expect(regularReg).toBeDefined()
+		expect(regularReg.url).toBe(mockRegistry.url)
+		expect(regularReg.source).toBeUndefined()
+
+		const githubReg = registries.find((r: { name: string }) => r.name === "github-test-with-source")
+		expect(githubReg).toBeDefined()
+		expect(githubReg.source).toBe("github:test-org/test-repo@main")
+		expect(githubReg.url).toBe(mockRegistry.url)
+	})
+
+	it("should remove GitHub registry with source field", async () => {
+		const configPath = join(testDir, ".opencode", "ocx.jsonc")
+		const configContent = await Bun.file(configPath).text()
+		const config = parseJsonc(configContent) as TestOcxConfig
+
+		config.registries["github-test"] = {
+			url: mockRegistry.url,
+			source: "github:test-org/test-repo",
+		}
+
+		await Bun.write(configPath, JSON.stringify(config, null, 2))
+
+		const { exitCode, output } = await runCLI(["registry", "remove", "github-test"], testDir)
+
+		expect(exitCode).toBe(0)
+		expect(output).toContain("Removed registry from local config: github-test")
+
+		const afterContent = await Bun.file(configPath).text()
+		const afterConfig = parseJsonc(afterContent) as TestOcxConfig
+		expect(afterConfig.registries["github-test"]).toBeUndefined()
+	})
+
+	it("should display github: source in human-readable list output", async () => {
+		const configPath = join(testDir, ".opencode", "ocx.jsonc")
+		const configContent = await Bun.file(configPath).text()
+		const config = parseJsonc(configContent) as TestOcxConfig
+
+		config.registries["gh-repo"] = {
+			url: mockRegistry.url,
+			source: "github:myorg/my-registry@v2",
+		}
+
+		await Bun.write(configPath, JSON.stringify(config, null, 2))
+
+		const { exitCode, stdout } = await runCLI(["registry", "list"], testDir)
+
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain("gh-repo")
+		expect(stdout).toContain("github:myorg/my-registry@v2")
+	})
+
+	it("should preserve source field through add/remove operations", async () => {
+		const configPath = join(testDir, ".opencode", "ocx.jsonc")
+		const configContent = await Bun.file(configPath).text()
+		const config = parseJsonc(configContent) as TestOcxConfig
+
+		config.registries["test-1"] = {
+			url: mockRegistry.url,
+			source: "github:org/repo@main",
+		}
+		config.registries["test-2"] = {
+			url: mockRegistry.url,
+			source: "github:org/repo@develop",
+		}
+
+		await Bun.write(configPath, JSON.stringify(config, null, 2))
+
+		await runCLI(["registry", "remove", "test-1"], testDir)
+
+		const afterContent = await Bun.file(configPath).text()
+		const afterConfig = parseJsonc(afterContent) as TestOcxConfig
+
+		expect(afterConfig.registries["test-1"]).toBeUndefined()
+		expect(afterConfig.registries["test-2"]).toBeDefined()
+		expect(afterConfig.registries["test-2"].source).toBe("github:org/repo@develop")
+	})
+
+	it("should handle registries with and without source field together", async () => {
+		const configPath = join(testDir, ".opencode", "ocx.jsonc")
+		const configContent = await Bun.file(configPath).text()
+		const config = parseJsonc(configContent) as TestOcxConfig
+
+		config.registries["http-registry"] = {
+			url: mockRegistry.url,
+		}
+		config.registries["github-registry"] = {
+			url: mockRegistry.url,
+			source: "github:test/repo",
+		}
+
+		await Bun.write(configPath, JSON.stringify(config, null, 2))
+
+		const { exitCode, stdout } = await runCLI(["registry", "list", "--json"], testDir)
+
+		expect(exitCode).toBe(0)
+		const output = JSON.parse(stdout)
+		const registries = output.data?.registries || []
+
+		expect(registries).toHaveLength(2)
+		const httpReg = registries.find((r: { name: string }) => r.name === "http-registry")
+		const ghReg = registries.find((r: { name: string }) => r.name === "github-registry")
+
+		expect(httpReg.source).toBeUndefined()
+		expect(ghReg.source).toBe("github:test/repo")
+	})
+
+	it("should support source field with different ref formats", async () => {
+		const configPath = join(testDir, ".opencode", "ocx.jsonc")
+		const configContent = await Bun.file(configPath).text()
+		const config = parseJsonc(configContent) as TestOcxConfig
+
+		config.registries["branch-ref"] = {
+			url: mockRegistry.url,
+			source: "github:org/repo@develop",
+		}
+		config.registries["tag-ref"] = {
+			url: mockRegistry.url,
+			source: "github:org/repo@v1.2.3",
+		}
+		config.registries["sha-ref"] = {
+			url: mockRegistry.url,
+			source: "github:org/repo@abc123def456",
+		}
+		config.registries["slash-ref"] = {
+			url: mockRegistry.url,
+			source: "github:org/repo@feature/my-feature",
+		}
+
+		await Bun.write(configPath, JSON.stringify(config, null, 2))
+
+		const { exitCode, stdout } = await runCLI(["registry", "list", "--json"], testDir)
+
+		expect(exitCode).toBe(0)
+		const output = JSON.parse(stdout)
+		const registries = output.data?.registries || []
+
+		expect(registries).toHaveLength(4)
+		expect(registries.find((r: { name: string }) => r.name === "branch-ref").source).toBe(
+			"github:org/repo@develop",
+		)
+		expect(registries.find((r: { name: string }) => r.name === "tag-ref").source).toBe(
+			"github:org/repo@v1.2.3",
+		)
+		expect(registries.find((r: { name: string }) => r.name === "sha-ref").source).toBe(
+			"github:org/repo@abc123def456",
+		)
+		expect(registries.find((r: { name: string }) => r.name === "slash-ref").source).toBe(
+			"github:org/repo@feature/my-feature",
+		)
 	})
 })
 

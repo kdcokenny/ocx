@@ -96,15 +96,12 @@ describe("Integration: Local Workflow", () => {
 	})
 
 	it("should complete full local project setup", async () => {
-		// Step 1: Initialize local config
 		const init = await runCLI(["init"], testDir)
 		expect(init.exitCode).toBe(0)
 
-		// Step 2: Add a registry (V2: use namespace kdco)
 		const add = await runCLI(["registry", "add", registry.url, "--name", "kdco"], testDir)
 		expect(add.exitCode).toBe(0)
 
-		// Step 3: List registries - verify it was added
 		const list = await runCLI(["registry", "list", "--json"], testDir)
 		expect(list.exitCode).toBe(0)
 		const listOutput = JSON.parse(list.stdout)
@@ -112,16 +109,101 @@ describe("Integration: Local Workflow", () => {
 			listOutput.data?.registries || listOutput.registries || []
 		expect(registries.find((r) => r.name === "kdco")).toBeDefined()
 
-		// Step 4: Remove the registry
 		const remove = await runCLI(["registry", "remove", "kdco"], testDir)
 		expect(remove.exitCode).toBe(0)
 
-		// Step 5: Verify it's gone
 		const listAfter = await runCLI(["registry", "list", "--json"], testDir)
 		expect(listAfter.exitCode).toBe(0)
 		const afterOutput = JSON.parse(listAfter.stdout)
 		const regsAfter: Array<{ name: string }> =
 			afterOutput.data?.registries || afterOutput.registries || []
 		expect(regsAfter.find((r) => r.name === "kdco")).toBeUndefined()
+	})
+})
+
+describe("Integration: GitHub Registry Workflow", () => {
+	let testDir: string
+	let registry: MockRegistry
+
+	beforeEach(async () => {
+		testDir = await mkdtemp(join(tmpdir(), "ocx-integration-github-"))
+		registry = startMockRegistry()
+	})
+
+	afterEach(async () => {
+		registry.stop()
+		await rm(testDir, { recursive: true, force: true })
+	})
+
+	it("should preserve GitHub source field through component operations", async () => {
+		const init = await runCLI(["init"], testDir)
+		expect(init.exitCode).toBe(0)
+
+		const configPath = join(testDir, ".opencode", "ocx.jsonc")
+		const configContent = await Bun.file(configPath).text()
+		const config = JSON.parse(configContent) as {
+			registries: Record<string, { url: string; source?: string }>
+		}
+
+		config.registries["gh-test"] = {
+			url: registry.url,
+			source: "github:test-org/test-repo@main",
+		}
+		config.registries["http-test"] = {
+			url: registry.url,
+		}
+
+		await Bun.write(configPath, JSON.stringify(config, null, 2))
+
+		const listBefore = await runCLI(["registry", "list", "--json"], testDir)
+		expect(listBefore.exitCode).toBe(0)
+		const beforeOutput = JSON.parse(listBefore.stdout)
+		const beforeRegistries = beforeOutput.data?.registries || []
+		expect(beforeRegistries).toHaveLength(2)
+
+		const ghReg = beforeRegistries.find((r: { name: string }) => r.name === "gh-test")
+		expect(ghReg).toBeDefined()
+		expect(ghReg.source).toBe("github:test-org/test-repo@main")
+
+		const httpReg = beforeRegistries.find((r: { name: string }) => r.name === "http-test")
+		expect(httpReg).toBeDefined()
+		expect(httpReg.source).toBeUndefined()
+
+		const addComponent = await runCLI(["add", "http-test/test-plugin"], testDir)
+		expect(addComponent.exitCode).toBe(0)
+
+		const pluginPath = join(testDir, ".opencode", "plugins", "test-plugin.ts")
+		const pluginExists = await Bun.file(pluginPath).exists()
+		expect(pluginExists).toBe(true)
+
+		const listAfterAdd = await runCLI(["registry", "list", "--json"], testDir)
+		expect(listAfterAdd.exitCode).toBe(0)
+		const afterAddOutput = JSON.parse(listAfterAdd.stdout)
+		const afterAddRegs = afterAddOutput.data?.registries || []
+		const ghRegAfterAdd = afterAddRegs.find((r: { name: string }) => r.name === "gh-test")
+		expect(ghRegAfterAdd.source).toBe("github:test-org/test-repo@main")
+
+		const removeHttpRegistry = await runCLI(["registry", "remove", "http-test"], testDir)
+		expect(removeHttpRegistry.exitCode).toBe(0)
+
+		const listAfterHttpRemove = await runCLI(["registry", "list", "--json"], testDir)
+		expect(listAfterHttpRemove.exitCode).toBe(0)
+		const afterHttpRemoveOutput = JSON.parse(listAfterHttpRemove.stdout)
+		const afterHttpRemoveRegs = afterHttpRemoveOutput.data?.registries || []
+		expect(afterHttpRemoveRegs).toHaveLength(1)
+		const ghRegAfterHttpRemove = afterHttpRemoveRegs.find(
+			(r: { name: string }) => r.name === "gh-test",
+		)
+		expect(ghRegAfterHttpRemove).toBeDefined()
+		expect(ghRegAfterHttpRemove.source).toBe("github:test-org/test-repo@main")
+
+		const removeGhRegistry = await runCLI(["registry", "remove", "gh-test"], testDir)
+		expect(removeGhRegistry.exitCode).toBe(0)
+
+		const listAfterAll = await runCLI(["registry", "list", "--json"], testDir)
+		expect(listAfterAll.exitCode).toBe(0)
+		const afterAllOutput = JSON.parse(listAfterAll.stdout)
+		const afterAllRegs = afterAllOutput.data?.registries || []
+		expect(afterAllRegs).toHaveLength(0)
 	})
 })

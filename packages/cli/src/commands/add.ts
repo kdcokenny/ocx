@@ -15,6 +15,7 @@ import { ConfigResolver } from "../config/resolver"
 import { CLI_VERSION, GITHUB_REPO } from "../constants"
 import { getProfileDir } from "../profile/paths"
 import { fetchFileContent, fetchRegistryIndex } from "../registry/fetcher"
+import { resolveHeadersForRegistry } from "../registry/headers"
 import type { ResolvedComponent } from "../registry/resolver"
 import { resolveDependencies } from "../registry/resolver"
 import {
@@ -515,7 +516,9 @@ async function runRegistryAddCore(
 		}
 
 		// Fetch registry index to validate the URL serves a valid registry (alias-first: ignore its namespace)
-		await fetchRegistryIndex(fromUrl)
+		const ephemeralConfig = { url: fromUrl }
+		const ephemeralHeaders = await resolveHeadersForRegistry(ephemeralConfig)
+		await fetchRegistryIndex(fromUrl, ephemeralHeaders)
 
 		// Create ephemeral registry config (does not persist)
 		effectiveRegistries = {
@@ -551,7 +554,8 @@ async function runRegistryAddCore(
 		for (const registryAlias of requestedRegistries) {
 			const registryConfig = effectiveRegistries[registryAlias]
 			if (registryConfig) {
-				await fetchRegistryIndex(registryConfig.url)
+				const headers = await resolveHeadersForRegistry(registryConfig)
+				await fetchRegistryIndex(registryConfig.url, headers)
 			}
 		}
 
@@ -576,7 +580,12 @@ async function runRegistryAddCore(
 		}
 
 		for (const [namespace, baseUrl] of uniqueBaseUrls) {
-			const index = await fetchRegistryIndex(baseUrl)
+			const registryConfig = effectiveRegistries[namespace]
+			if (!registryConfig) {
+				throw new ValidationError(`Registry config not found for alias "${namespace}"`)
+			}
+			const headers = await resolveHeadersForRegistry(registryConfig)
+			const index = await fetchRegistryIndex(baseUrl, headers)
 			registryIndexes.set(namespace, index)
 		}
 
@@ -652,9 +661,19 @@ async function runRegistryAddCore(
 
 		for (const component of resolved.components) {
 			// Fetch component files and compute bundle hash
+			const registryConfig = effectiveRegistries[component.registryName]
+			if (!registryConfig) {
+				throw new ValidationError(`Registry config not found for alias "${component.registryName}"`)
+			}
+			const headers = await resolveHeadersForRegistry(registryConfig)
 			const files: { path: string; content: Buffer }[] = []
 			for (const file of component.files) {
-				const content = await fetchFileContent(component.baseUrl, component.name, file.path)
+				const content = await fetchFileContent(
+					component.baseUrl,
+					component.name,
+					file.path,
+					headers,
+				)
 				files.push({ path: file.path, content: Buffer.from(content) })
 			}
 

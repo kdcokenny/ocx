@@ -26,6 +26,9 @@ export const registryConfigSchema = z.object({
 
 	/** Optional auth headers (supports ${ENV_VAR} expansion) */
 	headers: z.record(z.string()).optional(),
+
+	/** Optional original input (e.g., "github:owner/repo@main") */
+	source: z.string().optional(),
 })
 
 export type RegistryConfig = z.infer<typeof registryConfigSchema>

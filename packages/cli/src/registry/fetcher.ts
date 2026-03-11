@@ -193,7 +193,10 @@ function hasLegacySignalsInManifest(manifest: unknown): boolean {
 	return collectLegacyManifestTargetIssues(manifest).length > 0
 }
 
-async function resolveRegistrySchemaMode(baseUrl: string): Promise<RegistrySchemaMode | null> {
+async function resolveRegistrySchemaMode(
+	baseUrl: string,
+	headers?: Record<string, string>,
+): Promise<RegistrySchemaMode | null> {
 	const normalizedBaseUrl = normalizeRegistryUrl(baseUrl)
 	const cachedMode = registrySchemaModeCache.get(normalizedBaseUrl)
 	if (cachedMode) {
@@ -201,7 +204,7 @@ async function resolveRegistrySchemaMode(baseUrl: string): Promise<RegistrySchem
 	}
 
 	try {
-		await fetchRegistryIndex(normalizedBaseUrl)
+		await fetchRegistryIndex(normalizedBaseUrl, headers)
 	} catch (error) {
 		if (error instanceof NetworkError || error instanceof NotFoundError) {
 			return null
@@ -390,13 +393,25 @@ function adaptLegacyRegistryIndex(data: unknown, url: string): unknown {
 }
 
 /**
+ * Helper to detect if headers contain authentication credentials
+ */
+function hasAuthHeaders(headers?: Record<string, string>): boolean {
+	if (!headers) return false
+	const authHeaderNames = ["authorization", "x-api-key", "x-auth-token", "api-key"]
+	return Object.keys(headers).some((key) => authHeaderNames.includes(key.toLowerCase()))
+}
+
+/**
  * Fetch with caching - deduplicates concurrent requests
  */
 async function fetchWithCache<T>(
 	url: string,
 	parse: (data: unknown) => T | Promise<T>,
+	headers?: Record<string, string>,
 ): Promise<T> {
-	const cached = cache.get(url)
+	// Use auth-aware cache key to prevent cache poisoning between authed/unauthed requests
+	const cacheKey = hasAuthHeaders(headers) ? `${url}@auth` : url
+	const cached = cache.get(cacheKey)
 	if (cached) {
 		return cached as Promise<T>
 	}
@@ -404,7 +419,7 @@ async function fetchWithCache<T>(
 	const promise = (async () => {
 		let response: Response
 		try {
-			response = await fetch(url)
+			response = await fetch(url, { headers })
 		} catch (error) {
 			throw new NetworkError(
 				`Network request failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,
@@ -436,10 +451,10 @@ async function fetchWithCache<T>(
 		return await parse(data)
 	})()
 
-	cache.set(url, promise)
+	cache.set(cacheKey, promise)
 
 	// Clean up cache on error
-	promise.catch(() => cache.delete(url))
+	promise.catch(() => cache.delete(cacheKey))
 
 	return promise
 }
@@ -470,84 +485,95 @@ export function classifyRegistryIndexIssue(data: unknown): {
 /**
  * Fetch registry index
  */
-export async function fetchRegistryIndex(baseUrl: string): Promise<RegistryIndex> {
+export async function fetchRegistryIndex(
+	baseUrl: string,
+	headers?: Record<string, string>,
+): Promise<RegistryIndex> {
 	const normalizedBaseUrl = normalizeRegistryUrl(baseUrl)
 	const url = `${normalizedBaseUrl}/index.json`
 
-	return fetchWithCache(url, (data) => {
-		// Pre-schema classification: detect known incompatible formats
-		const classification = classifyRegistryIndexIssue(data)
+	return fetchWithCache(
+		url,
+		(data) => {
+			// Pre-schema classification: detect known incompatible formats
+			const classification = classifyRegistryIndexIssue(data)
 
-		if (classification && classification.issue !== "legacy-schema-v1") {
-			throw createCompatibilityError(url, classification)
-		}
+			if (classification && classification.issue !== "legacy-schema-v1") {
+				throw createCompatibilityError(url, classification)
+			}
 
-		let candidateData = data
-		let schemaMode: RegistrySchemaMode = "v2"
-		if (classification?.issue === "legacy-schema-v1") {
-			schemaMode = "legacy-v1"
-			try {
-				candidateData = adaptLegacyRegistryIndex(data, url)
-			} catch (error) {
-				if (error instanceof RegistryCompatibilityError) {
-					throw error
+			let candidateData = data
+			let schemaMode: RegistrySchemaMode = "v2"
+			if (classification?.issue === "legacy-schema-v1") {
+				schemaMode = "legacy-v1"
+				try {
+					candidateData = adaptLegacyRegistryIndex(data, url)
+				} catch (error) {
+					if (error instanceof RegistryCompatibilityError) {
+						throw error
+					}
+
+					const reason = error instanceof Error ? error.message : String(error)
+					throw new RegistryCompatibilityError(
+						`Registry at ${url} uses legacy schema v1 but cannot be adapted safely. ${reason}`,
+						{
+							url,
+							issue: "invalid-format",
+							remediation:
+								"Fix the legacy payload shape (types/descriptions/components) or upgrade the registry to v2.",
+						},
+					)
 				}
+			} else {
+				const legacyTypeIssues = collectLegacyV2TypeIssues(candidateData)
+				if (legacyTypeIssues.length > 0) {
+					const firstIssue = legacyTypeIssues[0]
+					if (!firstIssue) {
+						throw new Error("Unexpected missing legacy type issue")
+					}
 
-				const reason = error instanceof Error ? error.message : String(error)
+					const canonicalType = LEGACY_COMPONENT_TYPE_ALIAS_MAP[firstIssue.type]
+					throw new RegistryCompatibilityError(
+						`Registry at ${url} uses legacy component type "${firstIssue.type}" in ${firstIssue.path}. Use "${canonicalType}" for v2 registries.`,
+						{
+							url,
+							issue: "invalid-format",
+							remediation: `Replace legacy type "${firstIssue.type}" with canonical "${canonicalType}" in v2 manifests.`,
+						},
+					)
+				}
+			}
+
+			const result = registryIndexSchema.safeParse(candidateData)
+			if (!result.success) {
 				throw new RegistryCompatibilityError(
-					`Registry at ${url} uses legacy schema v1 but cannot be adapted safely. ${reason}`,
+					`Registry at ${url} returned an unrecognized index format. Ensure it follows the OCX registry specification. Schema error: ${result.error.message}`,
 					{
 						url,
 						issue: "invalid-format",
 						remediation:
-							"Fix the legacy payload shape (types/descriptions/components) or upgrade the registry to v2.",
+							"Ensure the registry index follows the OCX registry specification. " +
+							`Schema error: ${result.error.message}`,
 					},
 				)
 			}
-		} else {
-			const legacyTypeIssues = collectLegacyV2TypeIssues(candidateData)
-			if (legacyTypeIssues.length > 0) {
-				const firstIssue = legacyTypeIssues[0]
-				if (!firstIssue) {
-					throw new Error("Unexpected missing legacy type issue")
-				}
 
-				const canonicalType = LEGACY_COMPONENT_TYPE_ALIAS_MAP[firstIssue.type]
-				throw new RegistryCompatibilityError(
-					`Registry at ${url} uses legacy component type "${firstIssue.type}" in ${firstIssue.path}. Use "${canonicalType}" for v2 registries.`,
-					{
-						url,
-						issue: "invalid-format",
-						remediation: `Replace legacy type "${firstIssue.type}" with canonical "${canonicalType}" in v2 manifests.`,
-					},
-				)
-			}
-		}
-
-		const result = registryIndexSchema.safeParse(candidateData)
-		if (!result.success) {
-			throw new RegistryCompatibilityError(
-				`Registry at ${url} returned an unrecognized index format. Ensure it follows the OCX registry specification. Schema error: ${result.error.message}`,
-				{
-					url,
-					issue: "invalid-format",
-					remediation:
-						"Ensure the registry index follows the OCX registry specification. " +
-						`Schema error: ${result.error.message}`,
-				},
-			)
-		}
-
-		registrySchemaModeCache.set(normalizedBaseUrl, schemaMode)
-		return result.data
-	})
+			registrySchemaModeCache.set(normalizedBaseUrl, schemaMode)
+			return result.data
+		},
+		headers,
+	)
 }
 
 /**
  * Fetch a component from registry and return the latest manifest
  */
-export async function fetchComponent(baseUrl: string, name: string): Promise<ComponentManifest> {
-	const result = await fetchComponentVersion(baseUrl, name)
+export async function fetchComponent(
+	baseUrl: string,
+	name: string,
+	headers?: Record<string, string>,
+): Promise<ComponentManifest> {
+	const result = await fetchComponentVersion(baseUrl, name, undefined, headers)
 	return result.manifest
 }
 
@@ -559,73 +585,78 @@ export async function fetchComponentVersion(
 	baseUrl: string,
 	name: string,
 	version?: string,
+	headers?: Record<string, string>,
 ): Promise<{ manifest: ComponentManifest; version: string }> {
 	const url = `${normalizeRegistryUrl(baseUrl)}/components/${name}.json`
 
-	return fetchWithCache(`${url}#v=${version ?? "latest"}`, async (data) => {
-		// 1. Parse as packument
-		const packumentResult = packumentEnvelopeSchema.safeParse(data)
-		if (!packumentResult.success) {
-			throw new ValidationError(
-				`Invalid packument format for "${name}": ${packumentResult.error.message}`,
-			)
-		}
-
-		const packument = packumentResult.data
-
-		// 2. Resolve version (specific or latest)
-		const resolvedVersion = version ?? packument["dist-tags"].latest
-		const manifest = packument.versions[resolvedVersion]
-
-		if (!manifest) {
-			if (version) {
-				const availableVersions = Object.keys(packument.versions).join(", ")
+	return fetchWithCache(
+		`${url}#v=${version ?? "latest"}`,
+		async (data) => {
+			// 1. Parse as packument
+			const packumentResult = packumentEnvelopeSchema.safeParse(data)
+			if (!packumentResult.success) {
 				throw new ValidationError(
-					`Component "${name}" has no version "${version}". Available: ${availableVersions}`,
+					`Invalid packument format for "${name}": ${packumentResult.error.message}`,
 				)
 			}
-			throw new ValidationError(
-				`Component "${name}" has no manifest for latest version ${resolvedVersion}`,
-			)
-		}
 
-		// 3. Validate manifest (legacy adaptation is version-gated)
-		const context = `component "${name}@${resolvedVersion}"`
-		let candidateManifest: unknown = manifest
+			const packument = packumentResult.data
 
-		if (hasLegacySignalsInManifest(manifest)) {
-			const schemaMode = await resolveRegistrySchemaMode(baseUrl)
+			// 2. Resolve version (specific or latest)
+			const resolvedVersion = version ?? packument["dist-tags"].latest
+			const manifest = packument.versions[resolvedVersion]
 
-			if (schemaMode !== "v2") {
-				candidateManifest = adaptLegacyComponentManifest(manifest, context)
-			} else {
-				const legacyTargetIssues = collectLegacyManifestTargetIssues(manifest)
-				const firstLegacyTargetIssue = legacyTargetIssues[0]
-				if (firstLegacyTargetIssue) {
+			if (!manifest) {
+				if (version) {
+					const availableVersions = Object.keys(packument.versions).join(", ")
 					throw new ValidationError(
-						`Invalid component manifest for "${name}@${resolvedVersion}": target "${firstLegacyTargetIssue.target}" at ${firstLegacyTargetIssue.path} uses a legacy .opencode/ prefix. ` +
-							`For v2 registries, use canonical root-relative targets like "plugins/...", "profiles/...", "agents/...", "skills/...", or "commands/..." (without .opencode/).`,
+						`Component "${name}" has no version "${version}". Available: ${availableVersions}`,
 					)
 				}
+				throw new ValidationError(
+					`Component "${name}" has no manifest for latest version ${resolvedVersion}`,
+				)
+			}
 
-				if (isPlainObject(manifest) && isLegacyV2TypeAlias(manifest.type)) {
-					const canonicalType = LEGACY_COMPONENT_TYPE_ALIAS_MAP[manifest.type]
-					throw new ValidationError(
-						`Invalid component manifest for "${name}@${resolvedVersion}": type "${manifest.type}" is a legacy v1 alias. Use "${canonicalType}" for v2 registries.`,
-					)
+			// 3. Validate manifest (legacy adaptation is version-gated)
+			const context = `component "${name}@${resolvedVersion}"`
+			let candidateManifest: unknown = manifest
+
+			if (hasLegacySignalsInManifest(manifest)) {
+				const schemaMode = await resolveRegistrySchemaMode(baseUrl, headers)
+
+				if (schemaMode !== "v2") {
+					candidateManifest = adaptLegacyComponentManifest(manifest, context)
+				} else {
+					const legacyTargetIssues = collectLegacyManifestTargetIssues(manifest)
+					const firstLegacyTargetIssue = legacyTargetIssues[0]
+					if (firstLegacyTargetIssue) {
+						throw new ValidationError(
+							`Invalid component manifest for "${name}@${resolvedVersion}": target "${firstLegacyTargetIssue.target}" at ${firstLegacyTargetIssue.path} uses a legacy .opencode/ prefix. ` +
+								`For v2 registries, use canonical root-relative targets like "plugins/...", "profiles/...", "agents/...", "skills/...", or "commands/..." (without .opencode/).`,
+						)
+					}
+
+					if (isPlainObject(manifest) && isLegacyV2TypeAlias(manifest.type)) {
+						const canonicalType = LEGACY_COMPONENT_TYPE_ALIAS_MAP[manifest.type]
+						throw new ValidationError(
+							`Invalid component manifest for "${name}@${resolvedVersion}": type "${manifest.type}" is a legacy v1 alias. Use "${canonicalType}" for v2 registries.`,
+						)
+					}
 				}
 			}
-		}
 
-		const manifestResult = componentManifestSchema.safeParse(candidateManifest)
-		if (!manifestResult.success) {
-			throw new ValidationError(
-				`Invalid component manifest for "${name}@${resolvedVersion}": ${manifestResult.error.message}`,
-			)
-		}
+			const manifestResult = componentManifestSchema.safeParse(candidateManifest)
+			if (!manifestResult.success) {
+				throw new ValidationError(
+					`Invalid component manifest for "${name}@${resolvedVersion}": ${manifestResult.error.message}`,
+				)
+			}
 
-		return { manifest: manifestResult.data, version: resolvedVersion }
-	})
+			return { manifest: manifestResult.data, version: resolvedVersion }
+		},
+		headers,
+	)
 }
 
 /**
@@ -635,12 +666,13 @@ export async function fetchFileContent(
 	baseUrl: string,
 	componentName: string,
 	filePath: string,
+	headers?: Record<string, string>,
 ): Promise<string> {
 	const url = `${normalizeRegistryUrl(baseUrl)}/components/${componentName}/${filePath}`
 
 	let response: Response
 	try {
-		response = await fetch(url)
+		response = await fetch(url, { headers })
 	} catch (error) {
 		throw new NetworkError(
 			`Network request failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,

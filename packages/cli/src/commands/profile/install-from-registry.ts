@@ -15,6 +15,7 @@ import type { ConfigProvider } from "../../config/provider"
 import { getProfileDir, getProfilesDir } from "../../profile/paths"
 import { profileNameSchema } from "../../profile/schema"
 import { fetchComponent, fetchFileContent } from "../../registry/fetcher"
+import { resolveHeadersForRegistry } from "../../registry/headers"
 import type { RegistryConfig } from "../../schemas/config"
 import { writeReceipt } from "../../schemas/config"
 import { profileOcxConfigSchema } from "../../schemas/ocx"
@@ -163,9 +164,12 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 	const fetchSpin = quiet ? null : createSpinner({ text: `Fetching ${qualifiedName}...` })
 	fetchSpin?.start()
 
+	const registryConfig = { url: registryUrl }
+	const headers = await resolveHeadersForRegistry(registryConfig)
+
 	let manifest: Awaited<ReturnType<typeof fetchComponent>>
 	try {
-		manifest = await fetchComponent(registryUrl, component)
+		manifest = await fetchComponent(registryUrl, component, headers)
 	} catch (error) {
 		fetchSpin?.fail(`Failed to fetch ${qualifiedName}`)
 		if (error instanceof NotFoundError) {
@@ -202,7 +206,7 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 	const embeddedFiles: { path: string; target: string; content: Buffer }[] = []
 
 	for (const file of normalized.files) {
-		const content = await fetchFileContent(registryUrl, component, file.path)
+		const content = await fetchFileContent(registryUrl, component, file.path, headers)
 		const fileEntry = {
 			path: file.path,
 			target: file.target,

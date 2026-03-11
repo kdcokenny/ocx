@@ -11,6 +11,7 @@ import { dirname, join } from "node:path"
 import type { Command } from "commander"
 import { type ConfigProvider, LocalConfigProvider } from "../config/provider"
 import { fetchComponentVersion, fetchFileContent } from "../registry/fetcher"
+import { resolveHeadersForRegistry } from "../registry/headers"
 import { parseCanonicalId, type Receipt, readReceipt, writeReceipt } from "../schemas/config"
 import {
 	type ComponentFileObject,
@@ -239,7 +240,6 @@ export async function runUpdateCore(
 			const registryName = entry.registryName
 			const componentName = entry.name
 
-			// Get registry config by alias
 			const regConfig = registries[registryName]
 			if (!regConfig) {
 				throw new ConfigError(
@@ -247,8 +247,15 @@ export async function runUpdateCore(
 				)
 			}
 
+			const headers = await resolveHeadersForRegistry(regConfig)
+
 			// Fetch component (latest version)
-			const fetchResult = await fetchComponentVersion(regConfig.url, componentName, undefined)
+			const fetchResult = await fetchComponentVersion(
+				regConfig.url,
+				componentName,
+				undefined,
+				headers,
+			)
 			const manifest = fetchResult.manifest
 
 			const normalizedManifest = normalizeComponentManifest(manifest)
@@ -256,7 +263,7 @@ export async function runUpdateCore(
 			// Fetch all files and compute hash
 			const files: { path: string; content: Buffer }[] = []
 			for (const file of normalizedManifest.files) {
-				const content = await fetchFileContent(regConfig.url, componentName, file.path)
+				const content = await fetchFileContent(regConfig.url, componentName, file.path, headers)
 				files.push({ path: file.path, content: Buffer.from(content) })
 			}
 

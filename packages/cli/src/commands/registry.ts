@@ -10,9 +10,11 @@ import type { Command } from "commander"
 import kleur from "kleur"
 import { ProfileManager } from "../profile/manager"
 import { getProfileOcxConfig } from "../profile/paths"
+import { isGitHubUrl, resolveGitHubRegistry } from "../registry/github"
 import type { RegistryConfig } from "../schemas/config"
 import { findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config"
 import { type DryRunResult, outputDryRun } from "../utils/dry-run"
+import { expandEnvVars } from "../utils/env-expand"
 import {
 	ConfigError,
 	ProfileNotFoundError,
@@ -73,28 +75,62 @@ export async function runRegistryAddCore(
 	if (!trimmedUrl) {
 		throw new ValidationError("Registry URL is required")
 	}
-	try {
-		const parsed = new URL(trimmedUrl)
-		if (!["http:", "https:"].includes(parsed.protocol)) {
-			throw new ValidationError(`Invalid registry URL: ${trimmedUrl} (must use http or https)`)
-		}
-	} catch (error) {
-		if (error instanceof ValidationError) throw error
-		throw new ValidationError(`Invalid registry URL: ${trimmedUrl}`)
-	}
 
-	const normalizedUrl = normalizeRegistryUrl(trimmedUrl)
+	// GitHub URL handling
+	let normalizedUrl: string
+	let sourceUrl: string | undefined
+	let fetchHeaders: Record<string, string> = {}
+
+	if (isGitHubUrl(trimmedUrl)) {
+		// GitHub protocol: resolve to raw.githubusercontent.com URL
+		const { baseUrl, headers, source } = await resolveGitHubRegistry(trimmedUrl)
+		normalizedUrl = normalizeRegistryUrl(baseUrl)
+		sourceUrl = source
+		fetchHeaders = headers
+	} else {
+		// Standard HTTP/HTTPS URL validation
+		try {
+			const parsed = new URL(trimmedUrl)
+			if (!["http:", "https:"].includes(parsed.protocol)) {
+				throw new ValidationError(`Invalid registry URL: ${trimmedUrl} (must use http or https)`)
+			}
+		} catch (error) {
+			if (error instanceof ValidationError) throw error
+			throw new ValidationError(`Invalid registry URL: ${trimmedUrl}`)
+		}
+		normalizedUrl = normalizeRegistryUrl(trimmedUrl)
+	}
 
 	const name = options.name
 	const registries = callbacks.getRegistries()
 	const existingByName = registries[name]
+
+	// For HTTP registries, use existing headers from config if present (with env var expansion)
+	if (!isGitHubUrl(trimmedUrl) && existingByName?.headers) {
+		fetchHeaders = Object.fromEntries(
+			Object.entries(existingByName.headers).map(([k, v]) => [k, expandEnvVars(v)]),
+		)
+	}
 
 	// URL uniqueness check: find any existing registry with the same normalized URL
 	const existingByUrl = findRegistryByUrl(registries, normalizedUrl)
 
 	// Fetch registry index to validate the URL serves a valid registry
 	const { fetchRegistryIndex } = await import("../registry/fetcher")
-	await fetchRegistryIndex(normalizedUrl)
+	try {
+		await fetchRegistryIndex(normalizedUrl, fetchHeaders)
+	} catch (error) {
+		// Handle authentication failures with actionable error message
+		if (
+			error instanceof Error &&
+			(error.message.includes("401") || error.message.includes("403"))
+		) {
+			throw new Error(
+				"Authentication failed. Run `gh auth login` or set GITHUB_TOKEN environment variable.",
+			)
+		}
+		throw error
+	}
 
 	// -------------------------------------------------------------------------
 	// Conflict resolution matrix (alias-first model)
@@ -179,9 +215,11 @@ export async function runRegistryAddCore(
 	}
 
 	// Rule 1: New name + new URL => add
-	await callbacks.setRegistry(name, {
-		url: normalizedUrl,
-	})
+	const registryConfig: RegistryConfig = { url: normalizedUrl }
+	if (sourceUrl) {
+		registryConfig.source = sourceUrl
+	}
+	await callbacks.setRegistry(name, registryConfig)
 
 	return { name, url: normalizedUrl, updated: false, alreadyConfigured: false }
 }
@@ -236,13 +274,14 @@ export async function runRegistryRemoveCore(
 export function runRegistryListCore(callbacks: {
 	getRegistries: () => Record<string, RegistryConfig>
 	isLocked?: () => boolean
-}): { registries: Array<{ name: string; url: string }>; locked: boolean } {
+}): { registries: Array<{ name: string; url: string; source?: string }>; locked: boolean } {
 	const registries = callbacks.getRegistries()
 	const locked = callbacks.isLocked?.() ?? false
 
 	const list = Object.entries(registries).map(([name, cfg]) => ({
 		name,
 		url: cfg.url,
+		...(cfg.source && { source: cfg.source }),
 	}))
 
 	return { registries: list, locked }
@@ -505,7 +544,8 @@ export function registerRegistryCommand(program: Command): void {
 						`Configured registries${scopeLabel}${result.locked ? kleur.yellow(" (locked)") : ""}:`,
 					)
 					for (const reg of result.registries) {
-						console.log(`  ${kleur.cyan(reg.name)}: ${reg.url}`)
+						const displayUrl = reg.source ?? reg.url
+						console.log(`  ${kleur.cyan(reg.name)}: ${displayUrl}`)
 					}
 				}
 			}
