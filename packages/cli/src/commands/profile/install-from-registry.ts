@@ -41,6 +41,8 @@ export interface InstallProfileOptions {
 	profileName: string
 	/** Resolved registry URL */
 	registryUrl: string
+	/** Full registry config (headers, source). Falls back to { url: registryUrl } for ephemeral registries. */
+	registryConfig?: RegistryConfig
 	/** Suppress output */
 	quiet?: boolean
 }
@@ -113,7 +115,14 @@ export function resolveEmbeddedProfileTarget(rawTarget: string, stagingDir: stri
  * @throws ConflictError if profile exists and force is not set
  */
 export async function installProfileFromRegistry(options: InstallProfileOptions): Promise<void> {
-	const { namespace: providedNamespace, component, profileName, registryUrl, quiet } = options
+	const {
+		namespace: providedNamespace,
+		component,
+		profileName,
+		registryUrl,
+		registryConfig: providedRegistryConfig,
+		quiet,
+	} = options
 
 	// ==========================================================================
 	// Guard: Validate profile name at boundary (Law 2: Parse Don't Validate)
@@ -164,8 +173,8 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 	const fetchSpin = quiet ? null : createSpinner({ text: `Fetching ${qualifiedName}...` })
 	fetchSpin?.start()
 
-	const registryConfig = { url: registryUrl }
-	const headers = await resolveHeadersForRegistry(registryConfig)
+	const resolvedConfig = providedRegistryConfig ?? { url: registryUrl }
+	const headers = await resolveHeadersForRegistry(resolvedConfig)
 
 	let manifest: Awaited<ReturnType<typeof fetchComponent>>
 	try {

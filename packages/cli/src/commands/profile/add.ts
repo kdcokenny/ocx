@@ -16,6 +16,7 @@ import { parse as parseJsonc } from "jsonc-parser"
 import { atomicCopy } from "../../profile/atomic"
 import { ProfileManager } from "../../profile/manager"
 import { getGlobalConfig, getProfileOcxConfig } from "../../profile/paths"
+import type { RegistryConfig } from "../../schemas/config"
 import type { ProfileOcxConfig } from "../../schemas/ocx"
 import { profileOcxConfigSchema } from "../../schemas/ocx"
 import {
@@ -138,7 +139,7 @@ async function readGlobalOcxConfig() {
  */
 async function requireGlobalRegistry(
 	namespace: string,
-): Promise<{ config: ProfileOcxConfig; registryUrl: string }> {
+): Promise<{ config: ProfileOcxConfig; registryUrl: string; registryConfig: RegistryConfig }> {
 	const globalConfig = await readGlobalOcxConfig()
 
 	// Guard: no global config
@@ -160,7 +161,7 @@ async function requireGlobalRegistry(
 		)
 	}
 
-	return { config: globalConfig, registryUrl: registry.url }
+	return { config: globalConfig, registryUrl: registry.url, registryConfig: registry }
 }
 
 // =============================================================================
@@ -374,6 +375,7 @@ async function runProfileAdd(name: string, options: ProfileAddOptions): Promise<
 				component,
 				profileName: name,
 				registryUrl,
+				registryConfig: globalRegistry.registryConfig,
 				quiet,
 			})
 		}
