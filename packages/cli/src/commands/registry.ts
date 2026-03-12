@@ -83,9 +83,9 @@ export async function runRegistryAddCore(
 
 	if (isGitHubUrl(trimmedUrl)) {
 		// GitHub protocol: resolve to raw.githubusercontent.com URL
-		const { baseUrl, headers, source } = await resolveGitHubRegistry(trimmedUrl)
+		const { baseUrl, headers } = await resolveGitHubRegistry(trimmedUrl)
 		normalizedUrl = normalizeRegistryUrl(baseUrl)
-		sourceUrl = source
+		sourceUrl = trimmedUrl
 		fetchHeaders = headers
 	} else {
 		// Standard HTTP/HTTPS URL validation
