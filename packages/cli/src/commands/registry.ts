@@ -120,14 +120,14 @@ export async function runRegistryAddCore(
 	try {
 		await fetchRegistryIndex(normalizedUrl, fetchHeaders)
 	} catch (error) {
-		// Handle authentication failures with actionable error message
 		if (
 			error instanceof Error &&
 			(error.message.includes("401") || error.message.includes("403"))
 		) {
-			throw new Error(
-				"Authentication failed. Run `gh auth login` or set GITHUB_TOKEN environment variable.",
-			)
+			const hint = isGitHubUrl(trimmedUrl)
+				? "Run `gh auth login` or set GITHUB_TOKEN environment variable."
+				: "Check that the registry URL is correct and any required headers are configured."
+			throw new Error(`Authentication failed. ${hint}`)
 		}
 		throw error
 	}
