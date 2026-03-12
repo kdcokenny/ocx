@@ -404,13 +404,13 @@ describe("token secrecy", () => {
 		delete process.env.GITHUB_TOKEN
 	})
 
-	it("should not expose token in ValidationError", () => {
-		const sensitiveInput = "github:owner/repo@ghp_token_in_url"
+	it("should include original input in ValidationError for debugging", () => {
+		expect.assertions(1)
 
 		try {
-			parseGitHubUrl(sensitiveInput)
+			parseGitHubUrl("github:missing-repo")
 		} catch (error) {
-			expect((error as Error).message).toContain("github:owner/repo@ghp_token_in_url")
+			expect((error as Error).message).toContain("github:missing-repo")
 		}
 	})
 })
