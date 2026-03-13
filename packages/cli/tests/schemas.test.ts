@@ -8,9 +8,13 @@ import { parseCanonicalId } from "../src/schemas/config"
 import {
 	agentConfigSchema,
 	aliasSchema,
+	BUILTIN_COMPONENT_TYPES,
+	builtinComponentTypeSchema,
+	componentTypeSchema,
 	createQualifiedComponent,
 	dependencyRefSchema,
 	inferTargetPath,
+	isBuiltinComponentType,
 	namespaceSchema,
 	normalizeFile,
 	normalizeMcpServer,
@@ -565,6 +569,105 @@ describe("schemas", () => {
 		it("should throw for missing namespace separator", () => {
 			const id = "https://registry.example.com::component@1.0.0"
 			expect(() => parseCanonicalId(id)).toThrow("qualified")
+		})
+	})
+
+	describe("componentTypeSchema (custom type support)", () => {
+		it("should accept all built-in types", () => {
+			for (const type of BUILTIN_COMPONENT_TYPES) {
+				expect(() => componentTypeSchema.parse(type)).not.toThrow()
+			}
+		})
+
+		it("should accept custom types with valid naming", () => {
+			expect(() => componentTypeSchema.parse("react-component")).not.toThrow()
+			expect(() => componentTypeSchema.parse("database-migration")).not.toThrow()
+			expect(() => componentTypeSchema.parse("my-thing")).not.toThrow()
+			expect(() => componentTypeSchema.parse("boilerplate")).not.toThrow()
+			expect(() => componentTypeSchema.parse("starter")).not.toThrow()
+		})
+
+		it("should reject types with uppercase letters", () => {
+			expect(() => componentTypeSchema.parse("ReactComponent")).toThrow()
+			expect(() => componentTypeSchema.parse("MyType")).toThrow()
+		})
+
+		it("should reject types with spaces or special chars", () => {
+			expect(() => componentTypeSchema.parse("my type")).toThrow()
+			expect(() => componentTypeSchema.parse("my_type")).toThrow()
+			expect(() => componentTypeSchema.parse("my.type")).toThrow()
+			expect(() => componentTypeSchema.parse("")).toThrow()
+		})
+
+		it("should reject types starting or ending with a hyphen", () => {
+			expect(() => componentTypeSchema.parse("-mytype")).toThrow()
+			expect(() => componentTypeSchema.parse("mytype-")).toThrow()
+		})
+
+		it("should reject reserved prototype-pollution names", () => {
+			expect(() => componentTypeSchema.parse("constructor")).toThrow()
+			expect(() => componentTypeSchema.parse("prototype")).toThrow()
+		})
+	})
+
+	describe("isBuiltinComponentType()", () => {
+		it("should return true for all built-in types", () => {
+			for (const type of BUILTIN_COMPONENT_TYPES) {
+				expect(isBuiltinComponentType(type)).toBe(true)
+			}
+		})
+
+		it("should return false for custom types", () => {
+			expect(isBuiltinComponentType("react-component")).toBe(false)
+			expect(isBuiltinComponentType("my-thing")).toBe(false)
+			expect(isBuiltinComponentType("boilerplate")).toBe(false)
+		})
+	})
+
+	describe("builtinComponentTypeSchema", () => {
+		it("should reject custom types", () => {
+			expect(() => builtinComponentTypeSchema.parse("react-component")).toThrow()
+			expect(() => builtinComponentTypeSchema.parse("my-thing")).toThrow()
+		})
+	})
+
+	describe("registrySchema with custom types", () => {
+		const baseRegistry = {
+			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			name: "test-registry",
+			version: "1.0.0",
+			author: "test",
+			components: [],
+		}
+
+		it("should accept a component with a custom type", () => {
+			const registry = {
+				...baseRegistry,
+				components: [
+					{
+						name: "my-boilerplate",
+						type: "react-component",
+						description: "A reusable React component boilerplate",
+						files: ["src/MyComponent.tsx"],
+					},
+				],
+			}
+			expect(() => registrySchema.parse(registry)).not.toThrow()
+		})
+
+		it("should reject a component with an invalid custom type format", () => {
+			const registry = {
+				...baseRegistry,
+				components: [
+					{
+						name: "my-component",
+						type: "React_Component",
+						description: "Invalid type",
+						files: [],
+					},
+				],
+			}
+			expect(() => registrySchema.parse(registry)).toThrow()
 		})
 	})
 })

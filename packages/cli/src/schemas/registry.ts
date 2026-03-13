@@ -150,7 +150,11 @@ export const dependencyRefSchema = z.string().refine(
 // FILE TARGET SCHEMAS
 // =============================================================================
 
-export const componentTypeSchema = z.enum([
+/**
+ * The canonical built-in component types shipped with OCX.
+ * Used for legacy mapping, docs-contract tests, and display hints.
+ */
+export const BUILTIN_COMPONENT_TYPES = [
 	"agent",
 	"skill",
 	"plugin",
@@ -158,9 +162,53 @@ export const componentTypeSchema = z.enum([
 	"tool",
 	"bundle",
 	"profile",
+] as const
+
+export type BuiltinComponentType = (typeof BUILTIN_COMPONENT_TYPES)[number]
+
+/**
+ * Built-in type enum — used internally for legacy type mapping and
+ * any logic that needs to distinguish known types from custom ones.
+ */
+export const builtinComponentTypeSchema = z.enum(BUILTIN_COMPONENT_TYPES)
+
+/**
+ * Prototype-pollution attack vectors that must never be valid type labels.
+ * These keys exist on every object's prototype chain and could be used to
+ * corrupt the LEGACY_COMPONENT_TYPE_ALIAS_MAP lookup or downstream objects.
+ */
+const BLOCKED_TYPE_NAMES = new Set(["__proto__", "constructor", "prototype", "toString", "valueOf"])
+
+/**
+ * Component type schema.
+ * Accepts all built-in types AND any arbitrary custom string (e.g. "react-component",
+ * "database-migration", "my-thing"). Custom types are treated as opaque labels —
+ * files are installed exactly as declared with no special path inference.
+ *
+ * Use `isBuiltinComponentType()` to check whether a type is a known built-in.
+ */
+export const componentTypeSchema = z.union([
+	builtinComponentTypeSchema,
+	z
+		.string()
+		.min(1, "Component type cannot be empty")
+		.regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
+			message:
+				"Custom component type must be lowercase alphanumeric with hyphens (e.g. 'react-component', 'my-type')",
+		})
+		.refine((val) => !BLOCKED_TYPE_NAMES.has(val), {
+			message: "Component type name is reserved and cannot be used as a custom type",
+		}),
 ])
 
 export type ComponentType = z.infer<typeof componentTypeSchema>
+
+/**
+ * Returns true if the given type is a known built-in OCX component type.
+ */
+export function isBuiltinComponentType(type: string): type is BuiltinComponentType {
+	return (BUILTIN_COMPONENT_TYPES as readonly string[]).includes(type)
+}
 
 /** Reserved targets (installer-owned files) */
 const RESERVED_TARGETS = new Set([".ocx", "ocx.lock"])

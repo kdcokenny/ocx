@@ -39,6 +39,11 @@ export {
 	type AgentConfig,
 	agentConfigSchema,
 	aliasSchema,
+	// Built-in type helpers
+	BUILTIN_COMPONENT_TYPES,
+	type BuiltinComponentType,
+	builtinComponentTypeSchema,
+	isBuiltinComponentType,
 	type ComponentFile,
 	type ComponentFileObject,
 	type ComponentManifest,

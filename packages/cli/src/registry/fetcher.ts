@@ -7,6 +7,7 @@ import { posix as posixPath } from "node:path"
 import { z } from "zod"
 import type { ComponentManifest, McpServer, RegistryIndex } from "../schemas/registry"
 import {
+	builtinComponentTypeSchema,
 	classifyRegistrySchemaIssue,
 	componentManifestSchema,
 	componentTypeSchema,
@@ -87,13 +88,18 @@ function mapLegacyComponentType(type: unknown, context: string): string {
 		throw new ValidationError(`Invalid ${context}: expected string, got ${typeof type}`)
 	}
 
+	// Map legacy "ocx:" prefixed types to their canonical equivalents
 	const mappedType =
 		LEGACY_COMPONENT_TYPE_ALIAS_MAP[type as keyof typeof LEGACY_COMPONENT_TYPE_ALIAS_MAP] ?? type
+
+	// Validate against the full schema (built-ins + custom types)
 	const parsedType = componentTypeSchema.safeParse(mappedType)
 	if (!parsedType.success) {
+		// Provide a helpful error — custom types must follow the naming convention
 		throw new ValidationError(
-			`Unsupported component type "${type}" in ${context}. ` +
-				`Expected one of: ${componentTypeSchema.options.join(", ")}`,
+			`Invalid component type "${type}" in ${context}. ` +
+				`Use a built-in type (${builtinComponentTypeSchema.options.join(", ")}) ` +
+				`or a custom type (lowercase alphanumeric with hyphens, e.g. "react-component").`,
 		)
 	}
 

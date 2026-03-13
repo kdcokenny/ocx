@@ -2,7 +2,7 @@ import { describe, it } from "bun:test"
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { runRegistryListCore } from "../src/commands/registry"
-import { componentTypeSchema } from "../src/schemas/registry"
+import { BUILTIN_COMPONENT_TYPES } from "../src/schemas/registry"
 import { cleanupTempDir, createTempDir, expectStrictJsonSuccess, runCLIIsolated } from "./helpers"
 
 const REPO_ROOT = join(import.meta.dir, "..", "..", "..")
@@ -447,8 +447,8 @@ function extractComponentTypesTable(markdown: string, fileLabel: string): string
 }
 
 function assertComponentTypeTableParity(markdown: string, fileLabel: string): void {
-	const runtimeTypes = [...componentTypeSchema.options] as string[]
-	assertCanonicalV2TypeList(runtimeTypes, "runtime componentTypeSchema")
+	const runtimeTypes = [...BUILTIN_COMPONENT_TYPES] as string[]
+	assertCanonicalV2TypeList(runtimeTypes, "runtime BUILTIN_COMPONENT_TYPES")
 
 	const documentedTypes = extractComponentTypesTable(markdown, fileLabel)
 	assertCanonicalV2TypeList(documentedTypes, `${fileLabel} component types table`)
@@ -494,8 +494,8 @@ function assertCanonicalV2TypeList(types: string[], label: string): void {
 describe("registry docs/runtime contracts", () => {
 	it("runtime component types are canonical unprefixed V2 values", () => {
 		assertCanonicalV2TypeList(
-			[...componentTypeSchema.options] as string[],
-			"runtime componentTypeSchema",
+			[...BUILTIN_COMPONENT_TYPES] as string[],
+			"runtime BUILTIN_COMPONENT_TYPES",
 		)
 	})
 
