@@ -5,7 +5,7 @@ description: "Improved native notifier support for OpenCode — know when your A
 
 ## Overview
 
-A plugin for OpenCode that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input. It prioritizes native notifier delivery on macOS, Windows, and Linux, with an additional cmux-native path when available.
+A plugin for OpenCode that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input. It prioritizes native notifier delivery on macOS, Windows, and Linux, with an additional [cmux](https://www.cmux.dev/)-native path when available.
 
 ## Why This Exists
 
@@ -14,7 +14,7 @@ You delegate a task and switch to another window. Now you're checking back every
 - **Stay focused** — Work in other apps. A notification arrives when the AI needs you.
 - **Native notifier support first** — Uses macOS Notification Center, Windows Toast, or Linux notify-send via `node-notifier`.
 - **Smart defaults** — Only notifies for meaningful events, with parent-session filtering and quiet-hours support.
-- **Additional cmux-native path** — When running in cmux, can route through `cmux notify` and still falls back safely to desktop notifications.
+- **Additional [cmux](https://www.cmux.dev/)-native path** — When running in [cmux](https://www.cmux.dev/), can route through `cmux notify` and still falls back safely to desktop notifications.
 
 ## Installation
 
@@ -50,15 +50,15 @@ By default, notifications go through the native desktop notifier path:
 - **Windows:** Toast notifications (`SnoreToast` backend)
 - **Linux:** `notify-send`
 
-### Additional cmux-native path
+### Additional [cmux](https://www.cmux.dev/)-native path
 
-When OpenCode runs inside cmux (with `CMUX_WORKSPACE_ID` set), the plugin prefers native cmux notifications via:
+When OpenCode runs inside [cmux](https://www.cmux.dev/) (with `CMUX_WORKSPACE_ID` set), the plugin prefers native [cmux](https://www.cmux.dev/) notifications via:
 
 ```bash
 cmux notify --title "..." --subtitle "..." --body "..."
 ```
 
-If cmux is unavailable or notification delivery fails, the plugin automatically falls back to the existing `node-notifier` desktop path.
+If [cmux](https://www.cmux.dev/) is unavailable or notification delivery fails, the plugin automatically falls back to the existing `node-notifier` desktop path.
 
 ## Platform Support
 

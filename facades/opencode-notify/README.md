@@ -2,7 +2,7 @@
 
 > Improved native notifier support for OpenCode.
 
-A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input. It prioritizes native notifier delivery on macOS, Windows, and Linux, with an additional cmux-native path when available.
+A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input. It prioritizes native notifier delivery on macOS, Windows, and Linux, with an additional [cmux](https://www.cmux.dev/)-native path when available.
 
 ## Why This Exists
 
@@ -13,7 +13,7 @@ This plugin solves that:
 - **Stay focused** - Work in other apps. A notification arrives when the AI needs you.
 - **Native notifier support first** - Uses macOS Notification Center, Windows Toast, or Linux notify-send via `node-notifier`.
 - **Smart defaults** - Won't spam you. Only notifies for meaningful events, with parent-session filtering and quiet-hours support.
-- **Additional cmux-native path** - When running in cmux, can route through `cmux notify` and still falls back safely to desktop notifications.
+- **Additional [cmux](https://www.cmux.dev/)-native path** - When running in [cmux](https://www.cmux.dev/), can route through `cmux notify` and still falls back safely to desktop notifications.
 
 ## Installation
 
@@ -53,15 +53,15 @@ By default, notifications go through the native desktop notifier path:
 - **Windows:** Toast notifications (`SnoreToast` backend)
 - **Linux:** `notify-send`
 
-### Additional cmux-native path
+### Additional [cmux](https://www.cmux.dev/)-native path
 
-When running inside cmux (with `CMUX_WORKSPACE_ID` set), the plugin prefers native cmux notifications via:
+When running inside [cmux](https://www.cmux.dev/) (with `CMUX_WORKSPACE_ID` set), the plugin prefers native [cmux](https://www.cmux.dev/) notifications via:
 
 ```bash
 cmux notify --title "..." --subtitle "..." --body "..."
 ```
 
-If cmux is unavailable or invocation fails, notifications automatically fall back to the existing `node-notifier` desktop behavior.
+If [cmux](https://www.cmux.dev/) is unavailable or invocation fails, notifications automatically fall back to the existing `node-notifier` desktop behavior.
 
 ## Platform Support
 
@@ -139,7 +139,7 @@ If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` an
 
 **Caveats:**
 - Manually install dependencies (`node-notifier`, `detect-terminal`)
-- Install `cmux` if you want the additional cmux-native notification path
+- Install [cmux](https://www.cmux.dev/) if you want the additional [cmux](https://www.cmux.dev/)-native notification path
 - Updates require manual re-copying
 
 ## Part of the OCX Ecosystem
