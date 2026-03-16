@@ -11,7 +11,7 @@ You delegate a task and switch to another window. Now you're checking back every
 This plugin solves that:
 
 - **Stay focused** - Work in other apps. A notification arrives when the AI needs you.
-- **Native feel** - Uses macOS Notification Center, Windows Toast, or Linux notify-send.
+- **Native feel** - Uses `cmux notify` inside cmux, otherwise macOS Notification Center, Windows Toast, or Linux notify-send.
 - **Smart defaults** - Won't spam you. Only notifies for meaningful events, and only when you're not already looking at the terminal.
 
 ## Installation
@@ -43,6 +43,16 @@ The plugin automatically:
 1. Detects your terminal emulator (supports 37+ terminals)
 2. Suppresses notifications when your terminal is focused
 3. Enables click-to-focus on macOS (click notification → terminal foregrounds)
+
+## cmux Support
+
+When running inside cmux (with `CMUX_WORKSPACE_ID` set), the plugin prefers native cmux notifications via:
+
+```bash
+cmux notify --title "..." --subtitle "..." --body "..."
+```
+
+If cmux is unavailable or invocation fails, notifications automatically fall back to the existing `node-notifier` desktop behavior.
 
 ## Platform Support
 
@@ -102,6 +112,7 @@ If you prefer not to use OCX, copy the source from [`src/`](./src) to `.opencode
 
 **Caveats:**
 - Manually install dependencies (`node-notifier`, `detect-terminal`)
+- Install `cmux` if you want native cmux notifications
 - Updates require manual re-copying
 
 ## Part of the OCX Ecosystem
