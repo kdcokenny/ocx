@@ -2,7 +2,7 @@
 
 > Native OS notifications for OpenCode.
 
-A plugin for [OpenCode](https://github.com/sst/opencode) that delivers Native OS notifications when tasks complete, errors occur, or the AI needs your input. This update improves native OS notification delivery on macOS, Windows, and Linux, with an additional [cmux](https://www.cmux.dev/)-native path when available.
+A plugin for [OpenCode](https://github.com/sst/opencode) that delivers Native OS notifications when tasks complete, errors occur, or the AI needs your input. It uses native OS notification delivery on macOS, Windows, and Linux, with an additional [cmux](https://www.cmux.dev/)-native path when available.
 
 ## Why This Exists
 
@@ -55,7 +55,7 @@ By default, notifications go through the native OS desktop notification path:
 
 ### Additional [cmux](https://www.cmux.dev/)-native path
 
-When running inside [cmux](https://www.cmux.dev/) (with `CMUX_WORKSPACE_ID` set), the plugin prefers native [cmux](https://www.cmux.dev/) notifications via:
+When running inside [cmux](https://www.cmux.dev/) (with `CMUX_WORKSPACE_ID` set), the plugin can also send notifications via [cmux](https://www.cmux.dev/):
 
 ```bash
 cmux notify --title "..." --subtitle "..." --body "..."
@@ -67,7 +67,7 @@ If [cmux](https://www.cmux.dev/) is unavailable or invocation fails, notificatio
 
 | Feature | macOS | Windows | Linux |
 |---------|-------|---------|-------|
-| Native notifications | Yes | Yes | Yes |
+| Native OS notifications | Yes | Yes | Yes |
 | Custom sounds | Yes | No | No |
 | Focus detection | Yes | No | No |
 | Click-to-focus | Yes | No | No |
