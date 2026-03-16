@@ -118,6 +118,45 @@ describe("fetcher", () => {
 	})
 
 	describe("fetchFileContent network errors", () => {
+		it("retains structured details for packument transport failures", async () => {
+			globalThis.fetch = mock(() => Promise.reject(new Error("socket hang up")))
+
+			try {
+				await fetchComponentVersion("https://registry.example.com", "button")
+				expect.unreachable("Should have thrown")
+			} catch (error) {
+				expect(error).toBeInstanceOf(NetworkError)
+				const networkError = error as NetworkError & { phase?: string }
+				expect(networkError.url).toBe("https://registry.example.com/components/button.json")
+				expect(networkError.url).not.toContain("#v=")
+				expect(networkError.phase).toBe("packument-fetch")
+				expect(networkError.status).toBeUndefined()
+			}
+		})
+
+		it("retains structured details for packument HTTP failures", async () => {
+			globalThis.fetch = mock(() =>
+				Promise.resolve(
+					new Response("Service Unavailable", {
+						status: 503,
+						statusText: "Service Unavailable",
+					}),
+				),
+			)
+
+			try {
+				await fetchComponentVersion("https://registry.example.com", "button")
+				expect.unreachable("Should have thrown")
+			} catch (error) {
+				expect(error).toBeInstanceOf(NetworkError)
+				const networkError = error as NetworkError & { phase?: string }
+				expect(networkError.url).toBe("https://registry.example.com/components/button.json")
+				expect(networkError.url).not.toContain("#v=")
+				expect(networkError.phase).toBe("packument-fetch")
+				expect(networkError.status).toBe(503)
+			}
+		})
+
 		it("throws NetworkError on DNS failure", async () => {
 			globalThis.fetch = mock(() => Promise.reject(new Error("getaddrinfo ENOTFOUND")))
 
@@ -144,6 +183,45 @@ describe("fetcher", () => {
 				expect(error).toBeInstanceOf(NetworkError)
 				expect((error as NetworkError).message).toContain("registry.example.com")
 				expect((error as NetworkError).message).toContain("button")
+			}
+		})
+
+		it("retains structured details for file-content transport failures", async () => {
+			globalThis.fetch = mock(() => Promise.reject(new Error("socket hang up")))
+
+			try {
+				await fetchFileContent("https://registry.example.com", "button", "index.ts")
+				expect.unreachable("Should have thrown")
+			} catch (error) {
+				expect(error).toBeInstanceOf(NetworkError)
+				const networkError = error as NetworkError & { phase?: string; qualifiedName?: string }
+				expect(networkError.url).toBe("https://registry.example.com/components/button/index.ts")
+				expect(networkError.phase).toBe("file-content-fetch")
+				expect(networkError.qualifiedName).toBe("button")
+				expect(networkError.status).toBeUndefined()
+			}
+		})
+
+		it("retains structured details for file-content HTTP failures", async () => {
+			globalThis.fetch = mock(() =>
+				Promise.resolve(
+					new Response("Bad Gateway", {
+						status: 502,
+						statusText: "Bad Gateway",
+					}),
+				),
+			)
+
+			try {
+				await fetchFileContent("https://registry.example.com", "button", "index.ts")
+				expect.unreachable("Should have thrown")
+			} catch (error) {
+				expect(error).toBeInstanceOf(NetworkError)
+				const networkError = error as NetworkError & { phase?: string; qualifiedName?: string }
+				expect(networkError.url).toBe("https://registry.example.com/components/button/index.ts")
+				expect(networkError.phase).toBe("file-content-fetch")
+				expect(networkError.qualifiedName).toBe("button")
+				expect(networkError.status).toBe(502)
 			}
 		})
 	})

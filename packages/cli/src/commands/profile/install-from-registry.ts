@@ -20,8 +20,14 @@ import { writeReceipt } from "../../schemas/config"
 import { profileOcxConfigSchema } from "../../schemas/ocx"
 import { normalizeComponentManifest } from "../../schemas/registry"
 import { resolveComponentTargetRoot } from "../../utils/component-root-resolution"
-import { ConfigError, ConflictError, NotFoundError, ValidationError } from "../../utils/errors"
-import { createSpinner, logger } from "../../utils/index"
+import {
+	ConfigError,
+	ConflictError,
+	NetworkError,
+	NotFoundError,
+	ValidationError,
+} from "../../utils/errors"
+import { createSpinner, logger, normalizeRegistryUrl } from "../../utils/index"
 import { PathValidationError, validatePath } from "../../utils/path-security"
 import { registerPlannedWriteOrThrow } from "../../utils/planned-writes"
 import { isPlainObject } from "../../utils/type-guards"
@@ -51,6 +57,177 @@ function formatProfileRollbackCleanupWarning(
 ): string {
 	const errorMessage = error instanceof Error ? error.message : String(error)
 	return `${action} "${targetPath}" (${errorMessage})`
+}
+
+interface RegistryDiagnosticsContext {
+	registryContext: "source" | "dependency"
+	registryName: string
+	qualifiedName: string
+	fallbackPhase: string
+	fallbackUrl?: string
+}
+
+interface ResolvedDependencyDiagnosticsContext {
+	registryName: string
+	qualifiedName: string
+	fallbackUrl?: string
+}
+
+function buildPackumentUrl(registryUrl: string, qualifiedName: string): string | undefined {
+	const [registryName, componentName] = qualifiedName.split("/")
+	if (!registryName || !componentName) {
+		return undefined
+	}
+
+	return `${normalizeRegistryUrl(registryUrl)}/components/${componentName}.json`
+}
+
+function parseQualifiedNameParts(
+	qualifiedName: string | undefined,
+): { registryName: string; componentName: string } | null {
+	if (!qualifiedName) return null
+
+	const [registryName, componentName, ...extraParts] = qualifiedName.split("/")
+	if (!registryName || !componentName || extraParts.length > 0) {
+		return null
+	}
+
+	return { registryName, componentName }
+}
+
+function inferDependencyFromErrorUrl(
+	errorUrl: string | undefined,
+	registries: Record<string, RegistryConfig>,
+): { registryName?: string; componentName?: string } {
+	if (!errorUrl) {
+		return {}
+	}
+
+	let componentName: string | undefined
+	try {
+		const parsedErrorUrl = new URL(errorUrl)
+		const packumentMatch = parsedErrorUrl.pathname.match(/^\/components\/([^/]+)\.json$/)
+		if (packumentMatch?.[1]) {
+			componentName = decodeURIComponent(packumentMatch[1])
+		} else {
+			const fileContentMatch = parsedErrorUrl.pathname.match(/^\/components\/([^/]+)\/.+$/)
+			if (fileContentMatch?.[1]) {
+				componentName = decodeURIComponent(fileContentMatch[1])
+			}
+		}
+	} catch {
+		// Keep diagnostics best-effort; unresolved URL falls back to other context.
+	}
+
+	const normalizedErrorUrl = normalizeRegistryUrl(errorUrl)
+	let registryName: string | undefined
+	let matchedPrefixLength = -1
+
+	for (const [candidateRegistryName, registryConfig] of Object.entries(registries)) {
+		const normalizedRegistryUrl = normalizeRegistryUrl(registryConfig.url)
+		const isMatch =
+			normalizedErrorUrl === normalizedRegistryUrl ||
+			normalizedErrorUrl.startsWith(`${normalizedRegistryUrl}/`)
+
+		if (!isMatch || normalizedRegistryUrl.length <= matchedPrefixLength) {
+			continue
+		}
+
+		registryName = candidateRegistryName
+		matchedPrefixLength = normalizedRegistryUrl.length
+	}
+
+	return { registryName, componentName }
+}
+
+function resolveDependencyDiagnosticsContext(options: {
+	error: NetworkError
+	depRefs: string[]
+	namespace: string
+	component: string
+	registryUrl: string
+	profileRegistries: Record<string, RegistryConfig>
+}): ResolvedDependencyDiagnosticsContext {
+	const fallbackQualifiedName = options.depRefs[0] ?? `${options.namespace}/${options.component}`
+	const knownRegistries: Record<string, RegistryConfig> = {
+		...options.profileRegistries,
+		...(options.profileRegistries[options.namespace]
+			? {}
+			: {
+					[options.namespace]: {
+						url: options.registryUrl,
+					},
+				}),
+	}
+
+	let registryName = options.error.registryName
+	let qualifiedName = options.error.qualifiedName
+
+	const qualifiedNameParts = parseQualifiedNameParts(qualifiedName)
+	if (!registryName && qualifiedNameParts) {
+		registryName = qualifiedNameParts.registryName
+	}
+
+	const qualifiedComponentName = qualifiedNameParts?.componentName
+	const bareComponentNameFromError =
+		qualifiedName && !qualifiedNameParts && !qualifiedName.includes("/") ? qualifiedName : undefined
+
+	const inferred = inferDependencyFromErrorUrl(options.error.url, knownRegistries)
+	if (!registryName && inferred.registryName) {
+		registryName = inferred.registryName
+	}
+
+	const resolvedComponentName =
+		qualifiedComponentName ?? bareComponentNameFromError ?? inferred.componentName
+	if ((!qualifiedName || !qualifiedNameParts) && registryName && resolvedComponentName) {
+		qualifiedName = `${registryName}/${resolvedComponentName}`
+	}
+
+	if (!qualifiedName) {
+		qualifiedName = fallbackQualifiedName
+	}
+
+	if (!registryName) {
+		registryName = parseQualifiedNameParts(qualifiedName)?.registryName ?? options.namespace
+	}
+
+	const fallbackRegistryUrl =
+		knownRegistries[registryName]?.url ||
+		(registryName === options.namespace ? options.registryUrl : undefined)
+
+	return {
+		registryName,
+		qualifiedName,
+		fallbackUrl:
+			options.error.url ||
+			(fallbackRegistryUrl ? buildPackumentUrl(fallbackRegistryUrl, qualifiedName) : undefined),
+	}
+}
+
+function withRegistryDiagnostics(
+	error: NetworkError,
+	context: RegistryDiagnosticsContext,
+): NetworkError {
+	const phase = error.phase ?? context.fallbackPhase
+	const url = error.url ?? context.fallbackUrl
+
+	const diagnostics = [
+		`phase: ${phase}`,
+		`qualifiedName: ${context.qualifiedName}`,
+		`registryContext: ${context.registryContext}`,
+		`registryName: ${context.registryName}`,
+		...(url ? [`url: ${url}`] : []),
+	]
+
+	return new NetworkError(`${error.message} (${diagnostics.join(", ")})`, {
+		url,
+		status: error.status,
+		statusText: error.statusText,
+		phase,
+		qualifiedName: context.qualifiedName,
+		registryContext: context.registryContext,
+		registryName: context.registryName,
+	})
 }
 
 /**
@@ -168,6 +345,15 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 		manifest = await fetchComponent(registryUrl, component)
 	} catch (error) {
 		fetchSpin?.fail(`Failed to fetch ${qualifiedName}`)
+		if (error instanceof NetworkError) {
+			throw withRegistryDiagnostics(error, {
+				registryContext: "source",
+				registryName: namespace,
+				qualifiedName,
+				fallbackPhase: "packument-fetch",
+				fallbackUrl: buildPackumentUrl(registryUrl, qualifiedName),
+			})
+		}
 		if (error instanceof NotFoundError) {
 			throw new NotFoundError(
 				`Profile component "${qualifiedName}" not found in registry.\n\n` +
@@ -321,19 +507,18 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 		if (manifest.dependencies.length > 0) {
 			const depsSpin = quiet ? null : createSpinner({ text: "Installing dependencies..." })
 			depsSpin?.start()
+			const depRefs = manifest.dependencies.map((dep) =>
+				dep.includes("/") ? dep : `${namespace}/${dep}`,
+			)
+			let profileRegistries: Record<string, RegistryConfig> = {}
 
 			try {
-				const depRefs = manifest.dependencies.map((dep) =>
-					dep.includes("/") ? dep : `${namespace}/${dep}`,
-				)
-
 				// ========================================================================
 				// Law 2: Parse Don't Validate - Extract and validate profile's registries
 				// ========================================================================
 
 				// 1. Parse the profile's ocx.jsonc to get its registry declarations
 				const profileOcxConfigPath = join(profileDir, "ocx.jsonc")
-				let profileRegistries: Record<string, RegistryConfig> = {}
 
 				if (existsSync(profileOcxConfigPath)) {
 					const profileOcxFile = Bun.file(profileOcxConfigPath)
@@ -366,6 +551,24 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 				depsSpin?.succeed(`Installed ${manifest.dependencies.length} dependencies`)
 			} catch (error) {
 				depsSpin?.fail("Failed to install dependencies")
+				if (error instanceof NetworkError) {
+					const dependencyDiagnosticsContext = resolveDependencyDiagnosticsContext({
+						error,
+						depRefs,
+						namespace,
+						component,
+						registryUrl,
+						profileRegistries,
+					})
+
+					throw withRegistryDiagnostics(error, {
+						registryContext: "dependency",
+						registryName: dependencyDiagnosticsContext.registryName,
+						qualifiedName: dependencyDiagnosticsContext.qualifiedName,
+						fallbackPhase: "packument-fetch",
+						fallbackUrl: dependencyDiagnosticsContext.fallbackUrl,
+					})
+				}
 				throw error
 			}
 		}

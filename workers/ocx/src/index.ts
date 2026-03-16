@@ -22,6 +22,19 @@ const LATEST_SCHEMA_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate
 const VERSIONED_SCHEMA_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 const VALID_SCHEMAS = ["ocx", "profile", "local", "lock", "registry", "receipt"] as const
+const MINTLIFY_ROOT_DOC_PREFIXES = [
+	"getting-started",
+	"profiles",
+	"cli",
+	"registries",
+	"reference",
+	"guides",
+	"integrations",
+	"enterprise",
+	"security",
+	"maintainers",
+] as const
+const MINTLIFY_ROOT_DOC_PREFIX_SET = new Set<string>(MINTLIFY_ROOT_DOC_PREFIXES)
 type SchemaName = (typeof VALID_SCHEMAS)[number]
 
 const REGISTRY_SCHEMAS_BY_VERSION = {
@@ -38,7 +51,18 @@ const SCHEMA_PAYLOADS: Record<SchemaName, unknown> = {
 	receipt: receiptSchema,
 }
 
-type MintlifyProxyPath = "docs" | "vercel"
+type DocsRedirectSurface = "docs-prefixed" | "root-level"
+
+type MintlifyProxyRequest =
+	| {
+			kind: "docs"
+			upstreamPathname: string
+			redirectSurface: DocsRedirectSurface
+	  }
+	| {
+			kind: "vercel"
+			upstreamPathname: string
+	  }
 
 type NormalizedOriginTuple = {
 	scheme: "http" | "https"
@@ -121,10 +145,58 @@ function canonicalizePathname(pathname: string): string {
 	return canonicalPathname
 }
 
-function getMintlifyProxyPath(pathname: string): MintlifyProxyPath | null {
-	if (pathname === "/docs" || pathname.startsWith("/docs/")) return "docs"
-	if (pathname.startsWith("/.well-known/vercel/")) return "vercel"
-	return null
+function hasUnsafeRootDocsPath(pathname: string): boolean {
+	const normalizedPathname = pathname.toLowerCase()
+	if (pathname.includes("\\") || normalizedPathname.includes("%5c")) return true
+	if (normalizedPathname.includes("%2f") || normalizedPathname.includes("%2e")) return true
+	if (pathname.includes("//")) return true
+
+	for (const segment of pathname.split("/")) {
+		if (!segment) continue
+		if (segment === "." || segment === "..") return true
+	}
+
+	return false
+}
+
+function getRootPathPrefix(pathname: string): string | null {
+	const firstSlashIndex = pathname.indexOf("/", 1)
+	if (firstSlashIndex === -1) {
+		return pathname.length > 1 ? pathname.slice(1) : null
+	}
+
+	if (firstSlashIndex === 1) return null
+	return pathname.slice(1, firstSlashIndex)
+}
+
+function classifyMintlifyProxyRequest(pathname: string): MintlifyProxyRequest | null {
+	const canonicalPathname = canonicalizePathname(pathname)
+
+	if (canonicalPathname === "/docs" || canonicalPathname.startsWith("/docs/")) {
+		return {
+			kind: "docs",
+			upstreamPathname: canonicalPathname,
+			redirectSurface: "docs-prefixed",
+		}
+	}
+
+	if (canonicalPathname.startsWith("/.well-known/vercel/")) {
+		return {
+			kind: "vercel",
+			upstreamPathname: canonicalPathname,
+		}
+	}
+
+	if (hasUnsafeRootDocsPath(pathname)) return null
+
+	const rootPathPrefix = getRootPathPrefix(pathname)
+	if (!rootPathPrefix || !MINTLIFY_ROOT_DOC_PREFIX_SET.has(rootPathPrefix)) return null
+
+	return {
+		kind: "docs",
+		upstreamPathname: pathname,
+		redirectSurface: "root-level",
+	}
 }
 
 function normalizeOriginTuple(url: URL): NormalizedOriginTuple | null {
@@ -221,7 +293,7 @@ function buildMintlifyRequestHeaders(c: Context<{ Bindings: Env }>, originUrl: U
 	return headers
 }
 
-function getDocsRedirectPath(pathname: string): string {
+function getDocsRedirectPath(pathname: string, redirectSurface: DocsRedirectSurface): string {
 	let docsPath = canonicalizePathname(pathname)
 
 	while (docsPath.startsWith("/docs/docs/")) {
@@ -232,18 +304,25 @@ function getDocsRedirectPath(pathname: string): string {
 		docsPath = "/docs"
 	}
 
-	if (docsPath === "/") return "/docs"
-	if (docsPath === "/docs/") return "/docs"
-	if (docsPath === "/docs" || docsPath.startsWith("/docs/")) return docsPath
 	if (docsPath.startsWith("/.well-known/vercel/")) return docsPath
-	return `/docs${docsPath}`
+
+	if (redirectSurface === "docs-prefixed") {
+		if (docsPath === "/") return "/docs"
+		if (docsPath === "/docs/") return "/docs"
+		if (docsPath === "/docs" || docsPath.startsWith("/docs/")) return docsPath
+		return `/docs${docsPath}`
+	}
+
+	if (docsPath === "/docs" || docsPath === "/docs/") return "/docs"
+	if (docsPath.startsWith("/docs/")) return docsPath.slice("/docs".length)
+	return docsPath
 }
 
 function rewriteMintlifyLocation(
 	location: string,
 	originUrl: URL,
 	upstreamUrl: URL,
-	proxyPath: MintlifyProxyPath,
+	proxyRequest: MintlifyProxyRequest,
 ): string {
 	let resolvedLocation: URL
 	try {
@@ -267,8 +346,11 @@ function rewriteMintlifyLocation(
 	rewrittenLocation.protocol = originUrl.protocol
 	rewrittenLocation.host = originUrl.host
 
-	if (proxyPath === "docs") {
-		rewrittenLocation.pathname = getDocsRedirectPath(rewrittenLocation.pathname)
+	if (proxyRequest.kind === "docs") {
+		rewrittenLocation.pathname = getDocsRedirectPath(
+			rewrittenLocation.pathname,
+			proxyRequest.redirectSurface,
+		)
 	} else {
 		rewrittenLocation.pathname = canonicalizePathname(rewrittenLocation.pathname)
 	}
@@ -301,13 +383,13 @@ app.use("*", logger())
 app.use("*", secureHeaders())
 // Skip trailing-slash normalization for Mintlify-managed paths
 app.use("*", async (c, next) => {
-	const canonicalPathname = canonicalizePathname(new URL(c.req.url).pathname)
-	if (getMintlifyProxyPath(canonicalPathname)) return next()
+	const proxyRequest = classifyMintlifyProxyRequest(new URL(c.req.url).pathname)
+	if (proxyRequest) return next()
 	return normalizeTrailingSlash(c, next)
 })
 app.use("*", async (c, next) => {
-	const canonicalPathname = canonicalizePathname(new URL(c.req.url).pathname)
-	if (getMintlifyProxyPath(canonicalPathname)) return next()
+	const proxyRequest = classifyMintlifyProxyRequest(new URL(c.req.url).pathname)
+	if (proxyRequest) return next()
 	return withEtag(c, next)
 })
 
@@ -333,11 +415,10 @@ app.get("/install.sh", async (c) => {
 // Proxy Mintlify-managed paths, forwarding method/body and rewriting redirects
 async function proxyToMintlify(
 	c: Context<{ Bindings: Env }>,
-	proxyPath: MintlifyProxyPath,
-	canonicalPathname: string,
+	proxyRequest: MintlifyProxyRequest,
 ): Promise<Response> {
 	const originUrl = new URL(c.req.url)
-	const upstreamUrl = new URL(canonicalPathname + originUrl.search, MINTLIFY_ORIGIN)
+	const upstreamUrl = new URL(proxyRequest.upstreamPathname + originUrl.search, MINTLIFY_ORIGIN)
 	const headers = buildMintlifyRequestHeaders(c, originUrl)
 
 	const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD"
@@ -369,7 +450,7 @@ async function proxyToMintlify(
 	if (location !== null) {
 		responseHeaders.set(
 			"Location",
-			rewriteMintlifyLocation(location, originUrl, upstreamUrl, proxyPath),
+			rewriteMintlifyLocation(location, originUrl, upstreamUrl, proxyRequest),
 		)
 	}
 
@@ -398,9 +479,8 @@ async function proxyToMintlify(
 }
 
 app.use("*", async (c, next) => {
-	const canonicalPathname = canonicalizePathname(new URL(c.req.url).pathname)
-	const proxyPath = getMintlifyProxyPath(canonicalPathname)
-	if (!proxyPath) return next()
+	const proxyRequest = classifyMintlifyProxyRequest(new URL(c.req.url).pathname)
+	if (!proxyRequest) return next()
 
 	if (!ALLOWED_MINTLIFY_METHODS.has(c.req.method)) {
 		return c.text("Method Not Allowed", 405, {
@@ -408,7 +488,7 @@ app.use("*", async (c, next) => {
 		})
 	}
 
-	return proxyToMintlify(c, proxyPath, canonicalPathname)
+	return proxyToMintlify(c, proxyRequest)
 })
 
 // Unified schema route

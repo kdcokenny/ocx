@@ -53,17 +53,37 @@ export class NotFoundError extends OCXError {
 	}
 }
 
+export type RegistryNetworkContext = "source" | "dependency"
+
+export interface NetworkErrorOptions {
+	url?: string
+	status?: number
+	statusText?: string
+	phase?: string
+	qualifiedName?: string
+	registryContext?: RegistryNetworkContext
+	registryName?: string
+}
+
 export class NetworkError extends OCXError {
 	public readonly url?: string
 	public readonly status?: number
 	public readonly statusText?: string
+	public readonly phase?: string
+	public readonly qualifiedName?: string
+	public readonly registryContext?: RegistryNetworkContext
+	public readonly registryName?: string
 
-	constructor(message: string, options?: { url?: string; status?: number; statusText?: string }) {
+	constructor(message: string, options?: NetworkErrorOptions) {
 		super(message, "NETWORK_ERROR", EXIT_CODES.NETWORK)
 		this.name = "NetworkError"
 		this.url = options?.url
 		this.status = options?.status
 		this.statusText = options?.statusText
+		this.phase = options?.phase
+		this.qualifiedName = options?.qualifiedName
+		this.registryContext = options?.registryContext
+		this.registryName = options?.registryName
 	}
 }
 

@@ -1149,6 +1149,505 @@ describe("ocx profile add --source (registry installation)", () => {
 		expect(existsSync(join(profileDir, ".ocx", "receipt.jsonc"))).toBe(true)
 	})
 
+	it("surfaces source-registry diagnostics for initial ephemeral failures in human and JSON output", async () => {
+		const globalConfigDir = join(testDir, "opencode")
+		const profilesDir = join(globalConfigDir, "profiles")
+		await mkdir(profilesDir, { recursive: true })
+		await writeFile(join(globalConfigDir, "ocx.jsonc"), JSON.stringify({ registries: {} }, null, 2))
+		await mkdir(join(profilesDir, "default"), { recursive: true })
+		await writeFile(join(profilesDir, "default", "ocx.jsonc"), "{}")
+
+		registry.setRouteError("/components/test-profile.json", 503, "Source registry unavailable")
+		_clearFetcherCacheForTests()
+
+		const workDir = join(testDir, "workspace")
+		await mkdir(workDir, { recursive: true })
+
+		const textAttempt = await runCLI(
+			[
+				"profile",
+				"add",
+				"ephemeral-source-fail-text",
+				"--source",
+				"kdco/test-profile",
+				"--from",
+				registry.url,
+				"--global",
+			],
+			workDir,
+		)
+
+		expect(textAttempt.exitCode).toBe(69)
+		expect(textAttempt.output).toContain("phase: packument-fetch")
+		expect(textAttempt.output).toContain("qualifiedName: kdco/test-profile")
+		expect(textAttempt.output).toContain("registryContext: source")
+		expect(textAttempt.output).toContain("registryName: kdco")
+		expect(textAttempt.output).toContain(`${registry.url}/components/test-profile.json`)
+		expect(existsSync(join(profilesDir, "ephemeral-source-fail-text"))).toBe(false)
+
+		_clearFetcherCacheForTests()
+
+		const jsonAttempt = await runCLI(
+			[
+				"profile",
+				"add",
+				"ephemeral-source-fail-json",
+				"--source",
+				"kdco/test-profile",
+				"--from",
+				registry.url,
+				"--global",
+				"--json",
+			],
+			workDir,
+		)
+
+		expect(jsonAttempt.exitCode).toBe(69)
+		const jsonPayload = JSON.parse(jsonAttempt.stdout || jsonAttempt.stderr) as {
+			success: false
+			error: {
+				code: string
+				details?: {
+					url?: string
+					phase?: string
+					qualifiedName?: string
+					registryContext?: string
+					registryName?: string
+					status?: number
+				}
+			}
+		}
+
+		expect(jsonPayload.success).toBe(false)
+		expect(jsonPayload.error.code).toBe("NETWORK_ERROR")
+		expect(jsonPayload.error.details?.url).toContain(`${registry.url}/components/test-profile.json`)
+		expect(jsonPayload.error.details?.phase).toBe("packument-fetch")
+		expect(jsonPayload.error.details?.qualifiedName).toBe("kdco/test-profile")
+		expect(jsonPayload.error.details?.registryContext).toBe("source")
+		expect(jsonPayload.error.details?.registryName).toBe("kdco")
+		expect(jsonPayload.error.details?.status).toBe(503)
+		expect(existsSync(join(profilesDir, "ephemeral-source-fail-json"))).toBe(false)
+
+		registry.clearRouteOverrides()
+		_clearFetcherCacheForTests()
+	})
+
+	it("surfaces dependency-registry diagnostics after profile download and rolls back in human and JSON output", async () => {
+		const globalConfigDir = join(testDir, "opencode")
+		const profilesDir = join(globalConfigDir, "profiles")
+		await mkdir(profilesDir, { recursive: true })
+		await writeFile(
+			join(globalConfigDir, "ocx.jsonc"),
+			JSON.stringify({ registries: { kdco: { url: registry.url } } }, null, 2),
+		)
+		await mkdir(join(profilesDir, "default"), { recursive: true })
+		await writeFile(join(profilesDir, "default", "ocx.jsonc"), "{}")
+
+		const dependencyRegistry = startMockRegistry()
+
+		try {
+			dependencyRegistry.setRouteError(
+				"/components/test-plugin.json",
+				503,
+				"Dependency unavailable",
+			)
+			registry.setFileContent(
+				"test-profile-with-deps",
+				"ocx.jsonc",
+				JSON.stringify({ registries: { kdco: { url: dependencyRegistry.url } } }, null, 2),
+			)
+			_clearFetcherCacheForTests()
+
+			const workDir = join(testDir, "workspace")
+			await mkdir(workDir, { recursive: true })
+
+			const textProfileName = "dependency-fail-text"
+			const textAttempt = await runCLI(
+				["profile", "add", textProfileName, "--source", "kdco/test-profile-with-deps", "--global"],
+				workDir,
+				{
+					env: { XDG_CONFIG_HOME: testDir },
+					isolated: true,
+				},
+			)
+
+			expect(textAttempt.exitCode).toBe(69)
+			expect(textAttempt.output).toContain("phase: packument-fetch")
+			expect(textAttempt.output).toContain("qualifiedName: kdco/test-plugin")
+			expect(textAttempt.output).toContain("registryContext: dependency")
+			expect(textAttempt.output).toContain("registryName: kdco")
+			expect(textAttempt.output).toContain(`${dependencyRegistry.url}/components/test-plugin.json`)
+			expect(existsSync(join(profilesDir, textProfileName))).toBe(false)
+			const textEntries = await readdir(profilesDir)
+			expect(textEntries.some((entry) => entry.startsWith(".staging-"))).toBe(false)
+
+			_clearFetcherCacheForTests()
+
+			const jsonProfileName = "dependency-fail-json"
+			const jsonAttempt = await runCLI(
+				[
+					"profile",
+					"add",
+					jsonProfileName,
+					"--source",
+					"kdco/test-profile-with-deps",
+					"--global",
+					"--json",
+				],
+				workDir,
+				{
+					env: { XDG_CONFIG_HOME: testDir },
+					isolated: true,
+				},
+			)
+
+			expect(jsonAttempt.exitCode).toBe(69)
+			const jsonPayload = JSON.parse(jsonAttempt.stdout || jsonAttempt.stderr) as {
+				success: false
+				error: {
+					code: string
+					details?: {
+						url?: string
+						phase?: string
+						qualifiedName?: string
+						registryContext?: string
+						registryName?: string
+						status?: number
+					}
+				}
+			}
+
+			expect(jsonPayload.success).toBe(false)
+			expect(jsonPayload.error.code).toBe("NETWORK_ERROR")
+			expect(jsonPayload.error.details?.url).toContain(
+				`${dependencyRegistry.url}/components/test-plugin.json`,
+			)
+			expect(jsonPayload.error.details?.phase).toBe("packument-fetch")
+			expect(jsonPayload.error.details?.qualifiedName).toBe("kdco/test-plugin")
+			expect(jsonPayload.error.details?.registryContext).toBe("dependency")
+			expect(jsonPayload.error.details?.registryName).toBe("kdco")
+			expect(jsonPayload.error.details?.status).toBe(503)
+			expect(existsSync(join(profilesDir, jsonProfileName))).toBe(false)
+			const jsonEntries = await readdir(profilesDir)
+			expect(jsonEntries.some((entry) => entry.startsWith(".staging-"))).toBe(false)
+		} finally {
+			dependencyRegistry.stop()
+			registry.clearRouteOverrides()
+			registry.clearFileContent()
+			_clearFetcherCacheForTests()
+		}
+	})
+
+	it("reports actual transitive dependency context in dependency diagnostics", async () => {
+		const globalConfigDir = join(testDir, "opencode")
+		const profilesDir = join(globalConfigDir, "profiles")
+		await mkdir(profilesDir, { recursive: true })
+		await writeFile(
+			join(globalConfigDir, "ocx.jsonc"),
+			JSON.stringify({ registries: { kdco: { url: registry.url } } }, null, 2),
+		)
+		await mkdir(join(profilesDir, "default"), { recursive: true })
+		await writeFile(join(profilesDir, "default", "ocx.jsonc"), "{}")
+
+		const transitiveRegistry = startMockRegistry()
+
+		try {
+			registry.setRouteError(
+				"/components/test-profile-with-deps.json",
+				200,
+				JSON.stringify({
+					name: "test-profile-with-deps",
+					"dist-tags": { latest: "1.0.0" },
+					versions: {
+						"1.0.0": {
+							name: "test-profile-with-deps",
+							type: "profile",
+							description: "Profile that resolves through a transitive dependency",
+							files: [
+								{ path: "ocx.jsonc", target: "ocx.jsonc" },
+								{ path: "opencode.jsonc", target: "opencode.jsonc" },
+								{ path: "AGENTS.md", target: "AGENTS.md" },
+							],
+							dependencies: ["test-agent"],
+						},
+					},
+				}),
+			)
+
+			registry.setRouteError(
+				"/components/test-agent.json",
+				200,
+				JSON.stringify({
+					name: "test-agent",
+					"dist-tags": { latest: "1.0.0" },
+					versions: {
+						"1.0.0": {
+							name: "test-agent",
+							type: "agent",
+							description: "Agent that depends on cross-registry plugin",
+							files: [{ path: "agent.md", target: "agents/test-agent.md" }],
+							dependencies: ["dep/test-plugin"],
+						},
+					},
+				}),
+			)
+
+			registry.setFileContent(
+				"test-profile-with-deps",
+				"ocx.jsonc",
+				JSON.stringify(
+					{
+						registries: {
+							kdco: { url: registry.url },
+							dep: { url: transitiveRegistry.url },
+						},
+					},
+					null,
+					2,
+				),
+			)
+
+			transitiveRegistry.setRouteError(
+				"/components/test-plugin.json",
+				503,
+				"Transitive dependency unavailable",
+			)
+			_clearFetcherCacheForTests()
+
+			const workDir = join(testDir, "workspace")
+			await mkdir(workDir, { recursive: true })
+
+			const textProfileName = "transitive-context-fail-text"
+			const textAttempt = await runCLI(
+				["profile", "add", textProfileName, "--source", "kdco/test-profile-with-deps", "--global"],
+				workDir,
+				{
+					env: { XDG_CONFIG_HOME: testDir },
+					isolated: true,
+				},
+			)
+
+			expect(textAttempt.exitCode).toBe(69)
+			expect(textAttempt.output).toContain("phase: packument-fetch")
+			expect(textAttempt.output).toContain("qualifiedName: dep/test-plugin")
+			expect(textAttempt.output).toContain("registryContext: dependency")
+			expect(textAttempt.output).toContain("registryName: dep")
+			expect(textAttempt.output).toContain(`${transitiveRegistry.url}/components/test-plugin.json`)
+			expect(textAttempt.output).not.toContain("qualifiedName: kdco/test-agent")
+			expect(existsSync(join(profilesDir, textProfileName))).toBe(false)
+
+			_clearFetcherCacheForTests()
+
+			const jsonProfileName = "transitive-context-fail-json"
+			const jsonAttempt = await runCLI(
+				[
+					"profile",
+					"add",
+					jsonProfileName,
+					"--source",
+					"kdco/test-profile-with-deps",
+					"--global",
+					"--json",
+				],
+				workDir,
+				{
+					env: { XDG_CONFIG_HOME: testDir },
+					isolated: true,
+				},
+			)
+
+			expect(jsonAttempt.exitCode).toBe(69)
+			const jsonPayload = JSON.parse(jsonAttempt.stdout || jsonAttempt.stderr) as {
+				success: false
+				error: {
+					code: string
+					details?: {
+						url?: string
+						phase?: string
+						qualifiedName?: string
+						registryContext?: string
+						registryName?: string
+						status?: number
+					}
+				}
+			}
+
+			expect(jsonPayload.success).toBe(false)
+			expect(jsonPayload.error.code).toBe("NETWORK_ERROR")
+			expect(jsonPayload.error.details?.url).toContain(
+				`${transitiveRegistry.url}/components/test-plugin.json`,
+			)
+			expect(jsonPayload.error.details?.phase).toBe("packument-fetch")
+			expect(jsonPayload.error.details?.qualifiedName).toBe("dep/test-plugin")
+			expect(jsonPayload.error.details?.registryContext).toBe("dependency")
+			expect(jsonPayload.error.details?.registryName).toBe("dep")
+			expect(jsonPayload.error.details?.status).toBe(503)
+			expect(jsonPayload.error.details?.qualifiedName).not.toBe("kdco/test-agent")
+			expect(existsSync(join(profilesDir, jsonProfileName))).toBe(false)
+		} finally {
+			transitiveRegistry.stop()
+			registry.clearRouteOverrides()
+			registry.clearFileContent()
+			_clearFetcherCacheForTests()
+		}
+	})
+
+	it("reports actual dependency context for transitive file-download failures", async () => {
+		const globalConfigDir = join(testDir, "opencode")
+		const profilesDir = join(globalConfigDir, "profiles")
+		await mkdir(profilesDir, { recursive: true })
+		await writeFile(
+			join(globalConfigDir, "ocx.jsonc"),
+			JSON.stringify({ registries: { kdco: { url: registry.url } } }, null, 2),
+		)
+		await mkdir(join(profilesDir, "default"), { recursive: true })
+		await writeFile(join(profilesDir, "default", "ocx.jsonc"), "{}")
+
+		const transitiveRegistry = startMockRegistry()
+
+		try {
+			registry.setRouteError(
+				"/components/test-profile-with-deps.json",
+				200,
+				JSON.stringify({
+					name: "test-profile-with-deps",
+					"dist-tags": { latest: "1.0.0" },
+					versions: {
+						"1.0.0": {
+							name: "test-profile-with-deps",
+							type: "profile",
+							description: "Profile that resolves through a transitive dependency",
+							files: [
+								{ path: "ocx.jsonc", target: "ocx.jsonc" },
+								{ path: "opencode.jsonc", target: "opencode.jsonc" },
+								{ path: "AGENTS.md", target: "AGENTS.md" },
+							],
+							dependencies: ["test-agent"],
+						},
+					},
+				}),
+			)
+
+			registry.setRouteError(
+				"/components/test-agent.json",
+				200,
+				JSON.stringify({
+					name: "test-agent",
+					"dist-tags": { latest: "1.0.0" },
+					versions: {
+						"1.0.0": {
+							name: "test-agent",
+							type: "agent",
+							description: "Agent that depends on cross-registry plugin",
+							files: [{ path: "agent.md", target: "agents/test-agent.md" }],
+							dependencies: ["dep/test-plugin"],
+						},
+					},
+				}),
+			)
+
+			registry.setFileContent(
+				"test-profile-with-deps",
+				"ocx.jsonc",
+				JSON.stringify(
+					{
+						registries: {
+							kdco: { url: registry.url },
+							dep: { url: transitiveRegistry.url },
+						},
+					},
+					null,
+					2,
+				),
+			)
+
+			transitiveRegistry.setRouteError(
+				"/components/test-plugin/index.ts",
+				503,
+				"Transitive dependency file unavailable",
+			)
+			_clearFetcherCacheForTests()
+
+			const workDir = join(testDir, "workspace")
+			await mkdir(workDir, { recursive: true })
+
+			const textProfileName = "transitive-file-fail-t"
+			const textAttempt = await runCLI(
+				["profile", "add", textProfileName, "--source", "kdco/test-profile-with-deps", "--global"],
+				workDir,
+				{
+					env: { XDG_CONFIG_HOME: testDir },
+					isolated: true,
+				},
+			)
+
+			expect(textAttempt.exitCode).toBe(69)
+			expect(textAttempt.output).toContain("phase: file-content-fetch")
+			expect(textAttempt.output).toContain("qualifiedName: dep/test-plugin")
+			expect(textAttempt.output).toContain("registryContext: dependency")
+			expect(textAttempt.output).toContain("registryName: dep")
+			expect(textAttempt.output).toContain(
+				`${transitiveRegistry.url}/components/test-plugin/index.ts`,
+			)
+			expect(textAttempt.output).not.toContain("qualifiedName: kdco/test-agent")
+			expect(existsSync(join(profilesDir, textProfileName))).toBe(false)
+
+			_clearFetcherCacheForTests()
+
+			const jsonProfileName = "transitive-file-fail-j"
+			const jsonAttempt = await runCLI(
+				[
+					"profile",
+					"add",
+					jsonProfileName,
+					"--source",
+					"kdco/test-profile-with-deps",
+					"--global",
+					"--json",
+				],
+				workDir,
+				{
+					env: { XDG_CONFIG_HOME: testDir },
+					isolated: true,
+				},
+			)
+
+			expect(jsonAttempt.exitCode).toBe(69)
+			const jsonPayload = JSON.parse(jsonAttempt.stdout || jsonAttempt.stderr) as {
+				success: false
+				error: {
+					code: string
+					details?: {
+						url?: string
+						phase?: string
+						qualifiedName?: string
+						registryContext?: string
+						registryName?: string
+						status?: number
+					}
+				}
+			}
+
+			expect(jsonPayload.success).toBe(false)
+			expect(jsonPayload.error.code).toBe("NETWORK_ERROR")
+			expect(jsonPayload.error.details?.url).toContain(
+				`${transitiveRegistry.url}/components/test-plugin/index.ts`,
+			)
+			expect(jsonPayload.error.details?.phase).toBe("file-content-fetch")
+			expect(jsonPayload.error.details?.qualifiedName).toBe("dep/test-plugin")
+			expect(jsonPayload.error.details?.registryContext).toBe("dependency")
+			expect(jsonPayload.error.details?.registryName).toBe("dep")
+			expect(jsonPayload.error.details?.status).toBe(503)
+			expect(jsonPayload.error.details?.qualifiedName).not.toBe("kdco/test-agent")
+			expect(existsSync(join(profilesDir, jsonProfileName))).toBe(false)
+		} finally {
+			transitiveRegistry.stop()
+			registry.clearRouteOverrides()
+			registry.clearFileContent()
+			_clearFetcherCacheForTests()
+		}
+	})
+
 	it("should install profile dependencies flat (not in .opencode/)", async () => {
 		// Setup global config with registry configured
 		const globalConfigDir = join(testDir, "opencode")

@@ -331,6 +331,33 @@ describe("handleError JSON output", () => {
 			expect(output.error.code).toBe("NETWORK_ERROR")
 			expect(output.error.details).toBeUndefined()
 		})
+
+		it("formats registry diagnostic details when provided", () => {
+			const error = new NetworkError("Dependency fetch failed", {
+				url: "https://registry.example.com/components/test-plugin.json",
+				status: 503,
+				phase: "packument-fetch",
+				qualifiedName: "kdco/test-plugin",
+				registryContext: "dependency",
+				registryName: "kdco",
+			})
+
+			try {
+				handleError(error, { json: true })
+			} catch {
+				// Expected
+			}
+
+			const output = parseJsonOutput()
+			expect(output.error.details).toEqual({
+				url: "https://registry.example.com/components/test-plugin.json",
+				status: 503,
+				phase: "packument-fetch",
+				qualifiedName: "kdco/test-plugin",
+				registryContext: "dependency",
+				registryName: "kdco",
+			})
+		})
 	})
 
 	describe("ProfileNotFoundError", () => {

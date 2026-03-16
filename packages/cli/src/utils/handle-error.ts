@@ -148,6 +148,10 @@ function formatErrorAsJson(error: unknown): JsonErrorOutput {
 		if (error.url) details.url = error.url
 		if (error.status !== undefined) details.status = error.status
 		if (error.statusText) details.statusText = error.statusText
+		if (error.phase) details.phase = error.phase
+		if (error.qualifiedName) details.qualifiedName = error.qualifiedName
+		if (error.registryContext) details.registryContext = error.registryContext
+		if (error.registryName) details.registryName = error.registryName
 
 		return {
 			success: false,
