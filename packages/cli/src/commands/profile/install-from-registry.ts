@@ -106,11 +106,11 @@ function inferDependencyFromErrorUrl(
 	let componentName: string | undefined
 	try {
 		const parsedErrorUrl = new URL(errorUrl)
-		const packumentMatch = parsedErrorUrl.pathname.match(/^\/components\/([^/]+)\.json$/)
+		const packumentMatch = parsedErrorUrl.pathname.match(/(?:^|\/)components\/([^/]+)\.json$/)
 		if (packumentMatch?.[1]) {
 			componentName = decodeURIComponent(packumentMatch[1])
 		} else {
-			const fileContentMatch = parsedErrorUrl.pathname.match(/^\/components\/([^/]+)\/.+$/)
+			const fileContentMatch = parsedErrorUrl.pathname.match(/(?:^|\/)components\/([^/]+)\/.+$/)
 			if (fileContentMatch?.[1]) {
 				componentName = decodeURIComponent(fileContentMatch[1])
 			}
