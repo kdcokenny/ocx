@@ -1913,23 +1913,25 @@ describe("ocx profile add --source (registry installation)", () => {
 		const profileName = "broken-profile"
 		const profileDir = join(profilesDir, profileName)
 
-		const firstAttempt = await runCLI(
-			["profile", "add", profileName, "--source", "kdco/test-profile-with-deps", "--global"],
-			workDir,
-			{
-				env: { XDG_CONFIG_HOME: testDir },
-				isolated: true,
-			},
-		)
+		try {
+			const firstAttempt = await runCLI(
+				["profile", "add", profileName, "--source", "kdco/test-profile-with-deps", "--global"],
+				workDir,
+				{
+					env: { XDG_CONFIG_HOME: testDir },
+					isolated: true,
+				},
+			)
 
-		expect(firstAttempt.exitCode).not.toBe(0)
-		expect(existsSync(profileDir)).toBe(false)
-		const profileRootEntries = await readdir(profilesDir)
-		expect(profileRootEntries.some((entry) => entry.startsWith(".staging-"))).toBe(false)
-
-		registry.clearRouteOverrides()
-		registry.clearFileContent()
-		_clearFetcherCacheForTests()
+			expect(firstAttempt.exitCode).not.toBe(0)
+			expect(existsSync(profileDir)).toBe(false)
+			const profileRootEntries = await readdir(profilesDir)
+			expect(profileRootEntries.some((entry) => entry.startsWith(".staging-"))).toBe(false)
+		} finally {
+			registry.clearRouteOverrides()
+			registry.clearFileContent()
+			_clearFetcherCacheForTests()
+		}
 
 		const retryAttempt = await runCLI(
 			["profile", "add", profileName, "--source", "kdco/test-profile-with-deps", "--global"],
