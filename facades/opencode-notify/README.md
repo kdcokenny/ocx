@@ -1,8 +1,8 @@
 # opencode-notify
 
-> Know when your AI needs you back. Native OS notifications for OpenCode.
+> Improved native notifier support for OpenCode.
 
-A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input. Stop tab-switching to check if it's done.
+A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input. It prioritizes native notifier delivery on macOS, Windows, and Linux, with an additional cmux-native path when available.
 
 ## Why This Exists
 
@@ -11,8 +11,9 @@ You delegate a task and switch to another window. Now you're checking back every
 This plugin solves that:
 
 - **Stay focused** - Work in other apps. A notification arrives when the AI needs you.
-- **Native feel** - Uses `cmux notify` inside cmux, otherwise macOS Notification Center, Windows Toast, or Linux notify-send.
-- **Smart defaults** - Won't spam you. Only notifies for meaningful events, and only when you're not already looking at the terminal.
+- **Native notifier support first** - Uses macOS Notification Center, Windows Toast, or Linux notify-send via `node-notifier`.
+- **Smart defaults** - Won't spam you. Only notifies for meaningful events, with parent-session filtering and quiet-hours support.
+- **Additional cmux-native path** - When running in cmux, can route through `cmux notify` and still falls back safely to desktop notifications.
 
 ## Installation
 
@@ -41,10 +42,18 @@ ocx add kdco/workspace --from https://registry.kdco.dev
 
 The plugin automatically:
 1. Detects your terminal emulator (supports 37+ terminals)
-2. Suppresses notifications when your terminal is focused
+2. Suppresses notifications when your terminal is focused on macOS
 3. Enables click-to-focus on macOS (click notification → terminal foregrounds)
 
-## cmux Support
+## Native Delivery Paths
+
+By default, notifications go through the native desktop notifier path:
+
+- **macOS:** Notification Center (`terminal-notifier` backend)
+- **Windows:** Toast notifications (`SnoreToast` backend)
+- **Linux:** `notify-send`
+
+### Additional cmux-native path
 
 When running inside cmux (with `CMUX_WORKSPACE_ID` set), the plugin prefers native cmux notifications via:
 
@@ -70,16 +79,28 @@ Works out of the box. To customize, create `~/.config/opencode/kdco-notify.json`
 
 ```json
 {
-  "enabled": true,
   "notifyChildSessions": false,
-  "suppressWhenFocused": true,
+  "terminal": "ghostty",
   "sounds": {
     "idle": "Glass",
     "error": "Basso",
-    "permission": "Submarine"
+    "permission": "Submarine",
+    "question": "Submarine"
+  },
+  "quietHours": {
+    "enabled": false,
+    "start": "22:00",
+    "end": "08:00"
   }
 }
 ```
+
+Configuration keys:
+
+- `notifyChildSessions` (default `false`): notify for child/sub-session events.
+- `terminal` (optional): override terminal auto-detection.
+- `sounds`: per-event sounds (`idle`, `error`, `permission`, optional `question`).
+- `quietHours`: scheduled suppression window.
 
 **Available macOS sounds:** Basso, Blow, Bottle, Frog, Funk, Glass, Hero, Morse, Ping, Pop, Purr, Sosumi, Submarine, Tink
 
@@ -93,12 +114,12 @@ Minimal footprint. The plugin is event-driven - it listens for session events an
 
 No. Smart defaults prevent noise:
 - Only notifies for parent sessions (not every sub-task)
-- Suppresses when your terminal is the active window
-- Batches notifications when multiple delegations complete together
+- Supports quiet-hours suppression
+- Suppresses when your terminal is the active window on macOS
 
 ### Can I disable it temporarily?
 
-Set `"enabled": false` in the config file, or delete the config to return to defaults.
+This plugin does not currently expose an `enabled` config flag. To disable notifications, remove/uninstall the plugin (for example: `ocx remove kdco/notify`) and add it back when needed.
 
 ## Supported Terminals
 
@@ -108,11 +129,17 @@ Ghostty, Kitty, iTerm2, WezTerm, Alacritty, Hyper, Terminal.app, Windows Termina
 
 ## Manual Installation
 
-If you prefer not to use OCX, copy the source from [`src/`](./src) to `.opencode/plugin/`.
+If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` and preserve the multi-file layout:
+
+- `.opencode/plugins/notify.ts`
+- `.opencode/plugins/notify/backend.ts`
+- `.opencode/plugins/notify/cmux.ts`
+- `.opencode/plugins/kdco-primitives/types.ts`
+- `.opencode/plugins/kdco-primitives/with-timeout.ts`
 
 **Caveats:**
 - Manually install dependencies (`node-notifier`, `detect-terminal`)
-- Install `cmux` if you want native cmux notifications
+- Install `cmux` if you want the additional cmux-native notification path
 - Updates require manual re-copying
 
 ## Part of the OCX Ecosystem
