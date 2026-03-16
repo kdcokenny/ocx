@@ -1,8 +1,8 @@
 # opencode-notify
 
-> Improved native notifier support for OpenCode.
+> Native OS notifications for OpenCode.
 
-A plugin for [OpenCode](https://github.com/sst/opencode) that delivers native desktop notifications when tasks complete, errors occur, or the AI needs your input. It prioritizes native notifier delivery on macOS, Windows, and Linux, with an additional [cmux](https://www.cmux.dev/)-native path when available.
+A plugin for [OpenCode](https://github.com/sst/opencode) that delivers Native OS notifications when tasks complete, errors occur, or the AI needs your input. This update improves native OS notification delivery on macOS, Windows, and Linux, with an additional [cmux](https://www.cmux.dev/)-native path when available.
 
 ## Why This Exists
 
@@ -11,7 +11,7 @@ You delegate a task and switch to another window. Now you're checking back every
 This plugin solves that:
 
 - **Stay focused** - Work in other apps. A notification arrives when the AI needs you.
-- **Native notifier support first** - Uses macOS Notification Center, Windows Toast, or Linux notify-send via `node-notifier`.
+- **Native OS notifications first** - Uses macOS Notification Center, Windows Toast, or Linux notify-send via `node-notifier`.
 - **Smart defaults** - Won't spam you. Only notifies for meaningful events, with parent-session filtering and quiet-hours support.
 - **Additional [cmux](https://www.cmux.dev/)-native path** - When running in [cmux](https://www.cmux.dev/), can route through `cmux notify` and still falls back safely to desktop notifications.
 
@@ -45,9 +45,9 @@ The plugin automatically:
 2. Suppresses notifications when your terminal is focused on macOS
 3. Enables click-to-focus on macOS (click notification → terminal foregrounds)
 
-## Native Delivery Paths
+## Native OS Notification Paths
 
-By default, notifications go through the native desktop notifier path:
+By default, notifications go through the native OS desktop notification path:
 
 - **macOS:** Notification Center (`terminal-notifier` backend)
 - **Windows:** Toast notifications (`SnoreToast` backend)
