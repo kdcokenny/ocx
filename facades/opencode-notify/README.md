@@ -38,12 +38,15 @@ ocx add kdco/workspace --from https://registry.kdco.dev
 | Session complete | Yes | Glass | Main task done - time to review |
 | Session error | Yes | Basso | Something broke - needs attention |
 | Permission needed | Yes | Submarine | AI is blocked, waiting for you |
-| Sub-task complete | No | - | Parent session handles orchestration |
+| Question asked | Yes | Submarine (default) | Questions should always reach you promptly |
+| Sub-task complete / error | No (default) | - | Set `notifyChildSessions: true` to include child-session `session.idle` and `session.error` events |
 
 The plugin automatically:
 1. Detects your terminal emulator (supports 37+ terminals)
-2. Suppresses notifications when your terminal is focused on macOS
+2. Suppresses `session.idle`, `session.error`, and `permission.updated` notifications when your terminal is focused on macOS
 3. Enables click-to-focus on macOS (click notification → terminal foregrounds)
+
+Question notifications intentionally bypass macOS focus suppression so direct prompts are not missed.
 
 ## Native OS Notification Paths
 
@@ -97,7 +100,7 @@ Works out of the box. To customize, create `~/.config/opencode/kdco-notify.json`
 
 Configuration keys:
 
-- `notifyChildSessions` (default `false`): notify for child/sub-session events.
+- `notifyChildSessions` (default `false`): when `true`, include child/sub-session `session.idle` and `session.error` notifications (question and permission notifications are unaffected).
 - `terminal` (optional): override terminal auto-detection.
 - `sounds`: per-event sounds (`idle`, `error`, `permission`, optional `question`).
 - `quietHours`: scheduled suppression window.
@@ -115,7 +118,7 @@ Minimal footprint. The plugin is event-driven - it listens for session events an
 No. Smart defaults prevent noise:
 - Only notifies for parent sessions (not every sub-task)
 - Supports quiet-hours suppression
-- Suppresses when your terminal is the active window on macOS
+- Suppresses when your terminal is the active window on macOS (except direct question notifications)
 
 ### Can I disable it temporarily?
 
