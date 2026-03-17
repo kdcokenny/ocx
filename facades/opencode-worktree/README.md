@@ -12,7 +12,7 @@ Manual worktrees require setup: create the worktree, open a terminal, navigate t
 
 This plugin eliminates that friction. When the AI calls `worktree_create`, your terminal spawns automatically, OpenCode is already running, and files are synchronized. When it calls `worktree_delete`, changes commit automatically and the worktree cleans itself up. It's the difference between having a tool and having a workflow.
 
-Works great standalone, but pairs especially well with **tmux** for seamless window management. When running inside tmux, worktrees spawn as new windows instead of separate terminal apps—keeping everything organized in a single terminal session with zero external window overhead.
+Works great standalone, but pairs especially well with **[cmux](https://www.cmux.dev/)** for agentic workflows. cmux provides native workspace management and programmatic control that fits naturally into automated development workflows. tmux is also supported if you prefer a traditional multiplexer setup.
 
 ## When to Use This
 
@@ -103,14 +103,14 @@ The plugin detects your terminal automatically:
 | **macOS** | Ghostty, iTerm2, Kitty, WezTerm, Alacritty, Warp, Terminal.app |
 | **Linux** | Kitty, WezTerm, Alacritty, Ghostty, Foot, GNOME Terminal, Konsole, XFCE4 Terminal, xterm |
 | **Windows** | Windows Terminal (wt.exe), cmd.exe fallback |
-| **tmux** | **Creates new tmux window** (priority detection on all platforms) |
 | **cmux** | **Uses native cmux workflow** when `CMUX_WORKSPACE_ID` is present or socket control is explicitly enabled (`CMUX_SOCKET_PATH` + `CMUX_SOCKET_MODE=allowAll`); falls back safely when unavailable |
+| **tmux** | Creates new tmux window (supported on all platforms) |
 | **WSL** | Windows Terminal via wt.exe interop |
 
 ### Detection Priority
 
-1. **tmux** - **Priority detection on all platforms** - Creates new tmux windows instead of spawning separate terminal applications. This keeps all worktrees organized in a single terminal session with native tmux window management and zero external window overhead.
-2. **cmux** - If `cmux` is available and either `CMUX_WORKSPACE_ID` is present, or external socket control is explicitly enabled (`CMUX_SOCKET_PATH` with `CMUX_SOCKET_MODE=allowAll`), uses cmux-native launch flow first.
+1. **tmux** - Runtime priority on all platforms when already inside tmux. Creates new tmux windows instead of spawning separate terminal applications.
+2. **cmux** - **Recommended for new agentic workflows**. Uses native cmux launch flow when available via `CMUX_WORKSPACE_ID` or explicit socket control (`CMUX_SOCKET_PATH` with `CMUX_SOCKET_MODE=allowAll`), then falls back safely when cmux context is unavailable.
 3. **WSL** - Uses Windows Terminal for Linux subsystem
 4. **Environment vars** - Checks `TERM_PROGRAM`, `KITTY_WINDOW_ID`, `GHOSTTY_RESOURCES_DIR`, etc.
 5. **Fallback** - System defaults (Terminal.app, xterm, cmd.exe)
