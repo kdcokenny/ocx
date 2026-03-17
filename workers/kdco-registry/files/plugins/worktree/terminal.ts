@@ -411,6 +411,8 @@ export function buildCmuxCommandSequence(
 	cwd: string,
 	command?: string,
 ): string[][] {
+	// Product policy: each worktree launch gets a new cmux workspace.
+	// We intentionally do not reuse the current workspace context.
 	const cmuxArgs = ["new-workspace", "--cwd", cwd]
 
 	if (command) {

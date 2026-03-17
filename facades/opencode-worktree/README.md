@@ -103,14 +103,14 @@ The plugin detects your terminal automatically:
 | **macOS** | Ghostty, iTerm2, Kitty, WezTerm, Alacritty, Warp, Terminal.app |
 | **Linux** | Kitty, WezTerm, Alacritty, Ghostty, Foot, GNOME Terminal, Konsole, XFCE4 Terminal, xterm |
 | **Windows** | Windows Terminal (wt.exe), cmd.exe fallback |
-| **cmux** | **Uses native cmux workflow** when `CMUX_WORKSPACE_ID` is present or socket control is explicitly enabled (`CMUX_SOCKET_PATH` + `CMUX_SOCKET_MODE=allowAll`); falls back safely when unavailable |
+| **cmux** | **Uses native cmux workflow** when `CMUX_WORKSPACE_ID` is present or socket control is explicitly enabled (`CMUX_SOCKET_PATH` + `CMUX_SOCKET_MODE=allowAll`); each worktree launch opens a new cmux workspace and falls back safely when unavailable |
 | **tmux** | Creates new tmux window (supported on all platforms) |
 | **WSL** | Windows Terminal via wt.exe interop |
 
 ### Detection Priority
 
 1. **tmux** - Runtime priority on all platforms when already inside tmux. Creates new tmux windows instead of spawning separate terminal applications.
-2. **cmux** - **Recommended for new agentic workflows**. Uses native cmux launch flow when available via `CMUX_WORKSPACE_ID` or explicit socket control (`CMUX_SOCKET_PATH` with `CMUX_SOCKET_MODE=allowAll`), then falls back safely when cmux context is unavailable.
+2. **cmux** - **Recommended for new agentic workflows**. Uses native cmux launch flow when available via `CMUX_WORKSPACE_ID` or explicit socket control (`CMUX_SOCKET_PATH` with `CMUX_SOCKET_MODE=allowAll`). Worktree launches always create a new cmux workspace (no current-workspace reuse), then fall back safely when cmux context is unavailable.
 3. **WSL** - Uses Windows Terminal for Linux subsystem
 4. **Environment vars** - Checks `TERM_PROGRAM`, `KITTY_WINDOW_ID`, `GHOSTTY_RESOURCES_DIR`, etc.
 5. **Fallback** - System defaults (Terminal.app, xterm, cmd.exe)

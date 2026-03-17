@@ -432,7 +432,7 @@ setInterval(() => {}, 1000)
 			expect(canUse).toBe(false)
 		})
 
-		it("builds workspace-targeted cmux command sequence", () => {
+		it("always builds new-workspace cmux command even with workspace context", () => {
 			const commands = buildCmuxCommandSequence(
 				{ workspaceID: "workspace-123" },
 				"/tmp/worktree",
@@ -442,6 +442,7 @@ setInterval(() => {}, 1000)
 			expect(commands).toEqual([
 				["new-workspace", "--cwd", "/tmp/worktree", "--command", "opencode --session abc"],
 			])
+			expect(commands.some((args) => args[0] === "select-workspace")).toBe(false)
 		})
 
 		it("builds fallback cmux command sequence without workspace context", () => {
@@ -450,7 +451,7 @@ setInterval(() => {}, 1000)
 			expect(commands).toEqual([["new-workspace", "--cwd", "/tmp/worktree"]])
 		})
 
-		it("executes cmux command sequence when workspace context is available", async () => {
+		it("executes new-workspace cmux command when workspace context is available", async () => {
 			const executed: string[][] = []
 
 			const result = await openCmuxTerminal("/tmp/worktree", "opencode --session abc", {
@@ -466,6 +467,7 @@ setInterval(() => {}, 1000)
 			expect(executed).toEqual([
 				["new-workspace", "--cwd", "/tmp/worktree", "--command", "opencode --session abc"],
 			])
+			expect(executed.some((args) => args[0] === "select-workspace")).toBe(false)
 		})
 
 		it("returns failure when cmux command exits non-zero", async () => {
