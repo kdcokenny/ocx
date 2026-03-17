@@ -274,6 +274,46 @@ describe("worktree-terminal", () => {
 			process.env = { ...originalEnv }
 		})
 
+		const createHangingCmuxExecutable = () => {
+			const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), "worktree-cmux-timeout-"))
+			const cmuxPath = path.join(fakeBinDir, "cmux")
+			const markerPath = path.join(fakeBinDir, "terminated.txt")
+			const pidPath = path.join(fakeBinDir, "cmux.pid")
+			const script = `#!/bin/bash
+echo $$ > ${JSON.stringify(pidPath)}
+trap 'echo terminated > ${JSON.stringify(markerPath)}; exit 0' TERM
+while true; do sleep 1; done
+`
+
+			fs.writeFileSync(cmuxPath, script)
+			fs.chmodSync(cmuxPath, 0o755)
+
+			const cleanup = () => {
+				try {
+					if (fs.existsSync(pidPath)) {
+						const pid = Number.parseInt(fs.readFileSync(pidPath, "utf8").trim(), 10)
+						if (Number.isFinite(pid)) {
+							try {
+								process.kill(pid, "SIGKILL")
+							} catch {
+								// Best-effort cleanup
+							}
+						}
+					}
+				} catch {
+					// Best-effort cleanup
+				}
+
+				try {
+					fs.rmSync(fakeBinDir, { recursive: true, force: true })
+				} catch {
+					// Best-effort cleanup
+				}
+			}
+
+			return { cmuxPath, markerPath, cleanup }
+		}
+
 		it("detects cmux context values from environment", () => {
 			const context = detectCmuxContext({
 				CMUX_WORKSPACE_ID: " workspace-123 ",
@@ -384,6 +424,53 @@ describe("worktree-terminal", () => {
 			expect(result).toEqual({ success: false, error: "cmux new-split failed: split failed" })
 		})
 
+		it("handles async cmux runner rejection without falling through", async () => {
+			const result = await openCmuxTerminalWithState("/tmp/worktree", "opencode --session abc", {
+				env: { CMUX_WORKSPACE_ID: "workspace-123" },
+				resolveExecutable: () => "/usr/bin/cmux",
+				runCmuxCommand: async (args) => {
+					if (args[0] === "select-workspace") {
+						throw new Error("timed out")
+					}
+					return { exitCode: 0, stderr: "" }
+				},
+			})
+
+			expect(result).toEqual({
+				terminalResult: { success: false, error: "cmux select-workspace failed: timed out" },
+				hasStateMutation: false,
+			})
+		})
+
+		it("marks timeout from real cmux runner as unsafe for fallback and sends termination", async () => {
+			const { cmuxPath, markerPath, cleanup } = createHangingCmuxExecutable()
+
+			try {
+				const result = await openCmuxTerminalWithState("/tmp/worktree", "opencode --session abc", {
+					env: { CMUX_WORKSPACE_ID: "workspace-123" },
+					resolveExecutable: () => cmuxPath,
+					cmuxCommand: cmuxPath,
+				})
+
+				expect(result.terminalResult.success).toBe(false)
+				expect(result.terminalResult.error).toContain("timed out")
+				expect(result.hasStateMutation).toBe(true)
+
+				let terminated = false
+				for (let i = 0; i < 20; i++) {
+					if (fs.existsSync(markerPath)) {
+						terminated = true
+						break
+					}
+					await Bun.sleep(50)
+				}
+
+				expect(terminated).toBe(true)
+			} finally {
+				cleanup()
+			}
+		})
+
 		it("marks state mutation when send fails after cmux split creation", async () => {
 			const result = await openCmuxTerminalWithState("/tmp/worktree", "opencode --session abc", {
 				env: { CMUX_WORKSPACE_ID: "workspace-123" },
@@ -438,6 +525,33 @@ describe("worktree-terminal", () => {
 
 			expect(platformCalled).toBe(false)
 			expect(result).toEqual({ success: false, error: "cmux send failed: send failed" })
+		})
+
+		it("openTerminal avoids fallback when real cmux timeout is indeterminate", async () => {
+			const { cmuxPath, cleanup } = createHangingCmuxExecutable()
+			let platformCalled = false
+
+			try {
+				const result = await openTerminal("/tmp/worktree", "opencode --session abc", undefined, {
+					detectTerminalType: () => "cmux",
+					openCmuxTerminalWithState: (cwd, command) =>
+						openCmuxTerminalWithState(cwd, command, {
+							env: { CMUX_WORKSPACE_ID: "workspace-123" },
+							resolveExecutable: () => cmuxPath,
+							cmuxCommand: cmuxPath,
+						}),
+					openPlatformTerminal: async () => {
+						platformCalled = true
+						return { success: true }
+					},
+				})
+
+				expect(platformCalled).toBe(false)
+				expect(result.success).toBe(false)
+				expect(result.error).toContain("timed out")
+			} finally {
+				cleanup()
+			}
 		})
 
 		it("keeps tmux priority when both tmux and cmux env are present", () => {

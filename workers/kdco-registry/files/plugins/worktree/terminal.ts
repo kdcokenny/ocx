@@ -21,6 +21,8 @@ import {
 	isInsideTmux,
 	logWarn,
 	Mutex,
+	TimeoutError,
+	withTimeout,
 } from "../kdco-primitives"
 
 // =============================================================================
@@ -138,11 +140,14 @@ type CmuxCommandResult = {
 	exitCode: number
 	stderr: string
 }
+type RunCmuxCommand = (args: string[]) => CmuxCommandResult | Promise<CmuxCommandResult>
 
 export interface CmuxTerminalExecutionResult {
 	terminalResult: TerminalResult
 	hasStateMutation: boolean
 }
+
+const CMUX_COMMAND_TIMEOUT_MS = 1500
 
 // Singleton mutex for all tmux operations in this process
 const tmuxMutex = new Mutex()
@@ -422,15 +427,36 @@ export function buildCmuxCommandSequence(context: CmuxContext, startupCommand: s
 	return [["new-workspace"], ["send", startupCommand]]
 }
 
-function runCmuxCommandWithBun(args: string[]): CmuxCommandResult {
-	const result = Bun.spawnSync(["cmux", ...args], {
-		stdout: "pipe",
+async function runCmuxCommandWithBun(
+	cmuxCommand: string,
+	args: string[],
+): Promise<CmuxCommandResult> {
+	const proc = Bun.spawn([cmuxCommand, ...args], {
+		stdout: "ignore",
 		stderr: "pipe",
 	})
 
-	return {
-		exitCode: result.exitCode,
-		stderr: result.stderr.toString().trim(),
+	try {
+		const exitCode = await withTimeout(
+			proc.exited,
+			CMUX_COMMAND_TIMEOUT_MS,
+			`cmux ${args[0]} timed out after ${CMUX_COMMAND_TIMEOUT_MS}ms`,
+		)
+		const stderr = await new Response(proc.stderr).text()
+		return {
+			exitCode,
+			stderr: stderr.trim(),
+		}
+	} catch (error) {
+		if (error instanceof TimeoutError) {
+			try {
+				proc.kill()
+			} catch {
+				// Best-effort process cleanup
+			}
+		}
+
+		throw error
 	}
 }
 
@@ -440,7 +466,8 @@ export async function openCmuxTerminalWithState(
 	options?: {
 		env?: CmuxEnvironment
 		resolveExecutable?: ResolveExecutable
-		runCmuxCommand?: (args: string[]) => CmuxCommandResult
+		runCmuxCommand?: RunCmuxCommand
+		cmuxCommand?: string
 	},
 ): Promise<CmuxTerminalExecutionResult> {
 	if (!cwd) {
@@ -460,7 +487,9 @@ export async function openCmuxTerminalWithState(
 	}
 
 	const context = detectCmuxContext(env)
-	const runCmuxCommand = options?.runCmuxCommand ?? runCmuxCommandWithBun
+	const cmuxCommand = options?.cmuxCommand ?? "cmux"
+	const runCmuxCommand: RunCmuxCommand =
+		options?.runCmuxCommand ?? ((args) => runCmuxCommandWithBun(cmuxCommand, args))
 	const startupCommand = buildCmuxStartupCommand(cwd, command)
 	const commandSequence = buildCmuxCommandSequence(context, startupCommand)
 	let hasStateMutation = false
@@ -468,14 +497,15 @@ export async function openCmuxTerminalWithState(
 	for (const args of commandSequence) {
 		let result: CmuxCommandResult
 		try {
-			result = runCmuxCommand(args)
+			result = await runCmuxCommand(args)
 		} catch (error) {
+			const hasIndeterminateMutation = error instanceof TimeoutError
 			return {
 				terminalResult: {
 					success: false,
 					error: `cmux ${args[0]} failed: ${error instanceof Error ? error.message : String(error)}`,
 				},
-				hasStateMutation,
+				hasStateMutation: hasStateMutation || hasIndeterminateMutation,
 			}
 		}
 
@@ -502,7 +532,8 @@ export async function openCmuxTerminal(
 	options?: {
 		env?: CmuxEnvironment
 		resolveExecutable?: ResolveExecutable
-		runCmuxCommand?: (args: string[]) => CmuxCommandResult
+		runCmuxCommand?: RunCmuxCommand
+		cmuxCommand?: string
 	},
 ): Promise<TerminalResult> {
 	const result = await openCmuxTerminalWithState(cwd, command, options)
