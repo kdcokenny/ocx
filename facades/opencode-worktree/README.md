@@ -104,14 +104,16 @@ The plugin detects your terminal automatically:
 | **Linux** | Kitty, WezTerm, Alacritty, Ghostty, Foot, GNOME Terminal, Konsole, XFCE4 Terminal, xterm |
 | **Windows** | Windows Terminal (wt.exe), cmd.exe fallback |
 | **tmux** | **Creates new tmux window** (priority detection on all platforms) |
+| **cmux** | **Uses native cmux workflow** when `CMUX_WORKSPACE_ID`/cmux control env is present; falls back safely when unavailable |
 | **WSL** | Windows Terminal via wt.exe interop |
 
 ### Detection Priority
 
 1. **tmux** - **Priority detection on all platforms** - Creates new tmux windows instead of spawning separate terminal applications. This keeps all worktrees organized in a single terminal session with native tmux window management and zero external window overhead.
-2. **WSL** - Uses Windows Terminal for Linux subsystem
-3. **Environment vars** - Checks `TERM_PROGRAM`, `KITTY_WINDOW_ID`, `GHOSTTY_RESOURCES_DIR`, etc.
-4. **Fallback** - System defaults (Terminal.app, xterm, cmd.exe)
+2. **cmux** - If cmux workspace/control env is present (`CMUX_WORKSPACE_ID`, `CMUX_SURFACE_ID`, `CMUX_SOCKET_PATH`, `CMUX_SOCKET_MODE`) and `cmux` is available, uses cmux-native launch flow first.
+3. **WSL** - Uses Windows Terminal for Linux subsystem
+4. **Environment vars** - Checks `TERM_PROGRAM`, `KITTY_WINDOW_ID`, `GHOSTTY_RESOURCES_DIR`, etc.
+5. **Fallback** - System defaults (Terminal.app, xterm, cmd.exe)
 
 ## Configuration
 

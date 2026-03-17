@@ -8,7 +8,16 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { escapeAppleScript, escapeBash, escapeBatch } from "../files/plugins/kdco-primitives/shell"
-import { withTempScript } from "../files/plugins/worktree/terminal"
+import {
+	buildCmuxCommandSequence,
+	canUseCmuxWorkflow,
+	detectCmuxContext,
+	detectTerminalType,
+	openCmuxTerminal,
+	openCmuxTerminalWithState,
+	openTerminal,
+	withTempScript,
+} from "../files/plugins/worktree/terminal"
 
 describe("worktree-terminal", () => {
 	describe("Shell Escape Functions", () => {
@@ -255,6 +264,190 @@ describe("worktree-terminal", () => {
 					throw new Error("callback error")
 				}),
 			).rejects.toThrow("callback error")
+		})
+	})
+
+	describe("cmux integration", () => {
+		const originalEnv = { ...process.env }
+
+		afterEach(() => {
+			process.env = { ...originalEnv }
+		})
+
+		it("detects cmux context values from environment", () => {
+			const context = detectCmuxContext({
+				CMUX_WORKSPACE_ID: " workspace-123 ",
+				CMUX_SURFACE_ID: " surface-456 ",
+				CMUX_SOCKET_PATH: " /tmp/cmux.sock ",
+				CMUX_SOCKET_MODE: " allowAll ",
+			})
+
+			expect(context).toEqual({
+				workspaceID: "workspace-123",
+				surfaceID: "surface-456",
+				socketPath: "/tmp/cmux.sock",
+				socketMode: "allowAll",
+			})
+		})
+
+		it("returns false when cmux executable is unavailable", () => {
+			const canUse = canUseCmuxWorkflow({ CMUX_WORKSPACE_ID: "workspace-123" }, () => undefined)
+			expect(canUse).toBe(false)
+		})
+
+		it("returns true when workspace context and cmux executable exist", () => {
+			const canUse = canUseCmuxWorkflow(
+				{ CMUX_WORKSPACE_ID: "workspace-123" },
+				() => "/usr/bin/cmux",
+			)
+			expect(canUse).toBe(true)
+		})
+
+		it("returns false when only surface context is present", () => {
+			const canUse = canUseCmuxWorkflow({ CMUX_SURFACE_ID: "surface-123" }, () => "/usr/bin/cmux")
+			expect(canUse).toBe(false)
+		})
+
+		it("returns true when socket allowAll mode is configured", () => {
+			const canUse = canUseCmuxWorkflow(
+				{
+					CMUX_SOCKET_PATH: "/tmp/cmux.sock",
+					CMUX_SOCKET_MODE: "allowAll",
+				},
+				() => "/usr/bin/cmux",
+			)
+			expect(canUse).toBe(true)
+		})
+
+		it("returns false when socket mode does not allow external control", () => {
+			const canUse = canUseCmuxWorkflow(
+				{
+					CMUX_SOCKET_PATH: "/tmp/cmux.sock",
+					CMUX_SOCKET_MODE: "restricted",
+				},
+				() => "/usr/bin/cmux",
+			)
+			expect(canUse).toBe(false)
+		})
+
+		it("builds workspace-targeted cmux command sequence", () => {
+			const commands = buildCmuxCommandSequence(
+				{ workspaceID: "workspace-123" },
+				'cd "/tmp/worktree" && opencode --session abc\n',
+			)
+
+			expect(commands).toEqual([
+				["select-workspace", "--workspace", "workspace-123"],
+				["new-split", "right"],
+				["send", 'cd "/tmp/worktree" && opencode --session abc\n'],
+			])
+		})
+
+		it("builds fallback cmux command sequence without workspace context", () => {
+			const commands = buildCmuxCommandSequence({}, 'cd "/tmp/worktree"\n')
+
+			expect(commands).toEqual([["new-workspace"], ["send", 'cd "/tmp/worktree"\n']])
+		})
+
+		it("executes cmux command sequence when workspace context is available", async () => {
+			const executed: string[][] = []
+
+			const result = await openCmuxTerminal("/tmp/worktree", "opencode --session abc", {
+				env: { CMUX_WORKSPACE_ID: "workspace-123" },
+				resolveExecutable: () => "/usr/bin/cmux",
+				runCmuxCommand: (args) => {
+					executed.push(args)
+					return { exitCode: 0, stderr: "" }
+				},
+			})
+
+			expect(result).toEqual({ success: true })
+			expect(executed).toEqual([
+				["select-workspace", "--workspace", "workspace-123"],
+				["new-split", "right"],
+				["send", 'cd "/tmp/worktree" && opencode --session abc\n'],
+			])
+		})
+
+		it("returns failure when cmux command exits non-zero", async () => {
+			const result = await openCmuxTerminal("/tmp/worktree", "opencode --session abc", {
+				env: { CMUX_WORKSPACE_ID: "workspace-123" },
+				resolveExecutable: () => "/usr/bin/cmux",
+				runCmuxCommand: (args) => {
+					if (args[0] === "new-split") {
+						return { exitCode: 1, stderr: "split failed" }
+					}
+					return { exitCode: 0, stderr: "" }
+				},
+			})
+
+			expect(result).toEqual({ success: false, error: "cmux new-split failed: split failed" })
+		})
+
+		it("marks state mutation when send fails after cmux split creation", async () => {
+			const result = await openCmuxTerminalWithState("/tmp/worktree", "opencode --session abc", {
+				env: { CMUX_WORKSPACE_ID: "workspace-123" },
+				resolveExecutable: () => "/usr/bin/cmux",
+				runCmuxCommand: (args) => {
+					if (args[0] === "send") {
+						return { exitCode: 1, stderr: "send failed" }
+					}
+					return { exitCode: 0, stderr: "" }
+				},
+			})
+
+			expect(result).toEqual({
+				terminalResult: { success: false, error: "cmux send failed: send failed" },
+				hasStateMutation: true,
+			})
+		})
+
+		it("openTerminal falls back when cmux fails before mutation", async () => {
+			let platformCalled = false
+
+			const result = await openTerminal("/tmp/worktree", "opencode --session abc", undefined, {
+				detectTerminalType: () => "cmux",
+				openCmuxTerminalWithState: async () => ({
+					terminalResult: { success: false, error: "cmux unavailable" },
+					hasStateMutation: false,
+				}),
+				openPlatformTerminal: async () => {
+					platformCalled = true
+					return { success: true }
+				},
+			})
+
+			expect(platformCalled).toBe(true)
+			expect(result).toEqual({ success: true })
+		})
+
+		it("openTerminal does not fallback after mutated cmux failure", async () => {
+			let platformCalled = false
+
+			const result = await openTerminal("/tmp/worktree", "opencode --session abc", undefined, {
+				detectTerminalType: () => "cmux",
+				openCmuxTerminalWithState: async () => ({
+					terminalResult: { success: false, error: "cmux send failed: send failed" },
+					hasStateMutation: true,
+				}),
+				openPlatformTerminal: async () => {
+					platformCalled = true
+					return { success: true }
+				},
+			})
+
+			expect(platformCalled).toBe(false)
+			expect(result).toEqual({ success: false, error: "cmux send failed: send failed" })
+		})
+
+		it("keeps tmux priority when both tmux and cmux env are present", () => {
+			process.env = {
+				...originalEnv,
+				TMUX: "/tmp/tmux-1000/default,123,0",
+				CMUX_WORKSPACE_ID: "workspace-123",
+			}
+
+			expect(detectTerminalType()).toBe("tmux")
 		})
 	})
 })
