@@ -276,16 +276,39 @@ describe("worktree-terminal", () => {
 
 		const createHangingCmuxExecutable = () => {
 			const fakeBinDir = fs.mkdtempSync(path.join(os.tmpdir(), "worktree-cmux-timeout-"))
-			const cmuxPath = path.join(fakeBinDir, "cmux")
+			const cmuxPath =
+				process.platform === "win32"
+					? path.join(fakeBinDir, "cmux.cmd")
+					: path.join(fakeBinDir, "cmux")
 			const markerPath = path.join(fakeBinDir, "terminated.txt")
 			const pidPath = path.join(fakeBinDir, "cmux.pid")
-			const script = `#!/bin/bash
-echo $$ > ${JSON.stringify(pidPath)}
-trap 'echo terminated > ${JSON.stringify(markerPath)}; exit 0' TERM
-while true; do sleep 1; done
+			const workerScriptPath = path.join(fakeBinDir, "cmux-hang.js")
+			const bunExecutable = JSON.stringify(process.execPath)
+
+			const workerScript = `import { writeFileSync } from "node:fs"
+const [markerPath, pidPath] = process.argv.slice(2)
+
+writeFileSync(pidPath, String(process.pid))
+
+const terminate = () => {
+	writeFileSync(markerPath, "terminated")
+	process.exit(0)
+}
+
+process.on("SIGTERM", terminate)
+process.on("SIGINT", terminate)
+
+setInterval(() => {}, 1000)
 `
 
-			fs.writeFileSync(cmuxPath, script)
+			fs.writeFileSync(workerScriptPath, workerScript)
+
+			const launcherScript =
+				process.platform === "win32"
+					? `@echo off\r\n${bunExecutable} ${JSON.stringify(workerScriptPath)} ${JSON.stringify(markerPath)} ${JSON.stringify(pidPath)}\r\n`
+					: `#!/bin/sh\nexec ${bunExecutable} ${JSON.stringify(workerScriptPath)} ${JSON.stringify(markerPath)} ${JSON.stringify(pidPath)}\n`
+
+			fs.writeFileSync(cmuxPath, launcherScript)
 			fs.chmodSync(cmuxPath, 0o755)
 
 			const cleanup = () => {
@@ -335,12 +358,38 @@ while true; do sleep 1; done
 			expect(canUse).toBe(false)
 		})
 
+		it("uses the configured cmux executable for preflight checks", () => {
+			const canUse = canUseCmuxWorkflow(
+				{ CMUX_WORKSPACE_ID: "workspace-123" },
+				(command) => (command === "/custom/cmux" ? "/custom/cmux" : undefined),
+				"/custom/cmux",
+			)
+
+			expect(canUse).toBe(true)
+		})
+
 		it("returns true when workspace context and cmux executable exist", () => {
 			const canUse = canUseCmuxWorkflow(
 				{ CMUX_WORKSPACE_ID: "workspace-123" },
 				() => "/usr/bin/cmux",
 			)
 			expect(canUse).toBe(true)
+		})
+
+		it("openCmuxTerminalWithState honors cmuxCommand preflight", async () => {
+			let commandCount = 0
+			const result = await openCmuxTerminalWithState("/tmp/worktree", "opencode --session abc", {
+				env: { CMUX_WORKSPACE_ID: "workspace-123" },
+				cmuxCommand: "/custom/cmux",
+				resolveExecutable: (command) => (command === "/custom/cmux" ? "/custom/cmux" : undefined),
+				runCmuxCommand: () => {
+					commandCount += 1
+					return { exitCode: 0, stderr: "" }
+				},
+			})
+
+			expect(result.terminalResult).toEqual({ success: true })
+			expect(commandCount).toBe(3)
 		})
 
 		it("returns false when only surface context is present", () => {
@@ -456,16 +505,18 @@ while true; do sleep 1; done
 				expect(result.terminalResult.error).toContain("timed out")
 				expect(result.hasStateMutation).toBe(true)
 
-				let terminated = false
-				for (let i = 0; i < 20; i++) {
-					if (fs.existsSync(markerPath)) {
-						terminated = true
-						break
+				if (process.platform !== "win32") {
+					let terminated = false
+					for (let i = 0; i < 20; i++) {
+						if (fs.existsSync(markerPath)) {
+							terminated = true
+							break
+						}
+						await Bun.sleep(50)
 					}
-					await Bun.sleep(50)
-				}
 
-				expect(terminated).toBe(true)
+					expect(terminated).toBe(true)
+				}
 			} finally {
 				cleanup()
 			}

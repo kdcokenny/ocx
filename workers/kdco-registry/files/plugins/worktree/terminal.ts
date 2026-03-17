@@ -258,8 +258,9 @@ export function detectCmuxContext(env: CmuxEnvironment = process.env): CmuxConte
 export function canUseCmuxWorkflow(
 	env: CmuxEnvironment = process.env,
 	resolveExecutable: ResolveExecutable = (command) => Bun.which(command),
+	cmuxExecutable: string = "cmux",
 ): boolean {
-	if (!resolveExecutable("cmux")) {
+	if (!resolveExecutable(cmuxExecutable)) {
 		return false
 	}
 
@@ -478,8 +479,9 @@ export async function openCmuxTerminalWithState(
 	}
 
 	const env = options?.env ?? process.env
+	const cmuxCommand = options?.cmuxCommand ?? "cmux"
 	const resolveExecutable = options?.resolveExecutable ?? ((executable) => Bun.which(executable))
-	if (!canUseCmuxWorkflow(env, resolveExecutable)) {
+	if (!canUseCmuxWorkflow(env, resolveExecutable, cmuxCommand)) {
 		return {
 			terminalResult: { success: false, error: "cmux environment not available" },
 			hasStateMutation: false,
@@ -487,7 +489,6 @@ export async function openCmuxTerminalWithState(
 	}
 
 	const context = detectCmuxContext(env)
-	const cmuxCommand = options?.cmuxCommand ?? "cmux"
 	const runCmuxCommand: RunCmuxCommand =
 		options?.runCmuxCommand ?? ((args) => runCmuxCommandWithBun(cmuxCommand, args))
 	const startupCommand = buildCmuxStartupCommand(cwd, command)
