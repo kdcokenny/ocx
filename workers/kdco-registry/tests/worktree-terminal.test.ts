@@ -334,7 +334,20 @@ setInterval(() => {}, 1000)
 				}
 			}
 
-			return { cmuxPath, markerPath, cleanup }
+			return { cmuxPath, markerPath, pidPath, cleanup }
+		}
+
+		const isProcessAlive = (pid: number): boolean => {
+			try {
+				process.kill(pid, 0)
+				return true
+			} catch (error) {
+				const code = (error as NodeJS.ErrnoException).code
+				if (code === "EPERM") {
+					return true
+				}
+				return false
+			}
 		}
 
 		it("detects cmux context values from environment", () => {
@@ -492,7 +505,7 @@ setInterval(() => {}, 1000)
 		})
 
 		it("marks timeout from real cmux runner as unsafe for fallback and sends termination", async () => {
-			const { cmuxPath, markerPath, cleanup } = createHangingCmuxExecutable()
+			const { cmuxPath, markerPath, pidPath, cleanup } = createHangingCmuxExecutable()
 
 			try {
 				const result = await openCmuxTerminalWithState("/tmp/worktree", "opencode --session abc", {
@@ -504,6 +517,33 @@ setInterval(() => {}, 1000)
 				expect(result.terminalResult.success).toBe(false)
 				expect(result.terminalResult.error).toContain("timed out")
 				expect(result.hasStateMutation).toBe(true)
+
+				let spawnedPid: number | undefined
+				for (let i = 0; i < 20; i++) {
+					if (fs.existsSync(pidPath)) {
+						spawnedPid = Number.parseInt(fs.readFileSync(pidPath, "utf8").trim(), 10)
+						if (Number.isFinite(spawnedPid)) {
+							break
+						}
+					}
+					await Bun.sleep(50)
+				}
+
+				expect(Number.isFinite(spawnedPid)).toBe(true)
+				if (!Number.isFinite(spawnedPid)) {
+					throw new Error("Failed to capture spawned cmux test process PID")
+				}
+
+				let terminatedByPid = false
+				for (let i = 0; i < 20; i++) {
+					if (!isProcessAlive(spawnedPid)) {
+						terminatedByPid = true
+						break
+					}
+					await Bun.sleep(50)
+				}
+
+				expect(terminatedByPid).toBe(true)
 
 				if (process.platform !== "win32") {
 					let terminated = false
