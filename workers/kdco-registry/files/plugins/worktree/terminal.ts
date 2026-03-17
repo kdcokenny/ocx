@@ -406,26 +406,18 @@ exec $SHELL`,
 // CMUX OPERATIONS
 // =============================================================================
 
-function buildCmuxStartupCommand(cwd: string, command?: string): string {
-	const escapedCwd = escapeBash(cwd)
-	if (!command) {
-		return `cd "${escapedCwd}"\n`
+export function buildCmuxCommandSequence(
+	_context: CmuxContext,
+	cwd: string,
+	command?: string,
+): string[][] {
+	const cmuxArgs = ["new-workspace", "--cwd", cwd]
+
+	if (command) {
+		cmuxArgs.push("--command", escapeBash(command))
 	}
 
-	const escapedCommand = escapeBash(command)
-	return `cd "${escapedCwd}" && ${escapedCommand}\n`
-}
-
-export function buildCmuxCommandSequence(context: CmuxContext, startupCommand: string): string[][] {
-	if (context.workspaceID) {
-		return [
-			["select-workspace", "--workspace", context.workspaceID],
-			["new-split", "right"],
-			["send", startupCommand],
-		]
-	}
-
-	return [["new-workspace"], ["send", startupCommand]]
+	return [cmuxArgs]
 }
 
 async function runCmuxCommandWithBun(
@@ -491,8 +483,7 @@ export async function openCmuxTerminalWithState(
 	const context = detectCmuxContext(env)
 	const runCmuxCommand: RunCmuxCommand =
 		options?.runCmuxCommand ?? ((args) => runCmuxCommandWithBun(cmuxCommand, args))
-	const startupCommand = buildCmuxStartupCommand(cwd, command)
-	const commandSequence = buildCmuxCommandSequence(context, startupCommand)
+	const commandSequence = buildCmuxCommandSequence(context, cwd, command)
 	let hasStateMutation = false
 
 	for (const args of commandSequence) {

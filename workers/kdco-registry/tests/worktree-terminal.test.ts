@@ -402,7 +402,7 @@ setInterval(() => {}, 1000)
 			})
 
 			expect(result.terminalResult).toEqual({ success: true })
-			expect(commandCount).toBe(3)
+			expect(commandCount).toBe(1)
 		})
 
 		it("returns false when only surface context is present", () => {
@@ -435,20 +435,19 @@ setInterval(() => {}, 1000)
 		it("builds workspace-targeted cmux command sequence", () => {
 			const commands = buildCmuxCommandSequence(
 				{ workspaceID: "workspace-123" },
-				'cd "/tmp/worktree" && opencode --session abc\n',
+				"/tmp/worktree",
+				"opencode --session abc",
 			)
 
 			expect(commands).toEqual([
-				["select-workspace", "--workspace", "workspace-123"],
-				["new-split", "right"],
-				["send", 'cd "/tmp/worktree" && opencode --session abc\n'],
+				["new-workspace", "--cwd", "/tmp/worktree", "--command", "opencode --session abc"],
 			])
 		})
 
 		it("builds fallback cmux command sequence without workspace context", () => {
-			const commands = buildCmuxCommandSequence({}, 'cd "/tmp/worktree"\n')
+			const commands = buildCmuxCommandSequence({}, "/tmp/worktree")
 
-			expect(commands).toEqual([["new-workspace"], ["send", 'cd "/tmp/worktree"\n']])
+			expect(commands).toEqual([["new-workspace", "--cwd", "/tmp/worktree"]])
 		})
 
 		it("executes cmux command sequence when workspace context is available", async () => {
@@ -465,9 +464,7 @@ setInterval(() => {}, 1000)
 
 			expect(result).toEqual({ success: true })
 			expect(executed).toEqual([
-				["select-workspace", "--workspace", "workspace-123"],
-				["new-split", "right"],
-				["send", 'cd "/tmp/worktree" && opencode --session abc\n'],
+				["new-workspace", "--cwd", "/tmp/worktree", "--command", "opencode --session abc"],
 			])
 		})
 
@@ -476,14 +473,14 @@ setInterval(() => {}, 1000)
 				env: { CMUX_WORKSPACE_ID: "workspace-123" },
 				resolveExecutable: () => "/usr/bin/cmux",
 				runCmuxCommand: (args) => {
-					if (args[0] === "new-split") {
+					if (args[0] === "new-workspace") {
 						return { exitCode: 1, stderr: "split failed" }
 					}
 					return { exitCode: 0, stderr: "" }
 				},
 			})
 
-			expect(result).toEqual({ success: false, error: "cmux new-split failed: split failed" })
+			expect(result).toEqual({ success: false, error: "cmux new-workspace failed: split failed" })
 		})
 
 		it("handles async cmux runner rejection without falling through", async () => {
@@ -491,7 +488,7 @@ setInterval(() => {}, 1000)
 				env: { CMUX_WORKSPACE_ID: "workspace-123" },
 				resolveExecutable: () => "/usr/bin/cmux",
 				runCmuxCommand: async (args) => {
-					if (args[0] === "select-workspace") {
+					if (args[0] === "new-workspace") {
 						throw new Error("timed out")
 					}
 					return { exitCode: 0, stderr: "" }
@@ -499,7 +496,7 @@ setInterval(() => {}, 1000)
 			})
 
 			expect(result).toEqual({
-				terminalResult: { success: false, error: "cmux select-workspace failed: timed out" },
+				terminalResult: { success: false, error: "cmux new-workspace failed: timed out" },
 				hasStateMutation: false,
 			})
 		})
@@ -530,13 +527,14 @@ setInterval(() => {}, 1000)
 				}
 
 				expect(Number.isFinite(spawnedPid)).toBe(true)
-				if (!Number.isFinite(spawnedPid)) {
+				if (typeof spawnedPid !== "number" || !Number.isFinite(spawnedPid)) {
 					throw new Error("Failed to capture spawned cmux test process PID")
 				}
+				const spawnedProcessID: number = spawnedPid
 
 				let terminatedByPid = false
 				for (let i = 0; i < 20; i++) {
-					if (!isProcessAlive(spawnedPid)) {
+					if (!isProcessAlive(spawnedProcessID)) {
 						terminatedByPid = true
 						break
 					}
@@ -562,12 +560,12 @@ setInterval(() => {}, 1000)
 			}
 		})
 
-		it("marks state mutation when send fails after cmux split creation", async () => {
+		it("keeps pre-mutation status when new-workspace command exits non-zero", async () => {
 			const result = await openCmuxTerminalWithState("/tmp/worktree", "opencode --session abc", {
 				env: { CMUX_WORKSPACE_ID: "workspace-123" },
 				resolveExecutable: () => "/usr/bin/cmux",
 				runCmuxCommand: (args) => {
-					if (args[0] === "send") {
+					if (args[0] === "new-workspace") {
 						return { exitCode: 1, stderr: "send failed" }
 					}
 					return { exitCode: 0, stderr: "" }
@@ -575,8 +573,8 @@ setInterval(() => {}, 1000)
 			})
 
 			expect(result).toEqual({
-				terminalResult: { success: false, error: "cmux send failed: send failed" },
-				hasStateMutation: true,
+				terminalResult: { success: false, error: "cmux new-workspace failed: send failed" },
+				hasStateMutation: false,
 			})
 		})
 
