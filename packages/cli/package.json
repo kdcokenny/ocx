@@ -43,11 +43,6 @@
 		"check:biome": "biome check .",
 		"check:types": "tsc --noEmit",
 		"dev": "bun run src/index.ts",
-		"phase1:baseline": "bun run scripts/phase1.ts all",
-		"phase1:benchmark": "bun run scripts/phase1.ts benchmark",
-		"phase1:inspect": "bun run scripts/phase1.ts inspect",
-		"phase1:pack": "bun run scripts/phase1.ts pack",
-		"phase1:verify": "bun run scripts/phase1.ts verify",
 		"prepublishOnly": "bun run build",
 		"test": "bun test"
 	},

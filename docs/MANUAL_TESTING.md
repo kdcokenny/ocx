@@ -1906,7 +1906,7 @@ All variations from `cli/commands.mdx` (opencode section).
 - [x] **Verify:** SKIPPED-for-now
 - [x] **Run result (2026-02-24):** SKIPPED-for-now — placeholder custom path not available in this environment.
 - [x] **Run result (2026-03-21):** SKIPPED-for-now — intentionally skipped per documented waiver; placeholder custom `OPENCODE_BIN` path is unavailable in this environment.
-- [x] **Last tested:** _v2.0.0 on 2026-02-24_
+- [x] **Last tested:** _v2.0.2 on 2026-03-21_ (waived/skip)
 
 ---
 
