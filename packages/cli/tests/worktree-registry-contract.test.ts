@@ -38,17 +38,17 @@ async function runCLI(args: string[], cwd: string, timeout = 10000): Promise<CLI
 		new Response(proc.stderr).text(),
 	])
 
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	const timeoutPromise = new Promise<never>((_, reject) => {
+		timeoutId = setTimeout(() => {
+			proc.kill()
+			reject(new Error(`CLI timeout after ${timeout}ms`))
+		}, timeout)
+	})
+
 	let exitCode: number
 	try {
-		exitCode = await Promise.race([
-			proc.exited,
-			new Promise<never>((_, reject) => {
-				setTimeout(() => {
-					proc.kill()
-					reject(new Error(`CLI timeout after ${timeout}ms`))
-				}, timeout)
-			}),
-		])
+		exitCode = await Promise.race([proc.exited, timeoutPromise])
 	} catch {
 		const [stdout, stderr] = await outputPromise.catch(() => ["", ""])
 		return {
@@ -56,6 +56,10 @@ async function runCLI(args: string[], cwd: string, timeout = 10000): Promise<CLI
 			stderr,
 			output: `${stdout + stderr}\n[TIMEOUT after ${timeout}ms]`,
 			exitCode: 124,
+		}
+	} finally {
+		if (timeoutId !== undefined) {
+			clearTimeout(timeoutId)
 		}
 	}
 
