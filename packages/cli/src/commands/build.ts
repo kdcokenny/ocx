@@ -18,7 +18,10 @@ import {
 	ValidationFailedError,
 	type ValidationFailureDetails,
 } from "../utils/errors"
-import { createSpinner, handleError, logger, outputJson } from "../utils/index"
+import { handleError } from "../utils/handle-error"
+import { outputJson } from "../utils/json-output"
+import { logger } from "../utils/logger"
+import { createSpinner } from "../utils/spinner"
 import { categorizeValidationErrors, summarizeValidationErrors } from "../utils/validation-errors"
 
 interface BuildOptions {

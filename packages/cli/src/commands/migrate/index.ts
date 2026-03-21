@@ -26,7 +26,9 @@ import {
 	readOcxLock,
 	writeReceipt,
 } from "../../schemas/config"
-import { ConfigError, handleError, logger, ValidationError } from "../../utils/index"
+import { ConfigError, ValidationError } from "../../utils/errors"
+import { handleError } from "../../utils/handle-error"
+import { logger } from "../../utils/logger"
 import { getGlobalConfigPath } from "../../utils/paths"
 import {
 	buildReceiptFromLock,

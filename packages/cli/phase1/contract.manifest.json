@@ -1,0 +1,86 @@
+{
+	"schemaVersion": 1,
+	"packageName": "ocx",
+	"supportedContract": {
+		"bin": {
+			"name": "ocx",
+			"packageJsonPath": "./dist/index.js"
+		},
+		"entrypoints": {
+			"importSpecifiers": ["ocx"],
+			"moduleFormat": "esm",
+			"main": "./dist/index.js"
+		},
+		"runtimeExports": [
+			"buildRegistry",
+			"componentManifestSchema",
+			"ocxConfigSchema",
+			"ocxLockSchema",
+			"packumentSchema",
+			"registrySchema"
+		],
+		"importSideEffects": {
+			"bareImportStdoutExact": "",
+			"bareImportStderrExact": ""
+		},
+		"cliMatrix": [
+			{
+				"id": "help",
+				"args": ["--help"],
+				"expect": {
+					"exitCode": 0,
+					"stdoutContains": [
+						"Usage: ocx [options] [command]",
+						"OpenCode Extensions - Install agents, skills, plugins, and commands",
+						"search|list [options] [query]"
+					],
+					"stderrExact": ""
+				}
+			},
+			{
+				"id": "version",
+				"args": ["--version"],
+				"expect": {
+					"exitCode": 0,
+					"stdoutExact": "{{PACKAGE_VERSION}}\n",
+					"stderrExact": ""
+				}
+			},
+			{
+				"id": "search-missing-config",
+				"args": ["search", "foo", "--cwd", "{{CLEAN_CWD}}"],
+				"expect": {
+					"exitCode": 78,
+					"stdoutExact": "",
+					"stderrContains": [
+						"No ocx.jsonc found in .opencode/ or project root. Run 'ocx init' first."
+					]
+				}
+			}
+		]
+	},
+	"observedPublishShape": {
+		"packedPackageJson": {
+			"type": "module",
+			"main": "./dist/index.js",
+			"bin": {
+				"ocx": "./dist/index.js"
+			},
+			"files": ["dist/index.js"],
+			"exports": null,
+			"types": null
+		},
+		"requiredTarEntries": ["package/dist/index.js", "package/package.json"],
+		"disallowedTarEntryPatterns": [
+			"^package/src/",
+			"^package/tests/",
+			"^package/scripts/",
+			"^package/dist/bin/",
+			"^package/\\.turbo/"
+		],
+		"sourcemapPolicy": {
+			"classification": "observed-publish-shape",
+			"notes": "dist/index.js.map publication is tracked as observed publish shape only. It is not a supported compatibility guarantee and may be included or omitted in future publishes."
+		}
+	}
+}

@@ -10,8 +10,7 @@
 		"ocx": "./dist/index.js"
 	},
 	"files": [
-		"dist/index.js",
-		"dist/index.js.map"
+		"dist/index.js"
 	],
 	"publishConfig": {
 		"access": "public"
@@ -44,15 +43,17 @@
 		"check:biome": "biome check .",
 		"check:types": "tsc --noEmit",
 		"dev": "bun run src/index.ts",
+		"phase1:baseline": "bun run scripts/phase1.ts all",
+		"phase1:benchmark": "bun run scripts/phase1.ts benchmark",
+		"phase1:inspect": "bun run scripts/phase1.ts inspect",
+		"phase1:pack": "bun run scripts/phase1.ts pack",
+		"phase1:verify": "bun run scripts/phase1.ts verify",
 		"prepublishOnly": "bun run build",
 		"test": "bun test"
 	},
 	"dependencies": {
-		"chokidar": "^5.0.0",
 		"commander": "^14.0.0",
-		"diff": "^8.0.0",
 		"fuzzysort": "^3.1.0",
-		"ignore": "^7.0.5",
 		"jsonc-parser": "3.3.1",
 		"kleur": "^4.1.5",
 		"ora": "^8.2.0",
@@ -60,7 +61,6 @@
 		"zod": "^3.24.0"
 	},
 	"devDependencies": {
-		"@types/bun": "latest",
-		"@types/diff": "^8.0.0"
+		"@types/bun": "latest"
 	}
 }

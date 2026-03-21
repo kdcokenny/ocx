@@ -9,7 +9,9 @@
 import type { Command } from "commander"
 import { ProfileManager } from "../../profile/manager"
 import { ConfigError, ProfileNotFoundError } from "../../utils/errors"
-import { handleError, logger, outputJson } from "../../utils/index"
+import { handleError } from "../../utils/handle-error"
+import { outputJson } from "../../utils/json-output"
+import { logger } from "../../utils/logger"
 
 interface RemoveOptions {
 	global?: boolean

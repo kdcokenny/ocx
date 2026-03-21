@@ -25,7 +25,10 @@ import {
 	ProfileNotFoundError,
 	ValidationError,
 } from "../../utils/errors"
-import { handleError, logger, normalizeRegistryUrl, outputJson } from "../../utils/index"
+import { handleError } from "../../utils/handle-error"
+import { outputJson } from "../../utils/json-output"
+import { logger } from "../../utils/logger"
+import { normalizeRegistryUrl } from "../../utils/url"
 import { installProfileFromRegistry } from "./install-from-registry"
 
 // =============================================================================

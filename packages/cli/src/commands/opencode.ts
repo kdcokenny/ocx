@@ -12,7 +12,8 @@ import type { Command } from "commander"
 import { ConfigResolver } from "../config/resolver"
 import { getProfileDir, getProfileOpencodeConfig } from "../profile/paths"
 import { getGitInfo } from "../utils/git-context"
-import { handleError, logger } from "../utils/index"
+import { handleError } from "../utils/handle-error"
+import { logger } from "../utils/logger"
 import { getGlobalConfigPath } from "../utils/paths"
 import {
 	formatTerminalName,

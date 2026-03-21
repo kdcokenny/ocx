@@ -19,11 +19,13 @@ import {
 } from "../schemas/registry"
 import { type DryRunAction, type DryRunResult, outputDryRun } from "../utils/dry-run"
 import { ConfigError, NotFoundError, ValidationError } from "../utils/errors"
-import { createSpinner, handleError, logger } from "../utils/index"
+import { handleError } from "../utils/handle-error"
+import { logger } from "../utils/logger"
 import { resolveTargetPath } from "../utils/paths"
 import { registerPlannedWriteOrThrow } from "../utils/planned-writes"
 import { hashBundle, hashContent } from "../utils/receipt"
 import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
+import { createSpinner } from "../utils/spinner"
 
 // =============================================================================
 // TYPES

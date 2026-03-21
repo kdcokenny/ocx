@@ -40,15 +40,9 @@ import {
 } from "../utils/dep-invalidation"
 import { type DryRunAction, type DryRunResult, outputDryRun } from "../utils/dry-run"
 import { ConfigError, ConflictError, IntegrityError, ValidationError } from "../utils/errors"
-import {
-	collectCompatIssues,
-	createSpinner,
-	handleError,
-	logger,
-	normalizeRegistryUrl,
-	warnCompatIssues,
-} from "../utils/index"
+import { handleError } from "../utils/handle-error"
 import { outputJson } from "../utils/json-output"
+import { logger } from "../utils/logger"
 import {
 	extractPackageName,
 	fetchPackageVersion,
@@ -63,6 +57,9 @@ import { resolveTargetPath } from "../utils/paths"
 import { registerPlannedWriteOrThrow } from "../utils/planned-writes"
 import { hashBundle, hashContent } from "../utils/receipt"
 import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
+import { createSpinner } from "../utils/spinner"
+import { normalizeRegistryUrl } from "../utils/url"
+import { collectCompatIssues, warnCompatIssues } from "../utils/version-compat"
 
 // =============================================================================
 // HELPER FUNCTIONS

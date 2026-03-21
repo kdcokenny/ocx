@@ -8,9 +8,11 @@ import { LocalConfigProvider } from "../config/provider"
 import { readReceipt } from "../schemas/config"
 import { resolveInstalledComponentRefs } from "../utils/component-ref-resolver"
 import { ConflictError, EXIT_CODES } from "../utils/errors"
-import { createSpinner, handleError, logger } from "../utils/index"
+import { handleError } from "../utils/handle-error"
+import { logger } from "../utils/logger"
 import { checkFileIntegrity } from "../utils/receipt"
 import { addCommonOptions, addVerboseOption } from "../utils/shared-options"
+import { createSpinner } from "../utils/spinner"
 
 export interface VerifyOptions {
 	cwd?: string

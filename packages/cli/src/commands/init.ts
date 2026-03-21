@@ -21,8 +21,10 @@ import {
 import { findOcxConfig, ocxConfigSchema } from "../schemas/config"
 import { ensureOpencodeConfig } from "../updaters/update-opencode-config"
 import { ConflictError, NetworkError, ValidationError } from "../utils/errors"
-import { createSpinner, handleError, logger } from "../utils/index"
+import { handleError } from "../utils/handle-error"
+import { logger } from "../utils/logger"
 import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
+import { createSpinner } from "../utils/spinner"
 
 declare const __VERSION__: string | undefined
 

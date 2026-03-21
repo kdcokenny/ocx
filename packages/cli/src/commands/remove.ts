@@ -13,10 +13,12 @@ import { readReceipt, writeReceipt } from "../schemas/config"
 import { resolveInstalledComponentRefs } from "../utils/component-ref-resolver"
 import { type DryRunResult, outputDryRun } from "../utils/dry-run"
 import { NotFoundError, ValidationError } from "../utils/errors"
-import { createSpinner, handleError, logger } from "../utils/index"
+import { handleError } from "../utils/handle-error"
+import { logger } from "../utils/logger"
 import { PathValidationError, validatePath } from "../utils/path-security"
 import { checkFileIntegrity, parseCanonicalId } from "../utils/receipt"
 import { addCommonOptions, addVerboseOption } from "../utils/shared-options"
+import { createSpinner } from "../utils/spinner"
 
 interface PreflightRemovalFile {
 	path: string

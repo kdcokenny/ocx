@@ -1,0 +1,60 @@
+{
+	"schemaVersion": 1,
+	"tool": "packages/cli/scripts/phase1.ts inspect",
+	"environment": {
+		"platform": "darwin",
+		"arch": "arm64",
+		"nodeVersion": "v24.3.0",
+		"bunVersion": "1.3.5",
+		"cpuModel": "Apple M2"
+	},
+	"artifact": {
+		"filename": "ocx-2.0.2.tgz",
+		"path": "phase1/artifacts/ocx-2.0.2.tgz",
+		"sha256": "90b8497d37a65091c5e0ade3e4cc055fa8215b5db96788a81e6a84e391c40fef"
+	},
+	"npmPack": {
+		"id": "ocx@2.0.2",
+		"name": "ocx",
+		"version": "2.0.2",
+		"sizeBytes": 112264,
+		"unpackedSizeBytes": 395729,
+		"entryCount": 2,
+		"shasum": "e8a6626f855df15094781b4cff9852d865b7e7d4",
+		"integrity": "sha512-yWc1C02aeAmOgTOFEKBtE8726JfsO1HNk/a/tbDt9zM0+8OBQeh4hq+KO7q2Bi+7B/SmiY/FE1mpQcD8d1dxuw==",
+		"files": [
+			{
+				"path": "dist/index.js",
+				"size": 394164,
+				"mode": 493
+			},
+			{
+				"path": "package.json",
+				"size": 1565,
+				"mode": 420
+			}
+		]
+	},
+	"packedPackageJson": {
+		"name": "ocx",
+		"version": "2.0.2",
+		"type": "module",
+		"main": "./dist/index.js",
+		"bin": {
+			"ocx": "./dist/index.js"
+		},
+		"files": [
+			"dist/index.js"
+		],
+		"exports": null,
+		"types": null
+	},
+	"tarEntries": [
+		"package/dist/index.js",
+		"package/package.json"
+	],
+	"observations": {
+		"sourcemapPublished": false,
+		"sourcemapClassification": "observed-publish-shape-only"
+	}
+}

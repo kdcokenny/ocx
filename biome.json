@@ -11,7 +11,8 @@
 			"!**/dist",
 			"!**/node_modules",
 			"!**/*.tsbuildinfo",
-			"!**/worker-configuration.d.ts"
+			"!**/worker-configuration.d.ts",
+			"!packages/cli/phase1/baselines/*.json"
 		]
 	},
 	"formatter": {

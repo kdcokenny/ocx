@@ -27,10 +27,12 @@ import {
 	NotFoundError,
 	ValidationError,
 } from "../../utils/errors"
-import { createSpinner, logger, normalizeRegistryUrl } from "../../utils/index"
+import { logger } from "../../utils/logger"
 import { PathValidationError, validatePath } from "../../utils/path-security"
 import { registerPlannedWriteOrThrow } from "../../utils/planned-writes"
+import { createSpinner } from "../../utils/spinner"
 import { isPlainObject } from "../../utils/type-guards"
+import { normalizeRegistryUrl } from "../../utils/url"
 import { runAddCore } from "../add"
 
 // =============================================================================

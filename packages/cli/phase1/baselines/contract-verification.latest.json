@@ -1,0 +1,126 @@
+{
+	"schemaVersion": 1,
+	"contractManifestPath": "phase1/contract.manifest.json",
+	"environment": {
+		"platform": "darwin",
+		"arch": "arm64",
+		"nodeVersion": "v24.3.0",
+		"bunVersion": "1.3.5",
+		"cpuModel": "Apple M2"
+	},
+	"status": "pass",
+	"artifact": {
+		"filename": "ocx-2.0.2.tgz",
+		"path": "phase1/artifacts/ocx-2.0.2.tgz",
+		"sha256": "90b8497d37a65091c5e0ade3e4cc055fa8215b5db96788a81e6a84e391c40fef",
+		"sizeBytes": 112264
+	},
+	"checks": {
+		"supportedContract": {
+			"binResolution": {
+				"name": "ocx",
+				"target": "./dist/index.js",
+				"installedCommand": {
+					"resolvedFromPath": "node_modules/.bin/ocx",
+					"shimType": "symlink",
+					"shimTarget": "node_modules/ocx/dist/index.js",
+					"shimMode": "0o755",
+					"executableBit": "present"
+				},
+				"entrypointFile": {
+					"path": "node_modules/ocx/dist/index.js",
+					"shebang": "#!/usr/bin/env -S bun --no-env-file",
+					"mode": "0o755",
+					"executableBit": "present"
+				},
+				"status": "pass"
+			},
+			"entrypoint": {
+				"main": "./dist/index.js",
+				"moduleFormat": "esm",
+				"importSpecifiers": [
+					"ocx"
+				],
+				"status": "pass"
+			},
+			"importSpecifiers": [
+				{
+					"importSpecifier": "ocx",
+					"runtimeExports": [
+						"buildRegistry",
+						"componentManifestSchema",
+						"ocxConfigSchema",
+						"ocxLockSchema",
+						"packumentSchema",
+						"registrySchema"
+					],
+					"importSideEffects": {
+						"stdout": "",
+						"stderr": "",
+						"exitCode": 0
+					},
+					"status": "pass"
+				}
+			],
+			"runtimeExports": [
+				"buildRegistry",
+				"componentManifestSchema",
+				"ocxConfigSchema",
+				"ocxLockSchema",
+				"packumentSchema",
+				"registrySchema"
+			],
+			"cliMatrix": [
+				{
+					"id": "help",
+					"command": "ocx --help",
+					"exitCode": 0,
+					"status": "pass"
+				},
+				{
+					"id": "version",
+					"command": "ocx --version",
+					"exitCode": 0,
+					"status": "pass"
+				},
+				{
+					"id": "search-missing-config",
+					"command": "ocx search foo --cwd <clean-temp-project>",
+					"exitCode": 78,
+					"status": "pass"
+				}
+			],
+			"status": "pass"
+		},
+		"observedPublishShape": {
+			"packedPackageJson": {
+				"type": "module",
+				"main": "./dist/index.js",
+				"bin": {
+					"ocx": "./dist/index.js"
+				},
+				"files": [
+					"dist/index.js"
+				],
+				"exports": null,
+				"types": null
+			},
+			"requiredTarEntries": [
+				"package/dist/index.js",
+				"package/package.json"
+			],
+			"disallowedTarEntryPatterns": [
+				"^package/src/",
+				"^package/tests/",
+				"^package/scripts/",
+				"^package/dist/bin/",
+				"^package/\\.turbo/"
+			],
+			"status": "pass",
+			"sourcemapPolicy": {
+				"classification": "observed-publish-shape",
+				"notes": "dist/index.js.map publication is tracked as observed publish shape only. It is not a supported compatibility guarantee and may be included or omitted in future publishes."
+			}
+		}
+	}
+}

@@ -19,7 +19,9 @@ import {
 	RegistryExistsError,
 	ValidationError,
 } from "../utils/errors"
-import { handleError, logger, normalizeRegistryUrl, outputJson } from "../utils/index"
+import { handleError } from "../utils/handle-error"
+import { outputJson } from "../utils/json-output"
+import { logger } from "../utils/logger"
 import { getGlobalConfigPath } from "../utils/paths"
 import {
 	addCommonOptions,
@@ -27,6 +29,7 @@ import {
 	addProfileOption,
 	validateProfileName,
 } from "../utils/shared-options"
+import { normalizeRegistryUrl } from "../utils/url"
 
 export interface RegistryOptions {
 	cwd: string
