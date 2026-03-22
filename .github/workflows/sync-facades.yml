@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'workers/kdco-registry/files/plugin/**'
+      - 'workers/kdco-registry/files/**'
       - 'facades/**'
       - '.github/sync.yml'
   workflow_dispatch:

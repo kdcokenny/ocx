@@ -1,116 +1,116 @@
 kdcokenny/opencode-notify:
-  - source: workers/kdco-registry/files/plugin/notify.ts
+  - source: workers/kdco-registry/files/plugins/notify.ts
     dest: src/notify.ts
   - source: facades/opencode-notify/README.md
     dest: README.md
   # Primitives
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/index.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/index.ts
     dest: src/plugin/kdco-primitives/index.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/get-project-id.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/get-project-id.ts
     dest: src/plugin/kdco-primitives/get-project-id.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/with-timeout.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/with-timeout.ts
     dest: src/plugin/kdco-primitives/with-timeout.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/log-warn.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/log-warn.ts
     dest: src/plugin/kdco-primitives/log-warn.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/types.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/types.ts
     dest: src/plugin/kdco-primitives/types.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/mutex.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/mutex.ts
     dest: src/plugin/kdco-primitives/mutex.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/shell.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/shell.ts
     dest: src/plugin/kdco-primitives/shell.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/temp.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/temp.ts
     dest: src/plugin/kdco-primitives/temp.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/terminal-detect.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/terminal-detect.ts
     dest: src/plugin/kdco-primitives/terminal-detect.ts
 
 kdcokenny/opencode-background-agents:
-  - source: workers/kdco-registry/files/plugin/background-agents.ts
+  - source: workers/kdco-registry/files/plugins/background-agents.ts
     dest: src/plugin/background-agents.ts
   - source: facades/opencode-background-agents/README.md
     dest: README.md
   # Primitives
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/index.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/index.ts
     dest: src/plugin/kdco-primitives/index.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/get-project-id.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/get-project-id.ts
     dest: src/plugin/kdco-primitives/get-project-id.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/with-timeout.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/with-timeout.ts
     dest: src/plugin/kdco-primitives/with-timeout.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/log-warn.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/log-warn.ts
     dest: src/plugin/kdco-primitives/log-warn.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/types.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/types.ts
     dest: src/plugin/kdco-primitives/types.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/mutex.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/mutex.ts
     dest: src/plugin/kdco-primitives/mutex.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/shell.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/shell.ts
     dest: src/plugin/kdco-primitives/shell.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/temp.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/temp.ts
     dest: src/plugin/kdco-primitives/temp.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/terminal-detect.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/terminal-detect.ts
     dest: src/plugin/kdco-primitives/terminal-detect.ts
 
 kdcokenny/opencode-worktree:
-  - source: workers/kdco-registry/files/plugin/worktree.ts
+  - source: workers/kdco-registry/files/plugins/worktree.ts
     dest: src/plugin/worktree.ts
-  - source: workers/kdco-registry/files/plugin/worktree/state.ts
+  - source: workers/kdco-registry/files/plugins/worktree/state.ts
     dest: src/plugin/worktree/state.ts
-  - source: workers/kdco-registry/files/plugin/worktree/terminal.ts
+  - source: workers/kdco-registry/files/plugins/worktree/terminal.ts
     dest: src/plugin/worktree/terminal.ts
   - source: facades/opencode-worktree/README.md
     dest: README.md
   # Primitives
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/index.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/index.ts
     dest: src/plugin/kdco-primitives/index.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/get-project-id.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/get-project-id.ts
     dest: src/plugin/kdco-primitives/get-project-id.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/with-timeout.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/with-timeout.ts
     dest: src/plugin/kdco-primitives/with-timeout.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/log-warn.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/log-warn.ts
     dest: src/plugin/kdco-primitives/log-warn.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/types.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/types.ts
     dest: src/plugin/kdco-primitives/types.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/mutex.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/mutex.ts
     dest: src/plugin/kdco-primitives/mutex.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/shell.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/shell.ts
     dest: src/plugin/kdco-primitives/shell.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/temp.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/temp.ts
     dest: src/plugin/kdco-primitives/temp.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/terminal-detect.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/terminal-detect.ts
     dest: src/plugin/kdco-primitives/terminal-detect.ts
 
 kdcokenny/opencode-workspace:
   - source: facades/opencode-workspace/README.md
     dest: README.md
   # Plugins
-  - source: workers/kdco-registry/files/plugin/workspace-plugin.ts
+  - source: workers/kdco-registry/files/plugins/workspace-plugin.ts
     dest: src/plugin/workspace-plugin.ts
-  - source: workers/kdco-registry/files/plugin/background-agents.ts
+  - source: workers/kdco-registry/files/plugins/background-agents.ts
     dest: src/plugin/background-agents.ts
-  - source: workers/kdco-registry/files/plugin/notify.ts
+  - source: workers/kdco-registry/files/plugins/notify.ts
     dest: src/plugin/notify.ts
-  - source: workers/kdco-registry/files/plugin/worktree.ts
+  - source: workers/kdco-registry/files/plugins/worktree.ts
     dest: src/plugin/worktree.ts
-  - source: workers/kdco-registry/files/plugin/worktree/state.ts
+  - source: workers/kdco-registry/files/plugins/worktree/state.ts
     dest: src/plugin/worktree/state.ts
-  - source: workers/kdco-registry/files/plugin/worktree/terminal.ts
+  - source: workers/kdco-registry/files/plugins/worktree/terminal.ts
     dest: src/plugin/worktree/terminal.ts
   # Primitives
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/index.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/index.ts
     dest: src/plugin/kdco-primitives/index.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/get-project-id.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/get-project-id.ts
     dest: src/plugin/kdco-primitives/get-project-id.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/with-timeout.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/with-timeout.ts
     dest: src/plugin/kdco-primitives/with-timeout.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/log-warn.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/log-warn.ts
     dest: src/plugin/kdco-primitives/log-warn.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/types.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/types.ts
     dest: src/plugin/kdco-primitives/types.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/mutex.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/mutex.ts
     dest: src/plugin/kdco-primitives/mutex.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/shell.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/shell.ts
     dest: src/plugin/kdco-primitives/shell.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/temp.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/temp.ts
     dest: src/plugin/kdco-primitives/temp.ts
-  - source: workers/kdco-registry/files/plugin/kdco-primitives/terminal-detect.ts
+  - source: workers/kdco-registry/files/plugins/kdco-primitives/terminal-detect.ts
     dest: src/plugin/kdco-primitives/terminal-detect.ts
   # Skills
   - source: workers/kdco-registry/files/skills/plan-protocol/SKILL.md
