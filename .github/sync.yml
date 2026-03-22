@@ -1,6 +1,10 @@
 kdcokenny/opencode-notify:
   - source: workers/kdco-registry/files/plugins/notify.ts
     dest: src/notify.ts
+  - source: workers/kdco-registry/files/plugins/notify/backend.ts
+    dest: src/notify/backend.ts
+  - source: workers/kdco-registry/files/plugins/notify/cmux.ts
+    dest: src/notify/cmux.ts
   - source: facades/opencode-notify/README.md
     dest: README.md
   # Primitives
@@ -55,6 +59,8 @@ kdcokenny/opencode-worktree:
     dest: src/plugin/worktree/state.ts
   - source: workers/kdco-registry/files/plugins/worktree/terminal.ts
     dest: src/plugin/worktree/terminal.ts
+  - source: workers/kdco-registry/files/plugins/worktree/launch-context.ts
+    dest: src/plugin/worktree/launch-context.ts
   - source: facades/opencode-worktree/README.md
     dest: README.md
   # Primitives
@@ -87,12 +93,18 @@ kdcokenny/opencode-workspace:
     dest: src/plugin/background-agents.ts
   - source: workers/kdco-registry/files/plugins/notify.ts
     dest: src/plugin/notify.ts
+  - source: workers/kdco-registry/files/plugins/notify/backend.ts
+    dest: src/plugin/notify/backend.ts
+  - source: workers/kdco-registry/files/plugins/notify/cmux.ts
+    dest: src/plugin/notify/cmux.ts
   - source: workers/kdco-registry/files/plugins/worktree.ts
     dest: src/plugin/worktree.ts
   - source: workers/kdco-registry/files/plugins/worktree/state.ts
     dest: src/plugin/worktree/state.ts
   - source: workers/kdco-registry/files/plugins/worktree/terminal.ts
     dest: src/plugin/worktree/terminal.ts
+  - source: workers/kdco-registry/files/plugins/worktree/launch-context.ts
+    dest: src/plugin/worktree/launch-context.ts
   # Primitives
   - source: workers/kdco-registry/files/plugins/kdco-primitives/index.ts
     dest: src/plugin/kdco-primitives/index.ts
@@ -124,17 +136,17 @@ kdcokenny/opencode-workspace:
   - source: workers/kdco-registry/files/skills/frontend-philosophy/SKILL.md
     dest: src/skills/frontend-philosophy/SKILL.md
   # Agents
-  - source: workers/kdco-registry/files/agent/researcher.md
+  - source: workers/kdco-registry/files/agents/researcher.md
     dest: src/agent/researcher.md
-  - source: workers/kdco-registry/files/agent/scribe.md
+  - source: workers/kdco-registry/files/agents/scribe.md
     dest: src/agent/scribe.md
-  - source: workers/kdco-registry/files/agent/coder.md
+  - source: workers/kdco-registry/files/agents/coder.md
     dest: src/agent/coder.md
-  - source: workers/kdco-registry/files/agent/reviewer.md
+  - source: workers/kdco-registry/files/agents/reviewer.md
     dest: src/agent/reviewer.md
   # Commands
-  - source: workers/kdco-registry/files/command/review.md
+  - source: workers/kdco-registry/files/commands/review.md
     dest: src/command/review.md
   # Philosophy
-  - source: workers/kdco-registry/files/philosophy/AGENTS.md
+  - source: workers/kdco-registry/files/tools/philosophy.md
     dest: src/philosophy/AGENTS.md
