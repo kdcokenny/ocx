@@ -11,6 +11,7 @@ import * as fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { ConfigResolver } from "../../src/config/resolver"
+import { readOpencodeJsonConfig } from "../../src/updaters/update-opencode-config"
 import { tmpdir } from "../fixture"
 
 describe("instruction discovery", () => {
@@ -258,5 +259,16 @@ describe("instruction discovery", () => {
 		const profileIdx = config.instructions.indexOf(profileAgentsPath)
 		const projectIdx = config.instructions.indexOf(projectAgentsPath)
 		expect(profileIdx).toBeLessThan(projectIdx)
+	})
+
+	it("skips directory targets during optional config discovery (no Bun.file(...).text() on dirs)", async () => {
+		await using tmp = await tmpdir({
+			gitInit: true,
+		})
+
+		const localConfigDir = path.join(tmp.path, ".opencode")
+		await fs.mkdir(path.join(localConfigDir, "opencode.jsonc"), { recursive: true })
+
+		await expect(readOpencodeJsonConfig(tmp.path)).resolves.toBeNull()
 	})
 })

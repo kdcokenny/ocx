@@ -195,7 +195,7 @@ interface AddManifestSideEffectTransaction {
 
 interface FileSnapshot {
 	path: string
-	existed: boolean
+	state: "missing" | "file" | "non-file"
 	content: string
 }
 
@@ -1070,17 +1070,33 @@ async function removeEmptyParentDirectories(startDir: string, boundaryDir: strin
  * Capture the current state of a file path for rollback.
  */
 async function captureFileSnapshot(filePath: string): Promise<FileSnapshot> {
-	if (!existsSync(filePath)) {
+	let fileStats: Awaited<ReturnType<typeof stat>>
+	try {
+		fileStats = await stat(filePath)
+	} catch (error) {
+		const errorCode = (error as NodeJS.ErrnoException).code
+		if (errorCode === "ENOENT" || errorCode === "ENOTDIR") {
+			return {
+				path: filePath,
+				state: "missing",
+				content: "",
+			}
+		}
+
+		throw error
+	}
+
+	if (!fileStats.isFile()) {
 		return {
 			path: filePath,
-			existed: false,
+			state: "non-file",
 			content: "",
 		}
 	}
 
 	return {
 		path: filePath,
-		existed: true,
+		state: "file",
 		content: await Bun.file(filePath).text(),
 	}
 }
@@ -1089,9 +1105,13 @@ async function captureFileSnapshot(filePath: string): Promise<FileSnapshot> {
  * Restore a file path to its captured state.
  */
 async function restoreFileSnapshot(snapshot: FileSnapshot, cwd: string): Promise<void> {
-	if (snapshot.existed) {
+	if (snapshot.state === "file") {
 		await mkdir(dirname(snapshot.path), { recursive: true })
 		await Bun.write(snapshot.path, snapshot.content)
+		return
+	}
+
+	if (snapshot.state === "non-file") {
 		return
 	}
 

@@ -1106,6 +1106,35 @@ describe("ocx profile add --source (registry installation)", () => {
 		expect("installedFrom" in receiptContent).toBe(false)
 	})
 
+	it("does not emit false /Users/ ENOENT when adding a global profile from registry", async () => {
+		const globalConfigDir = join(testDir, "opencode")
+		const profilesDir = join(globalConfigDir, "profiles")
+		await mkdir(profilesDir, { recursive: true })
+		await writeFile(
+			join(globalConfigDir, "ocx.jsonc"),
+			JSON.stringify({ registries: { kdco: { url: registry.url } } }, null, 2),
+		)
+
+		await mkdir(join(profilesDir, "default"), { recursive: true })
+		await writeFile(join(profilesDir, "default", "ocx.jsonc"), "{}")
+
+		const workDir = join(testDir, "workspace")
+		await mkdir(workDir, { recursive: true })
+
+		const result = await runCLI(
+			["profile", "add", "global-enoent-guard", "--source", "kdco/test-profile", "--global"],
+			workDir,
+			{
+				env: { XDG_CONFIG_HOME: testDir },
+				isolated: true,
+			},
+		)
+
+		expect(result.exitCode).toBe(0)
+		expect(result.stderr).not.toMatch(/ENOENT.*\/Users\//)
+		expect(result.stderr).not.toContain("/Users/")
+	})
+
 	it("installs profile from ephemeral registry using --source with --from", async () => {
 		// Setup global config WITHOUT the registry (ephemeral mode)
 		const globalConfigDir = join(testDir, "opencode")
