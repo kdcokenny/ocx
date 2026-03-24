@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
 import { readRequiredGlobalOcxConfig, resolveOpencodePathScope } from "../src/profile/paths"
 import { findOcxConfig, findOcxLock } from "../src/schemas/config"
@@ -163,7 +163,7 @@ describe("config path discovery", () => {
 
 			expect(resolveOpencodePathScope(localProjectPath, options)).toBe("local-project")
 			expect(findOpencodeConfig(localProjectPath).path).toBe(
-				"/Users/testuser/workspace/acme/.opencode/opencode.jsonc",
+				resolve(localProjectPath, ".opencode", "opencode.jsonc"),
 			)
 		})
 
