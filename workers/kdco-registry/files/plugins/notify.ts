@@ -234,6 +234,93 @@ interface NotificationRuntime {
 	preferCmux: boolean
 }
 
+const QUESTION_DEDUPE_WINDOW_MS = 1500
+const READY_DEDUPE_WINDOW_MS = 1500
+const PERMISSION_DEDUPE_WINDOW_MS = 1500
+
+type RecentNotifications = Map<string, number>
+
+function toNonEmptyString(value: unknown): string | null {
+	if (typeof value !== "string") return null
+
+	const normalized = value.trim()
+	if (!normalized) return null
+
+	return normalized
+}
+
+function shouldSendDedupedNotification(
+	recentNotifications: RecentNotifications,
+	dedupeKey: string,
+	windowMs: number,
+	nowMs = Date.now(),
+): boolean {
+	for (const [key, timestamp] of recentNotifications) {
+		if (nowMs - timestamp >= windowMs) {
+			recentNotifications.delete(key)
+		}
+	}
+
+	const lastSentAt = recentNotifications.get(dedupeKey)
+	if (lastSentAt !== undefined && nowMs - lastSentAt < windowMs) {
+		return false
+	}
+
+	recentNotifications.set(dedupeKey, nowMs)
+	return true
+}
+
+function buildQuestionToolDedupeKey(sessionID: unknown, callID: unknown): string | null {
+	const normalizedSessionID = toNonEmptyString(sessionID)
+	if (!normalizedSessionID) return null
+
+	const normalizedCallID = toNonEmptyString(callID)
+	if (!normalizedCallID) return null
+
+	return `question:${normalizedSessionID}:${normalizedCallID}`
+}
+
+function buildQuestionEventDedupeKey(properties: unknown): string | null {
+	if (!properties || typeof properties !== "object") return null
+
+	const record = properties as Record<string, unknown>
+	const normalizedSessionID = toNonEmptyString(record.sessionID)
+	if (!normalizedSessionID) return null
+
+	const toolInfo =
+		record.tool && typeof record.tool === "object"
+			? (record.tool as Record<string, unknown>)
+			: undefined
+	const normalizedCallID = toNonEmptyString(toolInfo?.callID)
+	if (normalizedCallID) {
+		return `question:${normalizedSessionID}:${normalizedCallID}`
+	}
+
+	const normalizedRequestID = toNonEmptyString(record.id)
+	if (normalizedRequestID) {
+		return `question:${normalizedSessionID}:request:${normalizedRequestID}`
+	}
+
+	return null
+}
+
+function buildSessionReadyDedupeKey(sessionID: unknown): string | null {
+	const normalizedSessionID = toNonEmptyString(sessionID)
+	if (!normalizedSessionID) return null
+
+	return `session-ready:${normalizedSessionID}`
+}
+
+function buildPermissionEventDedupeKey(properties: unknown): string | null {
+	if (!properties || typeof properties !== "object") return null
+
+	const record = properties as Record<string, unknown>
+	const normalizedRequestID = toNonEmptyString(record.id)
+	if (!normalizedRequestID) return null
+
+	return `permission:request:${normalizedRequestID}`
+}
+
 function sendNodeNotification(options: NotificationOptions): void {
 	const { title, message, sound, terminalInfo } = options
 
@@ -409,31 +496,93 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 	const notificationRuntime: NotificationRuntime = {
 		preferCmux: canUseCmuxNotification(),
 	}
+	const recentQuestionNotifications: RecentNotifications = new Map()
+	const recentReadyNotifications: RecentNotifications = new Map()
+	const recentPermissionNotifications: RecentNotifications = new Map()
+
+	const notifyQuestionIfNeeded = async (dedupeKey: string | null): Promise<void> => {
+		if (
+			dedupeKey &&
+			!shouldSendDedupedNotification(
+				recentQuestionNotifications,
+				dedupeKey,
+				QUESTION_DEDUPE_WINDOW_MS,
+			)
+		) {
+			return
+		}
+
+		await handleQuestionAsked(config, terminalInfo, notificationRuntime)
+	}
+
+	const notifySessionReadyIfNeeded = async (sessionID: unknown): Promise<void> => {
+		const normalizedSessionID = toNonEmptyString(sessionID)
+		if (!normalizedSessionID) return
+
+		const dedupeKey = buildSessionReadyDedupeKey(normalizedSessionID)
+		if (!dedupeKey) return
+
+		if (
+			!shouldSendDedupedNotification(recentReadyNotifications, dedupeKey, READY_DEDUPE_WINDOW_MS)
+		) {
+			return
+		}
+
+		await handleSessionIdle(
+			client as OpencodeClient,
+			normalizedSessionID,
+			config,
+			terminalInfo,
+			notificationRuntime,
+		)
+	}
+
+	const notifyPermissionIfNeeded = async (properties: unknown): Promise<void> => {
+		const dedupeKey = buildPermissionEventDedupeKey(properties)
+
+		if (
+			dedupeKey &&
+			!shouldSendDedupedNotification(
+				recentPermissionNotifications,
+				dedupeKey,
+				PERMISSION_DEDUPE_WINDOW_MS,
+			)
+		) {
+			return
+		}
+
+		await handlePermissionUpdated(config, terminalInfo, notificationRuntime)
+	}
 
 	return {
 		"tool.execute.before": async (input: { tool: string; sessionID: string; callID: string }) => {
 			if (input.tool === "question") {
-				await handleQuestionAsked(config, terminalInfo, notificationRuntime)
+				await notifyQuestionIfNeeded(buildQuestionToolDedupeKey(input.sessionID, input.callID))
 			}
 		},
 		event: async ({ event }: { event: Event }): Promise<void> => {
-			switch (event.type) {
-				case "session.idle": {
-					const sessionID = event.properties.sessionID
-					if (sessionID) {
-						await handleSessionIdle(
-							client as OpencodeClient,
-							sessionID,
-							config,
-							terminalInfo,
-							notificationRuntime,
-						)
+			const runtimeEvent = event as { type: string; properties: Record<string, unknown> }
+
+			switch (runtimeEvent.type) {
+				case "session.status": {
+					const sessionID = runtimeEvent.properties.sessionID
+					const statusType =
+						runtimeEvent.properties.status && typeof runtimeEvent.properties.status === "object"
+							? ((runtimeEvent.properties.status as { type?: string }).type ?? undefined)
+							: undefined
+
+					if (sessionID && statusType === "idle") {
+						await notifySessionReadyIfNeeded(sessionID)
 					}
 					break
 				}
+				case "session.idle": {
+					await notifySessionReadyIfNeeded(runtimeEvent.properties.sessionID)
+					break
+				}
 				case "session.error": {
-					const sessionID = event.properties.sessionID
-					const error = event.properties.error
+					const sessionID = toNonEmptyString(runtimeEvent.properties.sessionID)
+					const error = runtimeEvent.properties.error
 					const errorMessage = typeof error === "string" ? error : error ? String(error) : undefined
 					if (sessionID) {
 						await handleSessionError(
@@ -448,8 +597,14 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 					break
 				}
 
-				case "permission.updated": {
-					await handlePermissionUpdated(config, terminalInfo, notificationRuntime)
+				case "permission.updated":
+				case "permission.asked": {
+					await notifyPermissionIfNeeded(runtimeEvent.properties)
+					break
+				}
+				case "question.asked": {
+					const dedupeKey = buildQuestionEventDedupeKey(runtimeEvent.properties)
+					await notifyQuestionIfNeeded(dedupeKey)
 					break
 				}
 			}
