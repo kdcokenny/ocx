@@ -265,6 +265,18 @@ OCX registries are static JSON files that can be hosted anywhere:
 
 Deploy with `wrangler deploy` after building.
 
+### Private GitHub Repo
+
+For private or org-internal registries, commit the built `dist/` output to a GitHub repo and add it using the `github:` protocol:
+
+```bash
+ocx registry add github:my-org/my-registry --name myregistry
+```
+
+Auth is handled automatically via `gh` CLI or `GITHUB_TOKEN`. No static site deployment needed.
+
+See the [Private GitHub Registry guide](/guides/github-registry) for a full walkthrough.
+
 ### Other Hosting Options
 
 - **GitHub Pages**, **Vercel**, **Netlify** — Pre-build with `ocx build`

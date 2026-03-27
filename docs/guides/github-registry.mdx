@@ -1,0 +1,264 @@
+---
+title: "Private GitHub Registry"
+description: "Host an OCX registry on a private GitHub repo and share it with your organization"
+---
+
+## Overview
+
+Host your OCX registry on a private GitHub repo instead of deploying a static site or Cloudflare Worker. Org members can install components with automatic authentication — no separate hosting infrastructure needed.
+
+**Prerequisites**: [OCX installed](/getting-started/installation), a GitHub repo (private or org-internal), and [gh CLI](https://cli.github.com/) installed
+
+## Step 1: Create and Build Your Registry
+
+Scaffold a registry, add your components, and build:
+
+```bash
+ocx init --registry ./my-registry --namespace my-org --author "My Name"
+cd my-registry
+
+# Add your components under files/
+# Edit registry.jsonc to define them
+
+ocx build . --out dist
+```
+
+The build produces a `dist/` directory containing `index.json`, component packuments, and file content.
+
+## Step 2: Commit Built Output to GitHub
+
+Push the built registry to a GitHub repo. OCX fetches files directly from the repo via `raw.githubusercontent.com`, so the built output must be committed.
+
+```bash
+cd dist
+git init
+git add .
+git commit -m "registry build"
+git remote add origin git@github.com:my-org/my-registry.git
+git push -u origin main
+```
+
+<Note>
+Commit the `dist/` output, not the source. OCX needs the built `index.json` and component files at the repo root.
+</Note>
+
+You can also keep source and output in the same repo — just make sure `index.json` is at the root of the default branch (or the ref you specify).
+
+## Step 3: Add the Registry
+
+```bash
+ocx registry add github:my-org/my-registry --name myregistry --global
+```
+
+When you run this, OCX:
+
+1. Parses `github:my-org/my-registry` into owner, repo, and ref (defaults to `main`)
+2. Resolves the auth token (see [Authentication](#authentication) below)
+3. Constructs the raw content URL: `https://raw.githubusercontent.com/my-org/my-registry/main`
+4. Fetches `index.json` from that URL to validate the registry exists and is well-formed
+5. Stores both the resolved URL and the original `github:` source in your config
+
+If any step fails, OCX reports an actionable error (see [Troubleshooting](#troubleshooting)).
+
+To pin a specific branch, tag, or commit:
+
+```bash
+ocx registry add github:my-org/my-registry@v2.0 --name myregistry --global
+ocx registry add github:my-org/my-registry@develop --name myregistry --global
+ocx registry add github:my-org/my-registry@abc123f --name myregistry --global
+```
+
+The ref defaults to `main` when omitted. Subdirectory paths are not supported — `index.json` must be at the repo root.
+
+## Step 4: Install Components
+
+```bash
+ocx add myregistry/my-skill
+ocx add myregistry/my-agent
+```
+
+Components install exactly like any other registry. The GitHub protocol is transparent after setup.
+
+## Authentication
+
+OCX resolves auth automatically. The token is looked up fresh on every request — nothing is persisted to disk or stored in your OCX config.
+
+### Precedence Chain
+
+The first source that returns a token wins. The rest are skipped.
+
+| Priority | Source | Lookup | Typical Use |
+|----------|--------|--------|-------------|
+| 1 | `GITHUB_TOKEN` env var | Reads `process.env.GITHUB_TOKEN` | CI pipelines, automation, `.env` files |
+| 2 | `gh` CLI | Runs `gh auth token` (5 s timeout) | Local development |
+| 3 | None | No token sent | Public repos only |
+
+<Warning>
+If `GITHUB_TOKEN` is set, OCX always uses it — even if `gh auth login` has a different account. Unset the env var to fall back to the `gh` CLI token.
+</Warning>
+
+### Verifying Your Auth
+
+Before adding a private registry, confirm your token has access:
+
+```bash
+# Using gh CLI
+gh api repos/my-org/my-registry --jq .private
+# Expected output: true
+
+# Using GITHUB_TOKEN
+curl -s -H "Authorization: token $GITHUB_TOKEN" \
+  https://api.github.com/repos/my-org/my-registry | jq .private
+# Expected output: true
+```
+
+If either returns `true`, OCX can reach the repo.
+
+### Token Scopes
+
+| Scenario | Required Scope |
+|----------|---------------|
+| `gh auth login` (default) | Automatically includes repo access for orgs you've authorized |
+| Classic PAT (`ghp_...`) | `repo` scope (full repo read/write) or `read:packages` if repo is package-linked |
+| Fine-grained PAT | **Contents: Read** permission on the target repo |
+
+<Note>
+Fine-grained PATs are recommended for CI. They can be scoped to a single repo with read-only access, following the principle of least privilege.
+</Note>
+
+### Security Guarantees
+
+- Tokens are **never logged** — not in error messages, not in debug output
+- Tokens are **never written to config** — the `source` field stores `github:owner/repo`, not credentials
+- Tokens are **resolved at request time** — rotating a token takes effect immediately, no config changes needed
+- Auth-aware cache keys prevent a public (unauthenticated) response from being served to an authenticated request, or vice versa
+
+### Organization Access
+
+For org-internal repos, each team member needs:
+
+1. **Read access** to the GitHub repo (via org membership, team assignment, or collaborator invite)
+2. **Auth configured**: `gh auth login` completed, or `GITHUB_TOKEN` set with appropriate scope
+
+If your org uses SAML SSO, team members must [authorize their token for SSO](https://docs.github.com/en/enterprise-cloud@latest/authentication/authenticating-with-saml-single-sign-on/authorizing-a-personal-access-token-for-use-with-saml-single-sign-on) after creating it.
+
+No server-side setup, no shared API keys, no infrastructure to maintain.
+
+## Updating the Registry
+
+When you update components:
+
+```bash
+# In your registry source
+ocx build . --out dist
+cd dist
+git add . && git commit -m "update components" && git push
+```
+
+Consumers pick up changes on next `ocx add` or `ocx update`.
+
+## Listing and Removing
+
+`ocx registry list` displays the original `github:` source, not the resolved `raw.githubusercontent.com` URL:
+
+```bash
+ocx registry list --global
+# Output:
+#   myregistry: github:my-org/my-registry
+
+ocx registry remove myregistry --global
+```
+
+## GitHub-Specific Constraints
+
+### Rate Limits
+
+OCX fetches from `raw.githubusercontent.com`, which is subject to GitHub's rate limits:
+
+| Auth Status | Rate Limit | Notes |
+|-------------|-----------|-------|
+| Authenticated | 5,000 requests/hour | Shared across all API and raw content requests for that token |
+| Unauthenticated | 60 requests/hour | Per IP address — easily exhausted in CI or shared networks |
+
+Each `ocx add` or `ocx update` makes multiple requests (index, packument, file content per component). A registry with 10 components and 2 files each could consume ~30 requests per full install. In-memory deduplication prevents redundant fetches within a single CLI invocation, but separate invocations start fresh.
+
+<Warning>
+Unauthenticated access (public repos, no token) is severely rate-limited. Always authenticate, even for public repos, if you install components frequently or run in CI.
+</Warning>
+
+### Availability
+
+`raw.githubusercontent.com` is a CDN-backed service, but it is not a dedicated registry host:
+
+- **Propagation delay**: After pushing a commit, raw content may take up to 5 minutes to reflect the new state due to CDN caching. This is a GitHub-side behavior that OCX cannot control.
+- **Outages**: If `raw.githubusercontent.com` is down, all GitHub-hosted registries are unreachable. Check [githubstatus.com](https://www.githubstatus.com/) if fetches fail unexpectedly.
+- **No SLA**: Unlike a self-hosted registry, you depend on GitHub's availability. For mission-critical CI pipelines, consider mirroring to a static host as a fallback.
+
+### File Size Limits
+
+GitHub imposes limits on raw content delivery:
+
+- **Individual files**: `raw.githubusercontent.com` serves files up to 100 MB, but responses for files over 10 MB may be slower or fail intermittently.
+- **Repository size**: GitHub recommends repos stay under 5 GB. Registry repos are typically small (JSON manifests + markdown/TypeScript files), so this is unlikely to be a concern.
+
+### Not Supported
+
+| Feature | Status | Alternative |
+|---------|--------|-------------|
+| GitHub Enterprise Server (GHES) | Not supported | Use an HTTP registry with custom headers |
+| Subdirectory paths (`github:org/repo/subdir`) | Not supported | Keep `index.json` at the repo root |
+| Monorepo with multiple registries | Not supported | Use separate repos, or separate branches with `@ref` |
+| Git LFS files | Not fetched | `raw.githubusercontent.com` does not resolve LFS pointers |
+| Branch names with `@` | Not supported | `@` is the ref separator in the `github:` protocol |
+
+## Troubleshooting
+
+### `Authentication failed` on add
+
+OCX could not fetch `index.json` (HTTP 401 or 403). Work through the auth chain:
+
+```bash
+# 1. Is GITHUB_TOKEN set? If so, is it valid?
+echo $GITHUB_TOKEN | head -c 10
+# Should show "ghp_..." or "github_pat_..."
+
+# 2. Is gh CLI authenticated?
+gh auth status
+
+# 3. Does the token have access to this repo?
+gh api repos/my-org/my-registry --jq .full_name
+# Should print: my-org/my-registry
+
+# 4. If your org uses SAML SSO, is the token authorized?
+gh auth status  # Look for "Token scopes" and SSO orgs
+```
+
+### `Not found` (404) on valid repo
+
+The repo exists but OCX cannot find `index.json`:
+
+- Verify `index.json` is at the **repo root**, not inside a subdirectory
+- Verify the **ref is correct** — omitting `@ref` defaults to `main`. If your default branch is `master`, use `github:org/repo@master`
+- Newly pushed content may take a few minutes to propagate on `raw.githubusercontent.com`
+
+### `Network request failed`
+
+OCX could not reach `raw.githubusercontent.com` at all:
+
+- Check your internet connection
+- Check [githubstatus.com](https://www.githubstatus.com/) for outages
+- If behind a corporate proxy, ensure `raw.githubusercontent.com` is not blocked
+
+### Stale content after push
+
+You pushed an update, but `ocx add` still fetches old content:
+
+- `raw.githubusercontent.com` has a CDN cache. Wait a few minutes and retry.
+- OCX deduplicates fetches within a single CLI invocation, but does **not** cache across invocations. If content is stale, the issue is on GitHub's CDN side.
+
+## See Also
+
+- [Creating Registries](/registries/create) — Building and structuring a registry from scratch.
+- [Registry Protocol](/registries/protocol) — HTTP API specification registries must implement.
+- [ocx registry](/cli/registry) — Full CLI reference for registry commands.
+- [Enterprise Overview](/enterprise/overview) — Registry locking and integrity verification.

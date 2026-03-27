@@ -55,6 +55,12 @@ ocx registry add <url> [options]
 # Add a registry with a name
 ocx registry add https://registry.example.com --name myregistry
 
+# Add a private GitHub repo as a registry
+ocx registry add github:my-org/my-registry --name myregistry
+
+# Pin to a specific branch or tag
+ocx registry add github:my-org/my-registry@v2.0 --name myregistry
+
 # Add to global config
 ocx registry add https://registry.example.com --name myregistry --global
 
@@ -192,4 +198,5 @@ $ ocx registry list --json
 
 - [ocx add](/cli/add) — Install components from registries.
 - [ocx init](/cli/init) — Initialize configuration before adding registries.
+- [Private GitHub Registry](/guides/github-registry) — Host a registry on a private GitHub repo.
 - [Enterprise Overview](/enterprise/overview) — Registry locking for teams.

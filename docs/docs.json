@@ -69,7 +69,12 @@
 					},
 					{
 						"group": "Guides",
-						"pages": ["guides/index", "guides/oh-my-opencode", "guides/kdco-workspace"]
+						"pages": [
+							"guides/index",
+							"guides/oh-my-opencode",
+							"guides/kdco-workspace",
+							"guides/github-registry"
+						]
 					},
 					{
 						"group": "Integrations",
