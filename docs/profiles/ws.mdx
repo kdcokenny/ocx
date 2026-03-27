@@ -1,11 +1,11 @@
 ---
 title: "Workspace Profile (ws)"
-description: "Multi-agent orchestration profile with free OpenCode Zen models"
+description: "Multi-agent orchestration profile with OpenCode Zen free-plan defaults and premium model recommendations"
 ---
 
 ## Overview
 
-The `ws` profile provides a complete multi-agent orchestration harness using free [OpenCode Zen](https://opencode.ai/docs/zen/) models. It bundles all KDCO Workspace components into a single, portable profile.
+The `ws` profile provides a complete multi-agent orchestration harness for KDCO Workspace. By default, it ships with OpenCode Zen free-plan models (`Big Pickle` and `GPT-5 Nano`), and you can optionally customize it with premium model providers.
 
 ## Installation
 
@@ -14,7 +14,9 @@ ocx profile add ws --source kit/ws --from https://ocx-kit.kdco.dev --global
 ocx oc -p ws
 ```
 
-## Model Assignments
+## Default Model Assignments (OpenCode Zen free plan)
+
+These are the out-of-the-box `ws` defaults.
 
 | Agent | Model | Role |
 |-------|-------|------|
@@ -28,22 +30,24 @@ ocx oc -p ws
 
 ## Recommended Models
 
-When customizing with your own providers:
+Use these when customizing with premium/custom providers (separate from the free-plan defaults above).
 
 | Role | Recommended | Why |
 |------|-------------|-----|
-| Orchestrators (plan, build) | Claude Opus 4.5 | Heavy reasoning for planning |
-| Implementation (coder) | Claude Opus 4.5 | Precision, complex tasks |
-| Specialists (explore, researcher, scribe) | Claude Sonnet 4.5 | Fast, capable |
-| Review (reviewer) | GPT 5.2 | Deterministic analysis |
+| Orchestrators (`plan`, `build`) | `GPT-5.4` or `Claude Opus 4.6` | Heavy reasoning and long-horizon planning. |
+| Implementation (`coder`) | `GPT-5.3 Codex` or `Claude Sonnet 4.6` | Strong agentic coding for complex implementation work. |
+| Specialists (`explore`, `researcher`, `scribe`) | `Kimi K2.5` | Accurate, low hallucination, and usually cheaper/faster. |
+| Review (`reviewer`) | `GPT-5.4` or `Claude Opus 4.6` | Code review is high-stakes; use a very smart model to catch bugs and edge cases. |
 
 ## Customize
 
-Edit your profile's config:
+After installing, tune model choices in your local profile config:
 
 ```bash
 $EDITOR ~/.config/opencode/profiles/ws/opencode.jsonc
 ```
+
+If you installed the profile under a different name, edit that profile's `opencode.jsonc` instead.
 
 ## See Also
 

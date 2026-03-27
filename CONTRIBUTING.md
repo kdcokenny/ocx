@@ -2,6 +2,24 @@
 
 Thank you for your interest in contributing to OCX (OpenCode Extensions)!
 
+## Contributing to Facade Repositories
+
+Facade repositories (for example `opencode-worktree`, `opencode-notify`, `opencode-background-agents`, and `opencode-workspace`) are maintained from this OCX monorepo.
+
+If your contribution targets a facade, please open it here:
+
+- Issues: https://github.com/kdcokenny/ocx/issues/new
+- Pull requests: https://github.com/kdcokenny/ocx/compare
+
+Best monorepo starting points by facade:
+
+- `opencode-worktree`: https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/worktree.ts and https://github.com/kdcokenny/ocx/tree/main/workers/kdco-registry/files/plugins/worktree
+- `opencode-notify`: https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/notify.ts
+- `opencode-background-agents`: https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/background-agents.ts
+- `opencode-workspace`: https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/workspace-plugin.ts and https://github.com/kdcokenny/ocx/tree/main/workers/kdco-registry/files
+
+Please do **not** open issues or pull requests in the facade repository itself.
+
 ## Creating a Registry
 
 OCX uses a "copy-and-own" philosophy. Components are built from source into a versioned registry format.

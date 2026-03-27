@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
+import { readRequiredGlobalOcxConfig, resolveOpencodePathScope } from "../src/profile/paths"
 import { findOcxConfig, findOcxLock } from "../src/schemas/config"
 import {
 	findOpencodeConfig,
@@ -129,6 +130,72 @@ describe("config path discovery", () => {
 
 			expect(result.exists).toBe(false)
 			expect(result.path).toBe(join(testDir, ".opencode", "opencode.jsonc"))
+		})
+	})
+
+	describe("shared global path resolution helpers", () => {
+		it("resolves macOS-style homedir global scope semantics", () => {
+			const options = { homeDir: "/Users/testuser", xdgConfigHome: "" }
+
+			expect(resolveOpencodePathScope("/Users/testuser/.config/opencode", options)).toBe(
+				"global-root",
+			)
+			expect(
+				resolveOpencodePathScope("/Users/testuser/.config/opencode/profiles/work", options),
+			).toBe("global-profile-root")
+		})
+
+		it("always honors XDG_CONFIG_HOME override over homedir fallback", () => {
+			const options = {
+				homeDir: "/Users/testuser",
+				xdgConfigHome: "/tmp/xdg-override",
+			}
+
+			expect(resolveOpencodePathScope("/tmp/xdg-override/opencode", options)).toBe("global-root")
+			expect(resolveOpencodePathScope("/Users/testuser/.config/opencode", options)).toBe(
+				"local-project",
+			)
+		})
+
+		it("does not misclassify ordinary /Users/testuser project paths as global", () => {
+			const localProjectPath = "/Users/testuser/workspace/acme"
+			const options = { homeDir: "/Users/testuser" }
+
+			expect(resolveOpencodePathScope(localProjectPath, options)).toBe("local-project")
+			expect(findOpencodeConfig(localProjectPath).path).toBe(
+				resolve(localProjectPath, ".opencode", "opencode.jsonc"),
+			)
+		})
+
+		it("fails loudly when required global config target is missing", async () => {
+			const requiredReadDir = await mkdtemp(join(tmpdir(), "required-global-read-missing-"))
+
+			try {
+				await expect(
+					readRequiredGlobalOcxConfig({
+						xdgConfigHome: requiredReadDir,
+					}),
+				).rejects.toThrow(/Required global config is missing/)
+			} finally {
+				await rm(requiredReadDir, { recursive: true, force: true })
+			}
+		})
+
+		it("fails loudly when required global config target is a directory", async () => {
+			const requiredReadDir = await mkdtemp(join(tmpdir(), "required-global-read-directory-"))
+
+			try {
+				const invalidTarget = join(requiredReadDir, "opencode", "ocx.jsonc")
+				await mkdir(invalidTarget, { recursive: true })
+
+				await expect(
+					readRequiredGlobalOcxConfig({
+						xdgConfigHome: requiredReadDir,
+					}),
+				).rejects.toThrow(/not a file/)
+			} finally {
+				await rm(requiredReadDir, { recursive: true, force: true })
+			}
 		})
 	})
 

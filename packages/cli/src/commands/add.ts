@@ -41,15 +41,9 @@ import {
 } from "../utils/dep-invalidation"
 import { type DryRunAction, type DryRunResult, outputDryRun } from "../utils/dry-run"
 import { ConfigError, ConflictError, IntegrityError, ValidationError } from "../utils/errors"
-import {
-	collectCompatIssues,
-	createSpinner,
-	handleError,
-	logger,
-	normalizeRegistryUrl,
-	warnCompatIssues,
-} from "../utils/index"
+import { handleError } from "../utils/handle-error"
 import { outputJson } from "../utils/json-output"
+import { logger } from "../utils/logger"
 import {
 	extractPackageName,
 	fetchPackageVersion,
@@ -64,6 +58,9 @@ import { resolveTargetPath } from "../utils/paths"
 import { registerPlannedWriteOrThrow } from "../utils/planned-writes"
 import { hashBundle, hashContent } from "../utils/receipt"
 import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
+import { createSpinner } from "../utils/spinner"
+import { normalizeRegistryUrl } from "../utils/url"
+import { collectCompatIssues, warnCompatIssues } from "../utils/version-compat"
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -199,7 +196,7 @@ interface AddManifestSideEffectTransaction {
 
 interface FileSnapshot {
 	path: string
-	existed: boolean
+	state: "missing" | "file" | "non-file"
 	content: string
 }
 
@@ -1092,17 +1089,33 @@ async function removeEmptyParentDirectories(startDir: string, boundaryDir: strin
  * Capture the current state of a file path for rollback.
  */
 async function captureFileSnapshot(filePath: string): Promise<FileSnapshot> {
-	if (!existsSync(filePath)) {
+	let fileStats: Awaited<ReturnType<typeof stat>>
+	try {
+		fileStats = await stat(filePath)
+	} catch (error) {
+		const errorCode = (error as NodeJS.ErrnoException).code
+		if (errorCode === "ENOENT" || errorCode === "ENOTDIR") {
+			return {
+				path: filePath,
+				state: "missing",
+				content: "",
+			}
+		}
+
+		throw error
+	}
+
+	if (!fileStats.isFile()) {
 		return {
 			path: filePath,
-			existed: false,
+			state: "non-file",
 			content: "",
 		}
 	}
 
 	return {
 		path: filePath,
-		existed: true,
+		state: "file",
 		content: await Bun.file(filePath).text(),
 	}
 }
@@ -1111,9 +1124,13 @@ async function captureFileSnapshot(filePath: string): Promise<FileSnapshot> {
  * Restore a file path to its captured state.
  */
 async function restoreFileSnapshot(snapshot: FileSnapshot, cwd: string): Promise<void> {
-	if (snapshot.existed) {
+	if (snapshot.state === "file") {
 		await mkdir(dirname(snapshot.path), { recursive: true })
 		await Bun.write(snapshot.path, snapshot.content)
+		return
+	}
+
+	if (snapshot.state === "non-file") {
 		return
 	}
 

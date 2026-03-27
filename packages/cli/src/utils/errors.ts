@@ -8,6 +8,7 @@ export type ErrorCode =
 	| "NETWORK_ERROR"
 	| "CONFIG_ERROR"
 	| "VALIDATION_ERROR"
+	| "VALIDATION_FAILED"
 	| "CONFLICT"
 	| "PERMISSION_ERROR"
 	| "INTEGRITY_ERROR"
@@ -52,17 +53,37 @@ export class NotFoundError extends OCXError {
 	}
 }
 
+export type RegistryNetworkContext = "source" | "dependency"
+
+export interface NetworkErrorOptions {
+	url?: string
+	status?: number
+	statusText?: string
+	phase?: string
+	qualifiedName?: string
+	registryContext?: RegistryNetworkContext
+	registryName?: string
+}
+
 export class NetworkError extends OCXError {
 	public readonly url?: string
 	public readonly status?: number
 	public readonly statusText?: string
+	public readonly phase?: string
+	public readonly qualifiedName?: string
+	public readonly registryContext?: RegistryNetworkContext
+	public readonly registryName?: string
 
-	constructor(message: string, options?: { url?: string; status?: number; statusText?: string }) {
+	constructor(message: string, options?: NetworkErrorOptions) {
 		super(message, "NETWORK_ERROR", EXIT_CODES.NETWORK)
 		this.name = "NetworkError"
 		this.url = options?.url
 		this.status = options?.status
 		this.statusText = options?.statusText
+		this.phase = options?.phase
+		this.qualifiedName = options?.qualifiedName
+		this.registryContext = options?.registryContext
+		this.registryName = options?.registryName
 	}
 }
 
@@ -77,6 +98,27 @@ export class ValidationError extends OCXError {
 	constructor(message: string) {
 		super(message, "VALIDATION_ERROR", EXIT_CODES.GENERAL)
 		this.name = "ValidationError"
+	}
+}
+
+export interface ValidationFailureDetails {
+	valid: false
+	errors: string[]
+	summary: {
+		valid: false
+		totalErrors: number
+		schemaErrors: number
+		sourceFileErrors: number
+		circularDependencyErrors: number
+		duplicateTargetErrors: number
+		otherErrors: number
+	}
+}
+
+export class ValidationFailedError extends OCXError {
+	constructor(public readonly details: ValidationFailureDetails) {
+		super("Registry validation failed", "VALIDATION_FAILED", EXIT_CODES.CONFIG)
+		this.name = "ValidationFailedError"
 	}
 }
 

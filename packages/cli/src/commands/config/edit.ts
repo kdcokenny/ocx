@@ -20,7 +20,8 @@ import {
 } from "../../profile/paths"
 import { profileNameSchema } from "../../profile/schema"
 import { ConfigError, ProfileNotFoundError, ValidationError } from "../../utils/errors"
-import { handleError, logger } from "../../utils/index"
+import { handleError } from "../../utils/handle-error"
+import { logger } from "../../utils/logger"
 
 interface ConfigEditOptions {
 	global?: boolean

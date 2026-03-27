@@ -11,7 +11,7 @@ An OpenCode plugin that creates isolated git worktrees where each worktree autom
 
 Manual worktrees require setup: create the worktree, open a terminal, navigate to it, start OpenCode. This plugin eliminates that friction. When the AI calls `worktree_create`, your terminal spawns automatically, OpenCode is already running, and files are synchronized. When it calls `worktree_delete`, changes commit automatically and the worktree cleans itself up.
 
-Works great standalone, but pairs especially well with **tmux** for seamless window management.
+Works great standalone, but pairs especially well with **[cmux](https://www.cmux.dev/)** for agentic workflows. cmux provides native workspace management and programmatic control designed for automated development workflows. Each worktree launch opens a new cmux workspace (no current-workspace reuse). tmux is also supported for traditional multiplexer setups, and remains runtime-priority when already inside a tmux session.
 
 ## When to Use This
 
@@ -57,7 +57,8 @@ Worktrees are stored in `~/.local/share/opencode/worktree/<project-id>/<branch>/
 | **macOS** | Ghostty, iTerm2, Kitty, WezTerm, Alacritty, Warp, Terminal.app |
 | **Linux** | Kitty, WezTerm, Alacritty, Ghostty, Foot, GNOME Terminal, Konsole, xterm |
 | **Windows** | Windows Terminal (wt.exe), cmd.exe fallback |
-| **tmux** | Creates new tmux window (priority detection on all platforms) |
+| **cmux** | Uses native cmux workflow when `CMUX_WORKSPACE_ID`/cmux control env is available; each worktree launch opens a new cmux workspace, then falls back safely |
+| **tmux** | Creates new tmux window (supported on all platforms) |
 | **WSL** | Windows Terminal via wt.exe interop |
 
 ## Configuration

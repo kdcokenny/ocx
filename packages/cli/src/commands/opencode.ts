@@ -7,11 +7,13 @@
  * Spawns OpenCode with the resolved configuration.
  */
 
+import * as path from "node:path"
 import type { Command } from "commander"
 import { ConfigResolver } from "../config/resolver"
 import { getProfileDir, getProfileOpencodeConfig } from "../profile/paths"
 import { getGitInfo } from "../utils/git-context"
-import { handleError, logger } from "../utils/index"
+import { handleError } from "../utils/handle-error"
+import { logger } from "../utils/logger"
 import { getGlobalConfigPath } from "../utils/paths"
 import {
 	formatTerminalName,
@@ -68,6 +70,83 @@ export function resolveOpenCodeBinary(opts: { configBin?: string; envBin?: strin
 	return opts.configBin ?? opts.envBin ?? "opencode"
 }
 
+function isPathLikeLauncherToken(token: string): boolean {
+	return token.includes("/") || token.includes("\\")
+}
+
+/**
+ * Resolve launcher token to a cwd-stable executable path.
+ *
+ * - Path-like tokens (absolute/relative) are normalized to absolute paths.
+ * - Bare command names are resolved through PATH via Bun.which.
+ * - Throws when PATH lookup fails, because OCX context requires a stable launcher path.
+ */
+export function resolveStableOpenCodeLauncherPath(opts: {
+	configuredBin: string
+	cwd: string
+	resolveExecutable?: (command: string) => string | null | undefined
+}): string {
+	const { configuredBin, cwd } = opts
+	const resolveExecutable = opts.resolveExecutable ?? ((command: string) => Bun.which(command))
+
+	if (!configuredBin.trim()) {
+		throw new Error("OpenCode launcher is empty and cannot be resolved to a stable path")
+	}
+
+	if (isPathLikeLauncherToken(configuredBin)) {
+		return path.isAbsolute(configuredBin) ? configuredBin : path.resolve(cwd, configuredBin)
+	}
+
+	const resolvedFromPath = resolveExecutable(configuredBin)
+	if (!resolvedFromPath) {
+		throw new Error(
+			`OpenCode launcher "${configuredBin}" is not available in PATH and cannot be used as OPENCODE_BIN`,
+		)
+	}
+
+	return path.isAbsolute(resolvedFromPath) ? resolvedFromPath : path.resolve(cwd, resolvedFromPath)
+}
+
+export function resolveStableOcxExecutablePath(opts: {
+	cwd: string
+	inheritedOcxBin?: string
+	argv?: string[]
+	execPath?: string
+	resolveExecutable?: (command: string) => string | null | undefined
+	isCompiledBinary?: boolean
+}): string {
+	const resolveExecutable = opts.resolveExecutable ?? ((command: string) => Bun.which(command))
+	const argv = opts.argv ?? process.argv
+	const execPath = opts.execPath ?? process.execPath
+	const isCompiledBinary =
+		opts.isCompiledBinary ??
+		(typeof Bun !== "undefined" && typeof Bun.main === "string" && Bun.main.startsWith("/$bunfs/"))
+	const inheritedOcxBin = opts.inheritedOcxBin?.trim()
+	const runtimeExecutable = isCompiledBinary ? execPath : argv[1]
+
+	const candidate =
+		inheritedOcxBin && inheritedOcxBin.length > 0 ? inheritedOcxBin : runtimeExecutable
+
+	if (!candidate?.trim()) {
+		throw new Error("OCX executable path is empty and cannot be resolved from the current process")
+	}
+
+	if (isPathLikeLauncherToken(candidate)) {
+		return path.isAbsolute(candidate) ? candidate : path.resolve(opts.cwd, candidate)
+	}
+
+	const resolvedFromPath = resolveExecutable(candidate)
+	if (!resolvedFromPath) {
+		throw new Error(
+			`OCX executable "${candidate}" is not available in PATH and cannot be persisted as OCX_BIN`,
+		)
+	}
+
+	return path.isAbsolute(resolvedFromPath)
+		? resolvedFromPath
+		: path.resolve(opts.cwd, resolvedFromPath)
+}
+
 /**
  * Builds environment variables to pass to the opencode process.
  * Returns a NEW object - does not mutate baseEnv.
@@ -75,6 +154,7 @@ export function resolveOpenCodeBinary(opts: { configBin?: string; envBin?: strin
  * Behavior:
  * - Preserves all keys from baseEnv
  * - Overwrites OCX_PROFILE, OPENCODE_* keys with new values
+ * - Exports OCX_CONTEXT/OCX_BIN only when a profile launch context is active
  * - OPENCODE_DISABLE_PROJECT_CONFIG: set to "true" ONLY when a profile is active
  *   (profileName is provided). When no profile, project config is NOT disabled.
  * - OPENCODE_CONFIG_DIR: when configDir is provided → use it;
@@ -85,6 +165,8 @@ export function resolveOpenCodeBinary(opts: { configBin?: string; envBin?: strin
 export function buildOpenCodeEnv(opts: {
 	baseEnv: Record<string, string | undefined>
 	profileName?: string
+	ocxBin?: string
+	opencodeBin?: string
 	configDir?: string
 	configContent?: string
 }): Record<string, string | undefined> {
@@ -93,16 +175,23 @@ export function buildOpenCodeEnv(opts: {
 	// Never leak stale inherited disable flag into no-profile launches.
 	const {
 		OPENCODE_DISABLE_PROJECT_CONFIG: _inheritedDisableProjectConfig,
+		OPENCODE_BIN: _inheritedOpencodeBin,
+		OCX_CONTEXT: _inheritedOcxContext,
+		OCX_BIN: _inheritedOcxBin,
+		OCX_PROFILE: _inheritedOcxProfile,
 		...baseEnvWithoutDisableProjectConfig
 	} = opts.baseEnv
 
 	return {
 		...baseEnvWithoutDisableProjectConfig,
+		...(opts.opencodeBin !== undefined && { OPENCODE_BIN: opts.opencodeBin }),
 		...(hasProfile && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
 		OPENCODE_CONFIG_DIR:
 			opts.configDir ??
 			(hasProfile ? getProfileDir(opts.profileName as string) : getGlobalConfigPath()),
 		...(opts.configContent && { OPENCODE_CONFIG_CONTENT: opts.configContent }),
+		...(hasProfile && { OCX_CONTEXT: "1" }),
+		...(hasProfile && opts.ocxBin && { OCX_BIN: opts.ocxBin }),
 		...(opts.profileName && { OCX_PROFILE: opts.profileName }),
 	}
 }
@@ -243,21 +332,37 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 		}
 
 		// Determine OpenCode binary
-		const bin = resolveOpenCodeBinary({
+		const configuredBin = resolveOpenCodeBinary({
 			configBin: ocxConfig?.bin,
 			envBin: process.env.OPENCODE_BIN,
 		})
+
+		const hasProfileLaunchContext = Boolean(config.profileName)
+		const resolvedOpenCodeLaunchBin = hasProfileLaunchContext
+			? resolveStableOpenCodeLauncherPath({
+					configuredBin,
+					cwd: projectDir,
+				})
+			: configuredBin
+		const resolvedOcxBin = hasProfileLaunchContext
+			? resolveStableOcxExecutablePath({
+					cwd: projectDir,
+					inheritedOcxBin: process.env.OCX_BIN,
+				})
+			: undefined
 
 		// Spawn OpenCode directly in the project directory with config via environment
 		const configContent = configToPass ? JSON.stringify(configToPass) : undefined
 
 		try {
 			proc = Bun.spawn({
-				cmd: [bin, ...args],
+				cmd: [resolvedOpenCodeLaunchBin, ...args],
 				cwd: projectDir,
 				env: buildOpenCodeEnv({
 					baseEnv: process.env as Record<string, string | undefined>,
 					profileName: config.profileName ?? undefined,
+					ocxBin: resolvedOcxBin,
+					opencodeBin: resolvedOpenCodeLaunchBin,
 					configDir: mergedConfig?.path,
 					configContent,
 				}),
@@ -268,7 +373,7 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 		} catch (error: unknown) {
 			throw createOpencodeOcError(
 				"spawn",
-				`Failed to launch OpenCode binary "${bin}": ${error instanceof Error ? error.message : String(error)}`,
+				`Failed to launch OpenCode binary "${configuredBin}": ${error instanceof Error ? error.message : String(error)}`,
 			)
 		}
 

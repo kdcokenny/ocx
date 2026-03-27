@@ -15,7 +15,11 @@ import type { Command } from "commander"
 import { parse as parseJsonc } from "jsonc-parser"
 import { atomicCopy } from "../../profile/atomic"
 import { ProfileManager } from "../../profile/manager"
-import { getGlobalConfig, getProfileOcxConfig } from "../../profile/paths"
+import {
+	getProfileOcxConfig,
+	RequiredGlobalConfigReadError,
+	readRequiredGlobalOcxConfig,
+} from "../../profile/paths"
 import type { RegistryConfig } from "../../schemas/config"
 import type { ProfileOcxConfig } from "../../schemas/ocx"
 import { profileOcxConfigSchema } from "../../schemas/ocx"
@@ -26,7 +30,10 @@ import {
 	ProfileNotFoundError,
 	ValidationError,
 } from "../../utils/errors"
-import { handleError, logger, normalizeRegistryUrl, outputJson } from "../../utils/index"
+import { handleError } from "../../utils/handle-error"
+import { outputJson } from "../../utils/json-output"
+import { logger } from "../../utils/logger"
+import { normalizeRegistryUrl } from "../../utils/url"
 import { installProfileFromRegistry } from "./install-from-registry"
 
 // =============================================================================
@@ -107,18 +114,19 @@ interface ProfileAddResult {
  * @throws ConfigError if file exists but is invalid
  */
 async function readGlobalOcxConfig() {
-	const configPath = getGlobalConfig()
-	const file = Bun.file(configPath)
-
-	if (!(await file.exists())) {
-		return null
-	}
+	let configPath = "global ocx config"
 
 	try {
-		const content = await file.text()
+		const requiredConfig = await readRequiredGlobalOcxConfig()
+		configPath = requiredConfig.path
+		const content = requiredConfig.content
 		const json = parseJsonc(content, [], { allowTrailingComma: true })
 		return profileOcxConfigSchema.parse(json)
 	} catch (error) {
+		if (error instanceof RequiredGlobalConfigReadError) {
+			throw error
+		}
+
 		// Guard: Wrap parse errors with helpful context (Law 4: Fail Fast, Fail Loud)
 		if (error instanceof Error) {
 			throw new ConfigError(
@@ -140,15 +148,19 @@ async function readGlobalOcxConfig() {
 async function requireGlobalRegistry(
 	namespace: string,
 ): Promise<{ config: ProfileOcxConfig; registryUrl: string; registryConfig: RegistryConfig }> {
-	const globalConfig = await readGlobalOcxConfig()
-
-	// Guard: no global config
-	if (!globalConfig) {
-		throw new ConfigError(
-			`Registry "${namespace}" is not configured globally.\n\n` +
-				`Profile installation requires global registry configuration.\n` +
-				`Run: ocx registry add <url> --name ${namespace} --global`,
-		)
+	let globalConfig: ProfileOcxConfig
+	try {
+		globalConfig = await readGlobalOcxConfig()
+	} catch (error) {
+		if (error instanceof RequiredGlobalConfigReadError) {
+			throw new ConfigError(
+				`Registry "${namespace}" is not configured globally.\n\n` +
+					`Profile installation requires global registry configuration.\n` +
+					`${error.message}\n` +
+					`Run: ocx registry add <url> --name ${namespace} --global`,
+			)
+		}
+		throw error
 	}
 
 	// Guard: registry not in global config

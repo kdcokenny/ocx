@@ -107,6 +107,18 @@ If you prefer not to use OCX, copy the source files from [`src/`](./src) to `.op
 
 This plugin is part of the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/main/registry/src/kdco). For the full experience, check out [kdco-workspace](https://github.com/kdcokenny/ocx) which bundles background agents with specialist agents, planning tools, and notification support.
 
+## Contributing
+
+This facade is maintained from the main [OCX monorepo](https://github.com/kdcokenny/ocx).
+
+If you want to update opencode-background-agents itself, start here:
+
+- https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/background-agents.ts
+
+- Open issues here: https://github.com/kdcokenny/ocx/issues/new
+- Open pull requests here: https://github.com/kdcokenny/ocx/compare
+- Please do **not** open issues or PRs in this facade repository.
+
 ## Disclaimer
 
 This project is not built by the OpenCode team and is not affiliated with [OpenCode](https://github.com/sst/opencode) in any way.

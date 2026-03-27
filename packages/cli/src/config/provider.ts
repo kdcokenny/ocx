@@ -114,6 +114,9 @@ export class GlobalConfigProvider implements ConfigProvider {
 
 		// Load ocx.jsonc if it exists (returns null if not found)
 		const config = await readOcxConfig(basePath)
+		if (!config) {
+			throw new ConfigError("Global config not found. Run 'ocx init --global' first.")
+		}
 
 		return new GlobalConfigProvider(basePath, config)
 	}

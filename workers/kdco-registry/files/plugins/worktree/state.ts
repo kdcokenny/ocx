@@ -15,6 +15,7 @@ import * as path from "node:path"
 import { z } from "zod"
 import type { OpencodeClient } from "../kdco-primitives"
 import { getProjectId, logWarn } from "../kdco-primitives"
+import { parsePersistedLaunchMetadata, serializePersistedLaunchMetadata } from "./launch-context"
 
 // =============================================================================
 // TYPES
@@ -26,6 +27,15 @@ export interface Session {
 	branch: string
 	path: string
 	createdAt: string
+	launchMode: "plain" | "ocx"
+	profile: string | null
+	ocxBin: string | null
+}
+
+export type SessionInput = Omit<Session, "launchMode" | "profile" | "ocxBin"> & {
+	launchMode?: "plain" | "ocx"
+	profile?: string | null
+	ocxBin?: string | null
 }
 
 /** Pending spawn operation to be processed on session.idle */
@@ -50,6 +60,9 @@ const sessionSchema = z.object({
 	branch: z.string().min(1),
 	path: z.string().min(1),
 	createdAt: z.string().min(1),
+	launchMode: z.enum(["plain", "ocx"]).optional(),
+	profile: z.string().nullable().optional(),
+	ocxBin: z.string().nullable().optional(),
 })
 
 const pendingSpawnSchema = z.object({
@@ -68,18 +81,31 @@ const pendingDeleteSchema = z.object({
 // =============================================================================
 
 /**
+ * Get the default base directory for worktree storage.
+ * Location: ~/.local/share/opencode/worktree/
+ */
+function getWorktreeBaseDirectory(): string {
+	return path.join(os.homedir(), ".local", "share", "opencode", "worktree")
+}
+
+/**
  * Get the worktree path for a given project and branch.
  *
  * @param projectRoot - Absolute path to the project root
  * @param branch - Branch name for the worktree
+ * @param basePath - Optional custom base path (absolute). Defaults to ~/.local/share/opencode/worktree
  * @returns Absolute path to the worktree directory
  */
-export async function getWorktreePath(projectRoot: string, branch: string): Promise<string> {
+export async function getWorktreePath(
+	projectRoot: string,
+	branch: string,
+	basePath?: string,
+): Promise<string> {
 	if (!branch || typeof branch !== "string") {
 		throw new Error("branch is required")
 	}
 	const projectId = await getProjectId(projectRoot)
-	return path.join(os.homedir(), ".local", "share", "opencode", "worktree", projectId, branch)
+	return path.join(basePath ?? getWorktreeBaseDirectory(), projectId, branch)
 }
 
 /**
@@ -139,9 +165,14 @@ export async function initStateDb(projectRoot: string): Promise<Database> {
 			id TEXT PRIMARY KEY,
 			branch TEXT NOT NULL,
 			path TEXT NOT NULL,
-			created_at TEXT NOT NULL
+			created_at TEXT NOT NULL,
+			launch_mode TEXT,
+			profile TEXT,
+			ocx_bin TEXT
 		)
 	`)
+
+	ensureSessionLaunchMetadataColumns(db)
 
 	db.exec(`
 		CREATE TABLE IF NOT EXISTS pending_operations (
@@ -156,6 +187,66 @@ export async function initStateDb(projectRoot: string): Promise<Database> {
 	return db
 }
 
+function ensureSessionLaunchMetadataColumns(db: Database): void {
+	const tableInfo = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name?: string }>
+	const sessionColumns = new Set(tableInfo.map((column) => column.name).filter(Boolean))
+
+	if (!sessionColumns.has("launch_mode")) {
+		addSessionColumn(db, "launch_mode", "ALTER TABLE sessions ADD COLUMN launch_mode TEXT")
+	}
+
+	if (!sessionColumns.has("profile")) {
+		addSessionColumn(db, "profile", "ALTER TABLE sessions ADD COLUMN profile TEXT")
+	}
+
+	if (!sessionColumns.has("ocx_bin")) {
+		addSessionColumn(db, "ocx_bin", "ALTER TABLE sessions ADD COLUMN ocx_bin TEXT")
+	}
+}
+
+function addSessionColumn(db: Database, columnName: string, sql: string): void {
+	try {
+		db.exec(sql)
+	} catch (error) {
+		if (isDuplicateColumnError(error, columnName)) {
+			return
+		}
+
+		throw error
+	}
+}
+
+function isDuplicateColumnError(error: unknown, columnName: string): boolean {
+	if (!(error instanceof Error)) {
+		return false
+	}
+
+	const normalizedMessage = error.message.toLowerCase()
+	return (
+		normalizedMessage.includes("duplicate column name") &&
+		normalizedMessage.includes(columnName.toLowerCase())
+	)
+}
+
+function normalizeSessionRow(row: Record<string, string | null>): Session {
+	const launchMetadata = parsePersistedLaunchMetadata({
+		launchMode: row.launchMode,
+		profile: row.profile,
+		ocxBin: row.ocxBin,
+	})
+	const serialized = serializePersistedLaunchMetadata(launchMetadata)
+
+	return {
+		id: String(row.id),
+		branch: String(row.branch),
+		path: String(row.path),
+		createdAt: String(row.createdAt),
+		launchMode: serialized.launchMode,
+		profile: serialized.profile,
+		ocxBin: serialized.ocxBin,
+	}
+}
+
 // =============================================================================
 // SESSION CRUD
 // =============================================================================
@@ -167,13 +258,19 @@ export async function initStateDb(projectRoot: string): Promise<Database> {
  * @param db - Database instance from initStateDb
  * @param session - Session data to persist
  */
-export function addSession(db: Database, session: Session): void {
+export function addSession(db: Database, session: SessionInput): void {
 	// Parse at boundary for type safety
 	const parsed = sessionSchema.parse(session)
+	const launchMetadata = parsePersistedLaunchMetadata({
+		launchMode: parsed.launchMode,
+		profile: parsed.profile,
+		ocxBin: parsed.ocxBin,
+	})
+	const serializedLaunchMetadata = serializePersistedLaunchMetadata(launchMetadata)
 
 	const stmt = db.prepare(`
-		INSERT OR REPLACE INTO sessions (id, branch, path, created_at)
-		VALUES ($id, $branch, $path, $createdAt)
+		INSERT OR REPLACE INTO sessions (id, branch, path, created_at, launch_mode, profile, ocx_bin)
+		VALUES ($id, $branch, $path, $createdAt, $launchMode, $profile, $ocxBin)
 	`)
 
 	stmt.run({
@@ -181,6 +278,9 @@ export function addSession(db: Database, session: Session): void {
 		$branch: parsed.branch,
 		$path: parsed.path,
 		$createdAt: parsed.createdAt,
+		$launchMode: serializedLaunchMetadata.launchMode,
+		$profile: serializedLaunchMetadata.profile,
+		$ocxBin: serializedLaunchMetadata.ocxBin,
 	})
 }
 
@@ -196,20 +296,15 @@ export function getSession(db: Database, sessionId: string): Session | null {
 	if (!sessionId) return null
 
 	const stmt = db.prepare(`
-		SELECT id, branch, path, created_at as createdAt
+		SELECT id, branch, path, created_at as createdAt, launch_mode as launchMode, profile, ocx_bin as ocxBin
 		FROM sessions
 		WHERE id = $id
 	`)
 
-	const row = stmt.get({ $id: sessionId }) as Record<string, string> | null
+	const row = stmt.get({ $id: sessionId }) as Record<string, string | null> | null
 	if (!row) return null
 
-	return {
-		id: row.id,
-		branch: row.branch,
-		path: row.path,
-		createdAt: row.createdAt,
-	}
+	return normalizeSessionRow(row)
 }
 
 /**
@@ -235,18 +330,13 @@ export function removeSession(db: Database, branch: string): void {
  */
 export function getAllSessions(db: Database): Session[] {
 	const stmt = db.prepare(`
-		SELECT id, branch, path, created_at as createdAt
+		SELECT id, branch, path, created_at as createdAt, launch_mode as launchMode, profile, ocx_bin as ocxBin
 		FROM sessions
 		ORDER BY created_at ASC
 	`)
 
-	const rows = stmt.all() as Array<Record<string, string>>
-	return rows.map((row) => ({
-		id: row.id,
-		branch: row.branch,
-		path: row.path,
-		createdAt: row.createdAt,
-	}))
+	const rows = stmt.all() as Array<Record<string, string | null>>
+	return rows.map((row) => normalizeSessionRow(row))
 }
 
 // =============================================================================

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "bun:test"
 import { mkdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
-import { buildOpenCodeEnv, dedupeLastWins, resolveOpenCodeBinary } from "../src/commands/opencode"
+import {
+	buildOpenCodeEnv,
+	dedupeLastWins,
+	resolveOpenCodeBinary,
+	resolveStableOcxExecutablePath,
+	resolveStableOpenCodeLauncherPath,
+} from "../src/commands/opencode"
 import { EXIT_CODES } from "../src/utils/errors"
 import { cleanupTempDir, createTempDir, runCLI, runCLIIsolated } from "./helpers"
 
@@ -105,6 +111,82 @@ describe("resolveOpenCodeBinary", () => {
 	})
 })
 
+describe("resolveStableOpenCodeLauncherPath", () => {
+	it("resolves relative launchers against cwd", () => {
+		const resolved = resolveStableOpenCodeLauncherPath({
+			configuredBin: "./scripts/ocx",
+			cwd: "/tmp/project",
+		})
+
+		expect(resolved).toBe("/tmp/project/scripts/ocx")
+	})
+
+	it("preserves absolute launcher paths", () => {
+		const resolved = resolveStableOpenCodeLauncherPath({
+			configuredBin: "/usr/local/bin/ocx",
+			cwd: "/tmp/project",
+		})
+
+		expect(resolved).toBe("/usr/local/bin/ocx")
+	})
+
+	it("resolves PATH launchers to absolute paths", () => {
+		const resolved = resolveStableOpenCodeLauncherPath({
+			configuredBin: "ocx",
+			cwd: "/tmp/project",
+			resolveExecutable: (command) => (command === "ocx" ? "/opt/bin/ocx" : undefined),
+		})
+
+		expect(resolved).toBe("/opt/bin/ocx")
+	})
+
+	it("fails loud when PATH launcher cannot be resolved", () => {
+		expect(() =>
+			resolveStableOpenCodeLauncherPath({
+				configuredBin: "ocx",
+				cwd: "/tmp/project",
+				resolveExecutable: () => undefined,
+			}),
+		).toThrow(/cannot be used as OPENCODE_BIN/i)
+	})
+})
+
+describe("resolveStableOcxExecutablePath", () => {
+	it("resolves current OCX script path from argv[1]", () => {
+		const resolved = resolveStableOcxExecutablePath({
+			cwd: "/tmp/project",
+			argv: ["/usr/local/bin/bun", "./scripts/ocx.ts"],
+			execPath: "/usr/local/bin/bun",
+			isCompiledBinary: false,
+		})
+
+		expect(resolved).toBe("/tmp/project/scripts/ocx.ts")
+	})
+
+	it("prefers inherited OCX_BIN from active launch context", () => {
+		const resolved = resolveStableOcxExecutablePath({
+			cwd: "/tmp/project",
+			inheritedOcxBin: "/usr/local/bin/ocx",
+			argv: ["/usr/local/bin/bun", "./scripts/ocx.ts"],
+			execPath: "/usr/local/bin/bun",
+			isCompiledBinary: false,
+		})
+
+		expect(resolved).toBe("/usr/local/bin/ocx")
+	})
+
+	it("uses execPath for compiled binaries", () => {
+		const resolved = resolveStableOcxExecutablePath({
+			cwd: "/tmp/project",
+			argv: ["/opt/bin/ocx", "oc", "--help"],
+			execPath: "/opt/bin/ocx",
+			isCompiledBinary: true,
+		})
+
+		expect(resolved).toBe("/opt/bin/ocx")
+	})
+})
+
 describe("buildOpenCodeEnv", () => {
 	it("sets OPENCODE_DISABLE_PROJECT_CONFIG when profile is active", () => {
 		const result = buildOpenCodeEnv({
@@ -131,6 +213,19 @@ describe("buildOpenCodeEnv", () => {
 
 		expect(result.OPENCODE_DISABLE_PROJECT_CONFIG).toBeUndefined()
 		expect("OPENCODE_DISABLE_PROJECT_CONFIG" in result).toBe(false)
+		expect(result.PATH).toBe("/usr/bin")
+	})
+
+	it("overwrites inherited OPENCODE_BIN with resolved launcher when provided", () => {
+		const result = buildOpenCodeEnv({
+			baseEnv: {
+				OPENCODE_BIN: "false",
+				PATH: "/usr/bin",
+			},
+			opencodeBin: "/usr/local/bin/bun",
+		})
+
+		expect(result.OPENCODE_BIN).toBe("/usr/local/bin/bun")
 		expect(result.PATH).toBe("/usr/bin")
 	})
 
@@ -172,6 +267,32 @@ describe("buildOpenCodeEnv", () => {
 			profileName: "work",
 		})
 		expect(result.OCX_PROFILE).toBe("work")
+	})
+
+	it("exports OCX_CONTEXT and OCX_BIN for profile launches", () => {
+		const result = buildOpenCodeEnv({
+			baseEnv: {},
+			profileName: "work",
+			ocxBin: "/usr/local/bin/ocx",
+		})
+
+		expect(result.OCX_CONTEXT).toBe("1")
+		expect(result.OCX_BIN).toBe("/usr/local/bin/ocx")
+		expect(result.OCX_PROFILE).toBe("work")
+	})
+
+	it("removes inherited OCX launch markers when no profile is active", () => {
+		const result = buildOpenCodeEnv({
+			baseEnv: {
+				OCX_CONTEXT: "1",
+				OCX_BIN: "/stale/ocx",
+				OCX_PROFILE: "stale",
+			},
+		})
+
+		expect(result.OCX_CONTEXT).toBeUndefined()
+		expect(result.OCX_BIN).toBeUndefined()
+		expect(result.OCX_PROFILE).toBeUndefined()
 	})
 
 	it("preserves existing env vars that are not overwritten", () => {
@@ -507,6 +628,86 @@ describe("oc command CLI contract", () => {
 			// Must hard error, not silently proceed
 			expect(result.exitCode).not.toBe(0)
 			expect(result.output).toMatch(/local.*profile.*unsupported|local.*profile.*not.*allowed/i)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("exports resolved inherited launcher via OPENCODE_BIN and keeps OCX_BIN as OCX executable", async () => {
+		const testDir = await createTempDir("oc-contract-ocx-bin")
+		try {
+			await createProfile(testDir, "work")
+			const expectedOpencodeBin = resolveStableOpenCodeLauncherPath({
+				configuredBin: "bun",
+				cwd: testDir,
+			})
+
+			const capturePath = join(testDir, "capture-env.ts")
+			const outputPath = join(testDir, "captured-env.json")
+			await Bun.write(
+				capturePath,
+				`const outputPath = process.argv[2];\nif (!outputPath) throw new Error("missing output path");\nconst payload = {\n  ocxBin: process.env.OCX_BIN,\n  opencodeBin: process.env.OPENCODE_BIN,\n  argv0: process.argv[0],\n  argv1: process.argv[1],\n};\nawait Bun.write(outputPath, JSON.stringify(payload));\n`,
+			)
+
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", capturePath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const captured = JSON.parse(await Bun.file(outputPath).text()) as {
+				ocxBin?: string
+				opencodeBin?: string
+				argv0?: string
+			}
+
+			expect(captured.opencodeBin).toBe(expectedOpencodeBin)
+			expect(captured.ocxBin).toBe(join(import.meta.dir, "..", "src", "index.ts"))
+			expect(captured.ocxBin).not.toBe(captured.argv0)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("exports resolved config launcher via OPENCODE_BIN when config bin overrides inherited env", async () => {
+		const testDir = await createTempDir("oc-contract-opencode-bin-config")
+		try {
+			await createProfile(testDir, "work")
+			const expectedOpencodeBin = resolveStableOpenCodeLauncherPath({
+				configuredBin: "bun",
+				cwd: testDir,
+			})
+			await Bun.write(
+				join(testDir, "opencode", "profiles", "work", "ocx.jsonc"),
+				JSON.stringify({ bin: "bun" }),
+			)
+
+			const capturePath = join(testDir, "capture-env.ts")
+			const outputPath = join(testDir, "captured-env.json")
+			await Bun.write(
+				capturePath,
+				`const outputPath = process.argv[2];\nif (!outputPath) throw new Error("missing output path");\nconst payload = {\n  ocxBin: process.env.OCX_BIN,\n  opencodeBin: process.env.OPENCODE_BIN,\n  argv0: process.argv[0],\n  argv1: process.argv[1],\n};\nawait Bun.write(outputPath, JSON.stringify(payload));\n`,
+			)
+
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", capturePath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "false" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const captured = JSON.parse(await Bun.file(outputPath).text()) as {
+				ocxBin?: string
+				opencodeBin?: string
+				argv0?: string
+			}
+
+			expect(captured.opencodeBin).toBe(expectedOpencodeBin)
+			expect(captured.opencodeBin).not.toBe("false")
+			expect(captured.ocxBin).toBe(join(import.meta.dir, "..", "src", "index.ts"))
 		} finally {
 			await cleanupTempDir(testDir)
 		}

@@ -178,6 +178,14 @@ describe("ocx profile remove", () => {
 		// Profile should still exist
 		expect(existsSync(join(configDir, "profiles", "default"))).toBe(true)
 	})
+
+	it("does not emit false /Users/ ENOENT when removing a global profile", async () => {
+		const result = await runCLI(["profile", "remove", "test-profile", "--global"], testDir)
+
+		expect(result.exitCode).toBe(0)
+		expect(result.stderr).not.toMatch(/ENOENT.*\/Users\//)
+		expect(result.stderr).not.toContain("/Users/")
+	})
 })
 
 // =============================================================================
@@ -237,6 +245,16 @@ describe("ocx profile list", () => {
 // =============================================================================
 
 describe("local scope hard-fail (global-only profiles)", () => {
+	it("keeps local scope behavior for /Users/testuser-like project paths", async () => {
+		const macLikeProjectPath = join(testDir, "Users", "testuser", "workspace", "project")
+		await mkdir(macLikeProjectPath, { recursive: true })
+
+		const { exitCode, output } = await runCLI(["profile", "list"], macLikeProjectPath)
+
+		expect(exitCode).not.toBe(0)
+		expect(output).toMatch(/local.*profile.*unsupported|local.*not.*supported|global.*required/i)
+	})
+
 	it("profile show without --global must hard-fail", async () => {
 		// Default scope is local, which is no longer supported.
 		// Must produce a non-zero exit and a clear error.

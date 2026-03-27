@@ -3,7 +3,7 @@
  * Tests database initialization, session CRUD, pending operations, and concurrent access.
  */
 
-import type { Database } from "bun:sqlite"
+import { type Database, Database as SqliteDatabase } from "bun:sqlite"
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
@@ -117,6 +117,44 @@ describe("worktree-state", () => {
 				"valid project root path",
 			)
 		})
+
+		it("should tolerate concurrent launch metadata column migration", async () => {
+			const projectRoot = path.join(testDir, "migration-race")
+			fs.mkdirSync(projectRoot, { recursive: true })
+
+			const projectId = await getProjectId(projectRoot)
+			const dbDir = path.join(os.homedir(), ".local", "share", "opencode", "plugins", "worktree")
+			const dbPath = path.join(dbDir, `${projectId}.sqlite`)
+
+			fs.mkdirSync(dbDir, { recursive: true })
+			const legacyDb = new SqliteDatabase(dbPath)
+			legacyDb.exec("DROP TABLE IF EXISTS sessions")
+			legacyDb.exec(`
+				CREATE TABLE sessions (
+					id TEXT PRIMARY KEY,
+					branch TEXT NOT NULL,
+					path TEXT NOT NULL,
+					created_at TEXT NOT NULL
+				)
+			`)
+			legacyDb.close()
+
+			const handles = await Promise.all(Array.from({ length: 12 }, () => initStateDb(projectRoot)))
+			for (const handle of handles) {
+				handle.close()
+			}
+
+			const migratedDb = new SqliteDatabase(dbPath)
+			const tableInfo = migratedDb.prepare("PRAGMA table_info(sessions)").all() as Array<{
+				name: string
+			}>
+			const columns = new Set(tableInfo.map((column) => column.name))
+			migratedDb.close()
+
+			expect(columns.has("launch_mode")).toBe(true)
+			expect(columns.has("profile")).toBe(true)
+			expect(columns.has("ocx_bin")).toBe(true)
+		})
 	})
 
 	describe("Project ID and Worktree Paths", () => {
@@ -162,6 +200,42 @@ describe("worktree-state", () => {
 			// Path should contain the project ID
 			expect(worktreePath).toContain(projectId)
 		})
+
+		it("should getWorktreePath use custom basePath when provided", async () => {
+			const projectRoot = path.join(testDir, "worktree-custom-path-test")
+			fs.mkdirSync(projectRoot, { recursive: true })
+
+			const customBase = path.join(testDir, "custom-worktrees")
+			const projectId = await getProjectId(projectRoot)
+			const worktreePath = await getWorktreePath(projectRoot, "my-branch", customBase)
+
+			expect(worktreePath).toBe(path.join(customBase, projectId, "my-branch"))
+			// Should NOT contain the default path
+			expect(worktreePath).not.toContain(".local")
+		})
+
+		it("should getWorktreePath use absolute basePath as-is", async () => {
+			const projectRoot = path.join(testDir, "worktree-absolute-test")
+			fs.mkdirSync(projectRoot, { recursive: true })
+
+			const projectId = await getProjectId(projectRoot)
+			const absoluteBase = path.join(os.homedir(), "my-worktrees")
+			const worktreePath = await getWorktreePath(projectRoot, "abs-branch", absoluteBase)
+
+			expect(worktreePath).toBe(path.join(absoluteBase, projectId, "abs-branch"))
+		})
+
+		it("should getWorktreePath use default when basePath is undefined", async () => {
+			const projectRoot = path.join(testDir, "worktree-default-test")
+			fs.mkdirSync(projectRoot, { recursive: true })
+
+			const withUndefined = await getWorktreePath(projectRoot, "branch-a", undefined)
+			const withoutArg = await getWorktreePath(projectRoot, "branch-a")
+
+			expect(withUndefined).toBe(withoutArg)
+			// Should use the default ~/.local/share/opencode/worktree path
+			expect(withUndefined).toContain(path.join(".local", "share", "opencode", "worktree"))
+		})
 	})
 
 	describe("Session CRUD", () => {
@@ -188,7 +262,71 @@ describe("worktree-state", () => {
 			addSession(db, session)
 
 			const retrieved = getSession(db, "test-session-123")
-			expect(retrieved).toEqual(session)
+			expect(retrieved).toEqual({
+				...session,
+				launchMode: "plain",
+				profile: null,
+				ocxBin: null,
+			})
+		})
+
+		it("should persist and retrieve OCX launch metadata", () => {
+			addSession(db, {
+				id: "ocx-session",
+				branch: "feature/ocx",
+				path: "/path/ocx",
+				createdAt: "2026-01-07T12:30:00.000Z",
+				launchMode: "ocx",
+				profile: "work",
+				ocxBin: "/usr/local/bin/ocx",
+			})
+
+			const session = getSession(db, "ocx-session")
+			expect(session).toEqual({
+				id: "ocx-session",
+				branch: "feature/ocx",
+				path: "/path/ocx",
+				createdAt: "2026-01-07T12:30:00.000Z",
+				launchMode: "ocx",
+				profile: "work",
+				ocxBin: "/usr/local/bin/ocx",
+			})
+		})
+
+		it("should interpret legacy rows without launch metadata as plain", () => {
+			db.prepare(
+				`INSERT OR REPLACE INTO sessions (id, branch, path, created_at) VALUES ($id, $branch, $path, $createdAt)`,
+			).run({
+				$id: "legacy-session",
+				$branch: "legacy-branch",
+				$path: "/legacy/path",
+				$createdAt: "2026-01-07T13:00:00.000Z",
+			})
+
+			const session = getSession(db, "legacy-session")
+			expect(session).toEqual({
+				id: "legacy-session",
+				branch: "legacy-branch",
+				path: "/legacy/path",
+				createdAt: "2026-01-07T13:00:00.000Z",
+				launchMode: "plain",
+				profile: null,
+				ocxBin: null,
+			})
+		})
+
+		it("should fail loud for invalid persisted ocx metadata", () => {
+			db.prepare(
+				`INSERT OR REPLACE INTO sessions (id, branch, path, created_at, launch_mode, profile, ocx_bin)
+				 VALUES ($id, $branch, $path, $createdAt, 'ocx', NULL, '/stale/ocx')`,
+			).run({
+				$id: "invalid-ocx",
+				$branch: "invalid-ocx-branch",
+				$path: "/invalid/ocx",
+				$createdAt: "2026-01-07T14:00:00.000Z",
+			})
+
+			expect(() => getSession(db, "invalid-ocx")).toThrow(/launch metadata/i)
 		})
 
 		it("should getSession retrieve existing session by ID", () => {

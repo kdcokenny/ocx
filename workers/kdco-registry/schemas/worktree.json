@@ -9,6 +9,10 @@
 			"type": "string",
 			"description": "JSON Schema reference"
 		},
+		"worktreePath": {
+			"type": "string",
+			"description": "Custom base path for worktree storage. Supports ~ for home directory. Full path: <worktreePath>/<projectId>/<branch>. Default: ~/.local/share/opencode/worktree"
+		},
 		"sync": {
 			"type": "object",
 			"description": "File synchronization settings",

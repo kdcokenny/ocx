@@ -58,7 +58,7 @@
 			"name": "notify",
 			"type": "plugin",
 			"description": "Native OS notifications - get notified when tasks complete",
-			"files": ["plugins/notify.ts"],
+			"files": ["plugins/notify.ts", "plugins/notify/backend.ts", "plugins/notify/cmux.ts"],
 			"dependencies": ["kdco-primitives"],
 			"npmDevDependencies": ["node-notifier@10.0.1", "detect-terminal@2.0.0"]
 		},
@@ -66,7 +66,12 @@
 			"name": "worktree",
 			"type": "plugin",
 			"description": "Auto-manages Git worktrees for isolated AI sessions with seamless terminal spawning",
-			"files": ["plugins/worktree.ts", "plugins/worktree/state.ts", "plugins/worktree/terminal.ts"],
+			"files": [
+				"plugins/worktree.ts",
+				"plugins/worktree/state.ts",
+				"plugins/worktree/terminal.ts",
+				"plugins/worktree/launch-context.ts"
+			],
 			"dependencies": ["kdco-primitives"],
 			"npmDevDependencies": ["jsonc-parser@3.3.1", "zod@4.3.5"]
 		},
@@ -320,7 +325,7 @@
 			],
 			"opencode": {
 				// External npm plugin for diff/patch support
-				"plugin": ["@tarquinen/opencode-dcp@1.2.7", "@franlol/opencode-md-table-formatter@0.0.3"],
+				"plugin": ["@tarquinen/opencode-dcp@3.1.3", "@franlol/opencode-md-table-formatter@0.0.6"],
 				"permission": {
 					// Disable webfetch globally for security
 					"webfetch": "deny",

@@ -12,7 +12,7 @@ Manual worktrees require setup: create the worktree, open a terminal, navigate t
 
 This plugin eliminates that friction. When the AI calls `worktree_create`, your terminal spawns automatically, OpenCode is already running, and files are synchronized. When it calls `worktree_delete`, changes commit automatically and the worktree cleans itself up. It's the difference between having a tool and having a workflow.
 
-Works great standalone, but pairs especially well with **tmux** for seamless window management. When running inside tmux, worktrees spawn as new windows instead of separate terminal apps—keeping everything organized in a single terminal session with zero external window overhead.
+Works great standalone, but pairs especially well with **[cmux](https://www.cmux.dev/)** for agentic workflows. cmux provides native workspace management and programmatic control that fits naturally into automated development workflows. tmux is also supported if you prefer a traditional multiplexer setup.
 
 ## When to Use This
 
@@ -103,15 +103,17 @@ The plugin detects your terminal automatically:
 | **macOS** | Ghostty, iTerm2, Kitty, WezTerm, Alacritty, Warp, Terminal.app |
 | **Linux** | Kitty, WezTerm, Alacritty, Ghostty, Foot, GNOME Terminal, Konsole, XFCE4 Terminal, xterm |
 | **Windows** | Windows Terminal (wt.exe), cmd.exe fallback |
-| **tmux** | **Creates new tmux window** (priority detection on all platforms) |
+| **cmux** | **Uses native cmux workflow** when `CMUX_WORKSPACE_ID` is present or socket control is explicitly enabled (`CMUX_SOCKET_PATH` + `CMUX_SOCKET_MODE=allowAll`); each worktree launch opens a new cmux workspace and falls back safely when unavailable |
+| **tmux** | Creates new tmux window (supported on all platforms) |
 | **WSL** | Windows Terminal via wt.exe interop |
 
 ### Detection Priority
 
-1. **tmux** - **Priority detection on all platforms** - Creates new tmux windows instead of spawning separate terminal applications. This keeps all worktrees organized in a single terminal session with native tmux window management and zero external window overhead.
-2. **WSL** - Uses Windows Terminal for Linux subsystem
-3. **Environment vars** - Checks `TERM_PROGRAM`, `KITTY_WINDOW_ID`, `GHOSTTY_RESOURCES_DIR`, etc.
-4. **Fallback** - System defaults (Terminal.app, xterm, cmd.exe)
+1. **tmux** - Runtime priority on all platforms when already inside tmux. Creates new tmux windows instead of spawning separate terminal applications.
+2. **cmux** - **Recommended for new agentic workflows**. Uses native cmux launch flow when available via `CMUX_WORKSPACE_ID` or explicit socket control (`CMUX_SOCKET_PATH` with `CMUX_SOCKET_MODE=allowAll`). Worktree launches always create a new cmux workspace (no current-workspace reuse), then fall back safely when cmux context is unavailable.
+3. **WSL** - Uses Windows Terminal for Linux subsystem
+4. **Environment vars** - Checks `TERM_PROGRAM`, `KITTY_WINDOW_ID`, `GHOSTTY_RESOURCES_DIR`, etc.
+5. **Fallback** - System defaults (Terminal.app, xterm, cmd.exe)
 
 ## Configuration
 
@@ -229,6 +231,19 @@ From the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/main/registry/src
 ## Acknowledgments
 
 Inspired by [opencode-worktree-session](https://github.com/felixAnhalt/opencode-worktree-session) by Felix Anhalt.
+
+## Contributing
+
+This facade is maintained from the main [OCX monorepo](https://github.com/kdcokenny/ocx).
+
+If you want to update opencode-worktree itself, start here:
+
+- https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/worktree.ts
+- https://github.com/kdcokenny/ocx/tree/main/workers/kdco-registry/files/plugins/worktree
+
+- Open issues here: https://github.com/kdcokenny/ocx/issues/new
+- Open pull requests here: https://github.com/kdcokenny/ocx/compare
+- Please do **not** open issues or PRs in this facade repository.
 
 ## Disclaimer
 

@@ -8,6 +8,25 @@ const TEST_ENV: Env = {
 
 const LATEST_SCHEMA_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=86400"
 const VERSIONED_SCHEMA_CACHE_CONTROL = "public, max-age=31536000, immutable"
+const MINTLIFY_ROOT_DOC_PATHS = [
+	"/getting-started/introduction",
+	"/profiles/overview",
+	"/cli/commands",
+	"/registries/create",
+	"/reference/opencode",
+	"/guides/index",
+	"/integrations/workspace",
+	"/enterprise/overview",
+	"/security/policy",
+	"/maintainers/migration-v1-4-0",
+] as const
+const README_REGRESSION_DOC_PATHS = [
+	"/guides/index",
+	"/profiles/overview",
+	"/cli/commands",
+	"/registries/create",
+	"/profiles/security",
+] as const
 
 const originalFetch = globalThis.fetch
 
@@ -112,6 +131,14 @@ describe("non-schema routes", () => {
 		)
 		globalThis.fetch = fetchMock as unknown as typeof fetch
 
+		const rootLevelPaths = [
+			...new Set([...MINTLIFY_ROOT_DOC_PATHS, ...README_REGRESSION_DOC_PATHS]),
+		]
+		for (const rootLevelPath of rootLevelPaths) {
+			const response = await app.request(`https://ocx.kdco.dev${rootLevelPath}`, {}, TEST_ENV)
+			expect(response.status).toBe(200)
+		}
+
 		const docsRoot = await app.request("https://ocx.kdco.dev/docs", {}, TEST_ENV)
 		const docsTrailingSlash = await app.request("https://ocx.kdco.dev/docs/", {}, TEST_ENV)
 		const docsCollapsedSlashes = await app.request("https://ocx.kdco.dev/docs//a", {}, TEST_ENV)
@@ -128,8 +155,9 @@ describe("non-schema routes", () => {
 		expect(docsBackslashPath.status).toBe(200)
 		expect(vercelSubpath.status).toBe(200)
 
-		expect(fetchMock).toHaveBeenCalledTimes(5)
+		expect(fetchMock).toHaveBeenCalledTimes(rootLevelPaths.length + 5)
 		expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+			...rootLevelPaths.map((rootLevelPath) => `https://kdco.mintlify.dev${rootLevelPath}`),
 			"https://kdco.mintlify.dev/docs",
 			"https://kdco.mintlify.dev/docs/",
 			"https://kdco.mintlify.dev/docs/a",
@@ -139,6 +167,13 @@ describe("non-schema routes", () => {
 
 		const nonProxyPaths: Array<{ path: string; expectedStatus: number }> = [
 			{ path: "/doc", expectedStatus: 404 },
+			{ path: "//guides/index", expectedStatus: 404 },
+			{ path: "/guide/index", expectedStatus: 404 },
+			{ path: "/guides-index", expectedStatus: 404 },
+			{ path: "/guides%5Cindex", expectedStatus: 404 },
+			{ path: "/profiles%5Coverview", expectedStatus: 404 },
+			{ path: "/guides%2F..%2Findex", expectedStatus: 404 },
+			{ path: "/profiles%2F%2E%2E%2Foverview", expectedStatus: 404 },
 			{ path: "/docsify", expectedStatus: 404 },
 			{ path: "/.well-known/anything-else", expectedStatus: 404 },
 			{ path: "/docs%2F..", expectedStatus: 404 },
@@ -152,7 +187,7 @@ describe("non-schema routes", () => {
 			expect(response.status).toBe(nonProxyPath.expectedStatus)
 		}
 
-		expect(fetchMock).toHaveBeenCalledTimes(5)
+		expect(fetchMock).toHaveBeenCalledTimes(rootLevelPaths.length + 5)
 	})
 
 	it("returns 405 for disallowed methods on proxied paths", async () => {
@@ -429,6 +464,93 @@ describe("non-schema routes", () => {
 		expect(protocolRelativeResponse.headers.get("location")).toBe(
 			"https://ocx.kdco.dev/docs/reference?foo=bar#protocol",
 		)
+	})
+
+	it("rewrites redirects from root-level docs requests back to root-level URLs", async () => {
+		const locations = [
+			"/guides/start?foo=bar#root",
+			"next?foo=bar#path",
+			"//kdco.mintlify.dev/reference?foo=bar#protocol",
+			"https://kdco.mintlify.dev/docs/cli/commands?foo=bar#legacy-prefix",
+		]
+		let callIndex = 0
+		const fetchMock = mock((_input: string | URL | Request, _init?: RequestInit) => {
+			const location = locations[callIndex]
+			callIndex += 1
+			return Promise.resolve(
+				new Response(null, {
+					status: 302,
+					headers: {
+						Location: location,
+					},
+				}),
+			)
+		})
+		globalThis.fetch = fetchMock as unknown as typeof fetch
+
+		const rootRelativeResponse = await app.request(
+			"https://ocx.kdco.dev/guides/index",
+			{},
+			TEST_ENV,
+		)
+		expect(rootRelativeResponse.headers.get("location")).toBe(
+			"https://ocx.kdco.dev/guides/start?foo=bar#root",
+		)
+
+		const pathRelativeResponse = await app.request(
+			"https://ocx.kdco.dev/guides/current",
+			{},
+			TEST_ENV,
+		)
+		expect(pathRelativeResponse.headers.get("location")).toBe(
+			"https://ocx.kdco.dev/guides/next?foo=bar#path",
+		)
+
+		const protocolRelativeResponse = await app.request(
+			"https://ocx.kdco.dev/reference/opencode",
+			{},
+			TEST_ENV,
+		)
+		expect(protocolRelativeResponse.headers.get("location")).toBe(
+			"https://ocx.kdco.dev/reference?foo=bar#protocol",
+		)
+
+		const legacyPrefixResponse = await app.request(
+			"https://ocx.kdco.dev/cli/commands",
+			{},
+			TEST_ENV,
+		)
+		expect(legacyPrefixResponse.headers.get("location")).toBe(
+			"https://ocx.kdco.dev/cli/commands?foo=bar#legacy-prefix",
+		)
+	})
+
+	it("keeps root-level docs redirects anchored at /docs", async () => {
+		const locations = ["/docs", "/docs/"]
+		let callIndex = 0
+		const fetchMock = mock((_input: string | URL | Request, _init?: RequestInit) => {
+			const location = locations[callIndex]
+			callIndex += 1
+			return Promise.resolve(
+				new Response(null, {
+					status: 302,
+					headers: {
+						Location: location,
+					},
+				}),
+			)
+		})
+		globalThis.fetch = fetchMock as unknown as typeof fetch
+
+		const docsResponse = await app.request("https://ocx.kdco.dev/guides/index", {}, TEST_ENV)
+		const docsSlashResponse = await app.request(
+			"https://ocx.kdco.dev/reference/opencode",
+			{},
+			TEST_ENV,
+		)
+
+		expect(docsResponse.headers.get("location")).toBe("https://ocx.kdco.dev/docs")
+		expect(docsSlashResponse.headers.get("location")).toBe("https://ocx.kdco.dev/docs")
 	})
 
 	it("prevents double /docs prefixing and converges /docs and /docs/ redirects", async () => {

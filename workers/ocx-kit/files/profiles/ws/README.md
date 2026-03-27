@@ -1,39 +1,43 @@
 # KDCO Workspace Profile
 
-Multi-agent orchestration harness with free [OpenCode Zen](https://opencode.ai/docs/zen/) models.
+Multi-agent orchestration harness for KDCO Workspace with OpenCode Zen free-plan defaults and optional premium model recommendations.
 
-## Models
+## Default Model Assignments (OpenCode Zen free plan)
 
-| Agent      | Model      | Role                  |
-| ---------- | ---------- | --------------------- |
-| `plan`       | Big Pickle | Planning orchestrator |
-| `build`      | Big Pickle | Build orchestrator    |
-| `coder`      | Big Pickle | Implementation        |
-| `explore`    | GPT-5 Nano | Codebase search       |
-| `researcher` | GPT-5 Nano | External research     |
-| `scribe`     | GPT-5 Nano | Documentation         |
-| `reviewer`   | GPT-5 Nano | Code review           |
+These are the out-of-the-box `ws` defaults.
+
+| Agent | Model | Role |
+|-------|-------|------|
+| `plan` | Big Pickle | Planning orchestrator |
+| `build` | Big Pickle | Build orchestrator |
+| `coder` | Big Pickle | Implementation |
+| `explore` | GPT-5 Nano | Codebase search |
+| `researcher` | GPT-5 Nano | External research |
+| `scribe` | GPT-5 Nano | Documentation |
+| `reviewer` | GPT-5 Nano | Code review |
 
 ## Recommended Models
 
-When customizing with your own providers, use these model classes:
+Use these when customizing with premium/custom providers (separate from the free-plan defaults above).
 
-| Role                                      | Recommended       | Why                          |
-| ----------------------------------------- | ----------------- | ---------------------------- |
-| Orchestrators (plan, build)               | Claude Opus 4.5   | Heavy reasoning for planning |
-| Implementation (coder)                    | Claude Opus 4.5   | Precision, complex tasks     |
-| Specialists (explore, researcher, scribe) | Claude Sonnet 4.5 | Fast, capable                |
-| Review (reviewer)                         | GPT 5.2           | Deterministic analysis       |
+| Role | Recommended | Why |
+|------|-------------|-----|
+| Orchestrators (`plan`, `build`) | `GPT-5.4` or `Claude Opus 4.6` | Heavy reasoning and long-horizon planning. |
+| Implementation (`coder`) | `GPT-5.3 Codex` or `Claude Sonnet 4.6` | Strong agentic coding for complex implementation work. |
+| Specialists (`explore`, `researcher`, `scribe`) | `Kimi K2.5` | Accurate, low hallucination, and usually cheaper/faster. |
+| Review (`reviewer`) | `GPT-5.4` or `Claude Opus 4.6` | Code review is high-stakes; use a very smart model to catch bugs and edge cases. |
 
-The default profile uses [OpenCode Zen](https://opencode.ai/docs/zen/) free models.
+These are recommended model classes; tune by provider, latency, and budget for your environment.
 
 ## Customize
 
-Edit your profile's config:
+After installing, tune model choices in your local profile config:
 
 ```bash
 $EDITOR ~/.config/opencode/profiles/ws/opencode.jsonc
 ```
+
+If you installed the profile under a different name, edit that profile's `opencode.jsonc` instead.
 
 ## Architecture
 

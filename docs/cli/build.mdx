@@ -25,6 +25,7 @@ Build a registry from source files. This command validates the `registry.jsonc` 
 |------|-----------|---------|-------------|
 | `--out <dir>` | | `./dist` | Output directory |
 | `--dry-run` | | `false` | Validate and show what would be built |
+| `--show-validation` | | `false` | Run full validation before build; show detailed validation output in human mode |
 | `--cwd <path>` | | Current directory | Working directory |
 | `--json` | | `false` | Output as JSON |
 | `--quiet` | `-q` | `false` | Suppress output |
@@ -54,6 +55,17 @@ ocx build --out ./public
 ```bash
 ocx build --dry-run
 ```
+
+### Show Validation Breakdown Before Build
+
+```bash
+ocx build --show-validation
+```
+
+When `--show-validation` is set, OCX always runs validation checks before building.
+
+- In human mode, it prints per-check validation results.
+- With `--json` or `--quiet`, validation still runs, but presentation follows those flags.
 
 ## Output
 

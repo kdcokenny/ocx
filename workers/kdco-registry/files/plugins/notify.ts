@@ -5,12 +5,14 @@
  * Philosophy: "Notify the human when the AI needs them back, not for every micro-event."
  *
  * Features:
+ * - Uses cmux native notifications when running inside cmux
  * - Auto-detects terminal emulator (Ghostty, Kitty, iTerm, WezTerm, etc.)
  * - Suppresses notifications when terminal is focused (like Ghostty does)
  * - Click notification to focus terminal
  * - Parent session only by default (no spam from sub-tasks)
  *
- * Uses node-notifier which bundles native binaries:
+ * Uses cmux CLI first (if available), then node-notifier fallback:
+ * - cmux: `cmux notify --title ... --subtitle ... --body ...`
  * - macOS: terminal-notifier (native NSUserNotificationCenter)
  * - Windows: SnoreToast (native toast notifications)
  * - Linux: notify-send (native desktop notifications)
@@ -26,6 +28,8 @@ import detectTerminal from "detect-terminal"
 // @ts-expect-error - installed at runtime by OCX
 import notifier from "node-notifier"
 import type { OpencodeClient } from "./kdco-primitives/types"
+import { sendNotificationWithFallback } from "./notify/backend"
+import { canUseCmuxNotification, sendCmuxNotification } from "./notify/cmux"
 
 interface NotifyConfig {
 	/** Notify for child/sub-session events (default: false) */
@@ -220,11 +224,104 @@ async function isParentSession(client: OpencodeClient, sessionID: string): Promi
 interface NotificationOptions {
 	title: string
 	message: string
+	subtitle?: string
+	cmuxBody?: string
 	sound: string
 	terminalInfo: TerminalInfo
 }
 
-function sendNotification(options: NotificationOptions): void {
+interface NotificationRuntime {
+	preferCmux: boolean
+}
+
+const QUESTION_DEDUPE_WINDOW_MS = 1500
+const READY_DEDUPE_WINDOW_MS = 1500
+const PERMISSION_DEDUPE_WINDOW_MS = 1500
+
+type RecentNotifications = Map<string, number>
+
+function toNonEmptyString(value: unknown): string | null {
+	if (typeof value !== "string") return null
+
+	const normalized = value.trim()
+	if (!normalized) return null
+
+	return normalized
+}
+
+function shouldSendDedupedNotification(
+	recentNotifications: RecentNotifications,
+	dedupeKey: string,
+	windowMs: number,
+	nowMs = Date.now(),
+): boolean {
+	for (const [key, timestamp] of recentNotifications) {
+		if (nowMs - timestamp >= windowMs) {
+			recentNotifications.delete(key)
+		}
+	}
+
+	const lastSentAt = recentNotifications.get(dedupeKey)
+	if (lastSentAt !== undefined && nowMs - lastSentAt < windowMs) {
+		return false
+	}
+
+	recentNotifications.set(dedupeKey, nowMs)
+	return true
+}
+
+function buildQuestionToolDedupeKey(sessionID: unknown, callID: unknown): string | null {
+	const normalizedSessionID = toNonEmptyString(sessionID)
+	if (!normalizedSessionID) return null
+
+	const normalizedCallID = toNonEmptyString(callID)
+	if (!normalizedCallID) return null
+
+	return `question:${normalizedSessionID}:${normalizedCallID}`
+}
+
+function buildQuestionEventDedupeKey(properties: unknown): string | null {
+	if (!properties || typeof properties !== "object") return null
+
+	const record = properties as Record<string, unknown>
+	const normalizedSessionID = toNonEmptyString(record.sessionID)
+	if (!normalizedSessionID) return null
+
+	const toolInfo =
+		record.tool && typeof record.tool === "object"
+			? (record.tool as Record<string, unknown>)
+			: undefined
+	const normalizedCallID = toNonEmptyString(toolInfo?.callID)
+	if (normalizedCallID) {
+		return `question:${normalizedSessionID}:${normalizedCallID}`
+	}
+
+	const normalizedRequestID = toNonEmptyString(record.id)
+	if (normalizedRequestID) {
+		return `question:${normalizedSessionID}:request:${normalizedRequestID}`
+	}
+
+	return null
+}
+
+function buildSessionReadyDedupeKey(sessionID: unknown): string | null {
+	const normalizedSessionID = toNonEmptyString(sessionID)
+	if (!normalizedSessionID) return null
+
+	return `session-ready:${normalizedSessionID}`
+}
+
+function buildPermissionEventDedupeKey(properties: unknown): string | null {
+	if (!properties || typeof properties !== "object") return null
+
+	const record = properties as Record<string, unknown>
+	const normalizedRequestID = toNonEmptyString(record.id)
+	if (!normalizedRequestID) return null
+
+	return `permission:request:${normalizedRequestID}`
+}
+
+function sendNodeNotification(options: NotificationOptions): void {
 	const { title, message, sound, terminalInfo } = options
 
 	// Base notification options
@@ -242,6 +339,22 @@ function sendNotification(options: NotificationOptions): void {
 	notifier.notify(notifyOptions)
 }
 
+async function sendNotification(
+	options: NotificationOptions,
+	runtime: NotificationRuntime,
+): Promise<void> {
+	await sendNotificationWithFallback({
+		preferCmux: runtime.preferCmux,
+		tryCmuxNotify: () =>
+			sendCmuxNotification({
+				title: options.title,
+				subtitle: options.subtitle,
+				body: options.cmuxBody ?? options.message,
+			}),
+		sendNodeNotify: () => sendNodeNotification(options),
+	})
+}
+
 // ==========================================
 // EVENT HANDLERS
 // ==========================================
@@ -251,6 +364,7 @@ async function handleSessionIdle(
 	sessionID: string,
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
+	notificationRuntime: NotificationRuntime,
 ): Promise<void> {
 	// Check if we should notify for this session
 	if (!config.notifyChildSessions) {
@@ -275,12 +389,17 @@ async function handleSessionIdle(
 		// Use default title
 	}
 
-	sendNotification({
-		title: "Ready for review",
-		message: sessionTitle,
-		sound: config.sounds.idle,
-		terminalInfo,
-	})
+	await sendNotification(
+		{
+			title: "Ready for review",
+			message: sessionTitle,
+			subtitle: sessionTitle,
+			cmuxBody: "OpenCode task is ready for review",
+			sound: config.sounds.idle,
+			terminalInfo,
+		},
+		notificationRuntime,
+	)
 }
 
 async function handleSessionError(
@@ -289,6 +408,7 @@ async function handleSessionError(
 	error: string | undefined,
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
+	notificationRuntime: NotificationRuntime,
 ): Promise<void> {
 	// Check if we should notify for this session
 	if (!config.notifyChildSessions) {
@@ -304,17 +424,21 @@ async function handleSessionError(
 
 	const errorMessage = error?.slice(0, 100) || "Something went wrong"
 
-	sendNotification({
-		title: "Something went wrong",
-		message: errorMessage,
-		sound: config.sounds.error,
-		terminalInfo,
-	})
+	await sendNotification(
+		{
+			title: "Something went wrong",
+			message: errorMessage,
+			sound: config.sounds.error,
+			terminalInfo,
+		},
+		notificationRuntime,
+	)
 }
 
 async function handlePermissionUpdated(
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
+	notificationRuntime: NotificationRuntime,
 ): Promise<void> {
 	// Always notify for permission events - AI is blocked waiting for human
 	// No parent check needed: permissions always need human attention
@@ -325,29 +449,36 @@ async function handlePermissionUpdated(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
-	sendNotification({
-		title: "Waiting for you",
-		message: "OpenCode needs your input",
-		sound: config.sounds.permission,
-		terminalInfo,
-	})
+	await sendNotification(
+		{
+			title: "Waiting for you",
+			message: "OpenCode needs your input",
+			sound: config.sounds.permission,
+			terminalInfo,
+		},
+		notificationRuntime,
+	)
 }
 
 async function handleQuestionAsked(
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
+	notificationRuntime: NotificationRuntime,
 ): Promise<void> {
 	// Guard: quiet hours only (no focus check for questions - tmux workflow)
 	if (isQuietHours(config)) return
 
 	const sound = config.sounds.question ?? config.sounds.permission
 
-	sendNotification({
-		title: "Question for you",
-		message: "OpenCode needs your input",
-		sound,
-		terminalInfo,
-	})
+	await sendNotification(
+		{
+			title: "Question for you",
+			message: "OpenCode needs your input",
+			sound,
+			terminalInfo,
+		},
+		notificationRuntime,
+	)
 }
 
 // ==========================================
@@ -362,25 +493,96 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 
 	// Detect terminal once at startup (cached for performance)
 	const terminalInfo = await detectTerminalInfo(config)
+	const notificationRuntime: NotificationRuntime = {
+		preferCmux: canUseCmuxNotification(),
+	}
+	const recentQuestionNotifications: RecentNotifications = new Map()
+	const recentReadyNotifications: RecentNotifications = new Map()
+	const recentPermissionNotifications: RecentNotifications = new Map()
+
+	const notifyQuestionIfNeeded = async (dedupeKey: string | null): Promise<void> => {
+		if (
+			dedupeKey &&
+			!shouldSendDedupedNotification(
+				recentQuestionNotifications,
+				dedupeKey,
+				QUESTION_DEDUPE_WINDOW_MS,
+			)
+		) {
+			return
+		}
+
+		await handleQuestionAsked(config, terminalInfo, notificationRuntime)
+	}
+
+	const notifySessionReadyIfNeeded = async (sessionID: unknown): Promise<void> => {
+		const normalizedSessionID = toNonEmptyString(sessionID)
+		if (!normalizedSessionID) return
+
+		const dedupeKey = buildSessionReadyDedupeKey(normalizedSessionID)
+		if (!dedupeKey) return
+
+		if (
+			!shouldSendDedupedNotification(recentReadyNotifications, dedupeKey, READY_DEDUPE_WINDOW_MS)
+		) {
+			return
+		}
+
+		await handleSessionIdle(
+			client as OpencodeClient,
+			normalizedSessionID,
+			config,
+			terminalInfo,
+			notificationRuntime,
+		)
+	}
+
+	const notifyPermissionIfNeeded = async (properties: unknown): Promise<void> => {
+		const dedupeKey = buildPermissionEventDedupeKey(properties)
+
+		if (
+			dedupeKey &&
+			!shouldSendDedupedNotification(
+				recentPermissionNotifications,
+				dedupeKey,
+				PERMISSION_DEDUPE_WINDOW_MS,
+			)
+		) {
+			return
+		}
+
+		await handlePermissionUpdated(config, terminalInfo, notificationRuntime)
+	}
 
 	return {
 		"tool.execute.before": async (input: { tool: string; sessionID: string; callID: string }) => {
 			if (input.tool === "question") {
-				await handleQuestionAsked(config, terminalInfo)
+				await notifyQuestionIfNeeded(buildQuestionToolDedupeKey(input.sessionID, input.callID))
 			}
 		},
 		event: async ({ event }: { event: Event }): Promise<void> => {
-			switch (event.type) {
-				case "session.idle": {
-					const sessionID = event.properties.sessionID
-					if (sessionID) {
-						await handleSessionIdle(client as OpencodeClient, sessionID, config, terminalInfo)
+			const runtimeEvent = event as { type: string; properties: Record<string, unknown> }
+
+			switch (runtimeEvent.type) {
+				case "session.status": {
+					const sessionID = runtimeEvent.properties.sessionID
+					const statusType =
+						runtimeEvent.properties.status && typeof runtimeEvent.properties.status === "object"
+							? ((runtimeEvent.properties.status as { type?: string }).type ?? undefined)
+							: undefined
+
+					if (sessionID && statusType === "idle") {
+						await notifySessionReadyIfNeeded(sessionID)
 					}
 					break
 				}
+				case "session.idle": {
+					await notifySessionReadyIfNeeded(runtimeEvent.properties.sessionID)
+					break
+				}
 				case "session.error": {
-					const sessionID = event.properties.sessionID
-					const error = event.properties.error
+					const sessionID = toNonEmptyString(runtimeEvent.properties.sessionID)
+					const error = runtimeEvent.properties.error
 					const errorMessage = typeof error === "string" ? error : error ? String(error) : undefined
 					if (sessionID) {
 						await handleSessionError(
@@ -389,13 +591,20 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 							errorMessage,
 							config,
 							terminalInfo,
+							notificationRuntime,
 						)
 					}
 					break
 				}
 
-				case "permission.updated": {
-					await handlePermissionUpdated(config, terminalInfo)
+				case "permission.updated":
+				case "permission.asked": {
+					await notifyPermissionIfNeeded(runtimeEvent.properties)
+					break
+				}
+				case "question.asked": {
+					const dedupeKey = buildQuestionEventDedupeKey(runtimeEvent.properties)
+					await notifyQuestionIfNeeded(dedupeKey)
 					break
 				}
 			}

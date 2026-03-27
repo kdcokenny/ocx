@@ -405,37 +405,50 @@ function hasAuthHeaders(headers?: Record<string, string>): boolean {
  * Fetch with caching - deduplicates concurrent requests
  */
 async function fetchWithCache<T>(
-	url: string,
+	cacheKey: string,
 	parse: (data: unknown) => T | Promise<T>,
-	headers?: Record<string, string>,
+	options: {
+		phase?: string
+		requestUrl?: string
+		headers?: Record<string, string>
+	} = {},
 ): Promise<T> {
-	// Use auth-aware cache key to prevent cache poisoning between authed/unauthed requests
-	const cacheKey = hasAuthHeaders(headers) ? `${url}@auth` : url
-	const cached = cache.get(cacheKey)
+	const effectiveCacheKey = hasAuthHeaders(options.headers) ? `${cacheKey}@auth` : cacheKey
+	const cached = cache.get(effectiveCacheKey)
 	if (cached) {
 		return cached as Promise<T>
 	}
 
+	const requestUrl = options.requestUrl ?? cacheKey
+
 	const promise = (async () => {
+		const networkErrorContext = {
+			url: requestUrl,
+			phase: options.phase,
+		}
+
 		let response: Response
 		try {
-			response = await fetch(url, { headers })
+			response = await fetch(requestUrl, options.headers ? { headers: options.headers } : undefined)
 		} catch (error) {
 			throw new NetworkError(
-				`Network request failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,
-				{ url },
+				`Network request failed for ${requestUrl}: ${error instanceof Error ? error.message : String(error)}`,
+				networkErrorContext,
 			)
 		}
 
 		if (!response.ok) {
 			if (response.status === 404) {
-				throw new NotFoundError(`Not found: ${url}`)
+				throw new NotFoundError(`Not found: ${requestUrl}`)
 			}
-			throw new NetworkError(`Failed to fetch ${url}: ${response.status} ${response.statusText}`, {
-				url,
-				status: response.status,
-				statusText: response.statusText,
-			})
+			throw new NetworkError(
+				`Failed to fetch ${requestUrl}: ${response.status} ${response.statusText}`,
+				{
+					...networkErrorContext,
+					status: response.status,
+					statusText: response.statusText,
+				},
+			)
 		}
 
 		let data: unknown
@@ -443,18 +456,17 @@ async function fetchWithCache<T>(
 			data = await response.json()
 		} catch (error) {
 			throw new NetworkError(
-				`Invalid JSON response from ${url}: ${error instanceof Error ? error.message : String(error)}`,
-				{ url },
+				`Invalid JSON response from ${requestUrl}: ${error instanceof Error ? error.message : String(error)}`,
+				networkErrorContext,
 			)
 		}
 
 		return await parse(data)
 	})()
 
-	cache.set(cacheKey, promise)
+	cache.set(effectiveCacheKey, promise)
 
-	// Clean up cache on error
-	promise.catch(() => cache.delete(cacheKey))
+	promise.catch(() => cache.delete(effectiveCacheKey))
 
 	return promise
 }
@@ -561,7 +573,7 @@ export async function fetchRegistryIndex(
 			registrySchemaModeCache.set(normalizedBaseUrl, schemaMode)
 			return result.data
 		},
-		headers,
+		{ phase: "registry-index-fetch", headers },
 	)
 }
 
@@ -655,7 +667,7 @@ export async function fetchComponentVersion(
 
 			return { manifest: manifestResult.data, version: resolvedVersion }
 		},
-		headers,
+		{ phase: "packument-fetch", requestUrl: url, headers },
 	)
 }
 
@@ -669,6 +681,11 @@ export async function fetchFileContent(
 	headers?: Record<string, string>,
 ): Promise<string> {
 	const url = `${normalizeRegistryUrl(baseUrl)}/components/${componentName}/${filePath}`
+	const networkErrorContext = {
+		url,
+		phase: "file-content-fetch",
+		qualifiedName: componentName,
+	} as const
 
 	let response: Response
 	try {
@@ -676,14 +693,18 @@ export async function fetchFileContent(
 	} catch (error) {
 		throw new NetworkError(
 			`Network request failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,
-			{ url },
+			networkErrorContext,
 		)
 	}
 
 	if (!response.ok) {
 		throw new NetworkError(
 			`Failed to fetch file ${filePath} for ${componentName} from ${url}: ${response.status} ${response.statusText}`,
-			{ url, status: response.status, statusText: response.statusText },
+			{
+				...networkErrorContext,
+				status: response.status,
+				statusText: response.statusText,
+			},
 		)
 	}
 
