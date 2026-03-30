@@ -14,7 +14,6 @@ import { isGitHubUrl, resolveGitHubRegistry } from "../registry/github"
 import type { RegistryConfig } from "../schemas/config"
 import { findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config"
 import { type DryRunResult, outputDryRun } from "../utils/dry-run"
-import { expandEnvVars } from "../utils/env-expand"
 import {
 	ConfigError,
 	ProfileNotFoundError,
@@ -107,48 +106,15 @@ export async function runRegistryAddCore(
 	const name = options.name
 	const registries = callbacks.getRegistries()
 	const existingByName = registries[name]
-
-	// For HTTP registries, use existing headers from config if present (with env var expansion)
-	if (!isGitHubUrl(trimmedUrl) && existingByName?.headers) {
-		fetchHeaders = Object.fromEntries(
-			Object.entries(existingByName.headers).map(([k, v]) => [k, expandEnvVars(v)]),
-		)
-	}
-
-	// URL uniqueness check: find any existing registry with the same normalized URL
 	const existingByUrl = findRegistryByUrl(registries, normalizedUrl)
-
-	// Fetch registry index to validate the URL serves a valid registry
-	const { fetchRegistryIndex } = await import("../registry/fetcher")
-	try {
-		await fetchRegistryIndex(normalizedUrl, fetchHeaders)
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			(error.message.includes("401") || error.message.includes("403"))
-		) {
-			const hint = isGitHubUrl(trimmedUrl)
-				? "Run `gh auth login` or set GITHUB_TOKEN environment variable."
-				: "Check that the registry URL is correct and any required headers are configured."
-			throw new Error(`Authentication failed. ${hint}`)
-		}
-		throw error
-	}
-
-	// -------------------------------------------------------------------------
-	// Conflict resolution matrix (alias-first model)
-	// Rule 1: New name + new URL => add
-	// Rule 2: Same name + same URL => idempotent no-op
-	// Rule 3: Same name + different URL => fail (name conflict)
-	// Rule 4: Different name + same URL => fail (URL conflict)
-	// -------------------------------------------------------------------------
 
 	const nameExists = existingByName !== undefined
 	const urlExists = existingByUrl !== null
 	const sameUrl = nameExists && normalizeRegistryUrl(existingByName.url) === normalizedUrl
 	const urlOwnedByDifferentName = urlExists && existingByUrl.name !== name
+	const isConflict = (nameExists && !sameUrl) || urlOwnedByDifferentName
+	const isIdempotent = nameExists && sameUrl
 
-	// Dry-run mode: report what would happen
 	if (options.dryRun) {
 		const warnings: string[] = []
 
@@ -164,8 +130,6 @@ export async function runRegistryAddCore(
 			)
 		}
 
-		const isConflict = (nameExists && !sameUrl) || urlOwnedByDifferentName
-		const isIdempotent = nameExists && sameUrl
 		const targetLabel = callbacks.targetLabel || "config"
 
 		const dryRunResult: DryRunResult = {
@@ -196,12 +160,10 @@ export async function runRegistryAddCore(
 		return dryRunResult
 	}
 
-	// Rule 3: Same name + different URL => fail
 	if (nameExists && !sameUrl) {
 		throw new RegistryExistsError(name, existingByName.url, normalizedUrl, callbacks.targetLabel)
 	}
 
-	// Rule 4: Different name + same URL => fail
 	if (urlOwnedByDifferentName) {
 		throw new RegistryExistsError(
 			name,
@@ -212,12 +174,26 @@ export async function runRegistryAddCore(
 		)
 	}
 
-	// Rule 2: Same name + same URL => idempotent no-op
-	if (nameExists && sameUrl) {
+	if (isIdempotent) {
 		return { name, url: normalizedUrl, updated: false, alreadyConfigured: true }
 	}
 
-	// Rule 1: New name + new URL => add
+	const { fetchRegistryIndex } = await import("../registry/fetcher")
+	try {
+		await fetchRegistryIndex(normalizedUrl, fetchHeaders)
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			(error.message.includes("401") || error.message.includes("403"))
+		) {
+			const hint = isGitHubUrl(trimmedUrl)
+				? "Run `gh auth login` or set GITHUB_TOKEN environment variable."
+				: "Check that the registry URL is correct and any required headers are configured."
+			throw new Error(`Authentication failed. ${hint}`)
+		}
+		throw error
+	}
+
 	const registryConfig: RegistryConfig = { url: normalizedUrl }
 	if (sourceUrl) {
 		registryConfig.source = sourceUrl
