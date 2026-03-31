@@ -33,11 +33,22 @@ ocx add kdco/workspace --from https://registry.kdco.dev
 ```
 1. Delegate    →  "Research OAuth2 PKCE best practices"
 2. Continue    →  Keep coding, brainstorming, reviewing
-3. Notified    →  <system-reminder> tells you it's done
+3. Notified    →  <task-notification> arrives on terminal state
 4. Retrieve    →  AI calls delegation_read() to get the result
 ```
 
 Results are persisted to `~/.local/share/opencode/delegations/` as markdown files. Each delegation is automatically tagged with a title and summary, so the AI can scan past research and find what's relevant.
+
+## Lifecycle Behavior
+
+The plugin mirrors Claude Code-style background-agent lifecycle behavior as closely as possible inside OpenCode plugin boundaries:
+
+- Stable delegation IDs are reused across state, artifact path, notifications, and retrieval.
+- Explicit lifecycle transitions (`registered` → `running` → terminal).
+- Terminal-state protection (late progress events cannot regress terminal status).
+- Persistence occurs before terminal notification delivery.
+- `delegation_read(id)` blocks until terminal/timeout and returns deterministic terminal info with persisted fallback.
+- Compaction carries forward running and unread completed delegation context with retrieval hints.
 
 ## Usage
 
@@ -51,9 +62,10 @@ The plugin adds three tools:
 
 ## Limitations
 
-### Read-Only Agents Only
+### Read-Only Sub-Agents Only
 
-Only read-only agents (`researcher`, `explore`) can use `delegate`. Write-capable agents (`coder`, `scribe`) must use the native `task` tool.
+Only read-only sub-agents (permissions: `edit=deny`, `write=deny`, `bash={"*":"deny"}`) can use `delegate`.
+Any write-capable sub-agent (any write/edit/bash allow) must use the native `task` tool.
 
 **Why?** Background delegations run in isolated sessions outside OpenCode's session tree. The undo/branching system cannot track changes made in background sessions—reverting would not affect these changes, risking unexpected data loss.
 
@@ -62,6 +74,16 @@ Only read-only agents (`researcher`, `explore`) can use `delegate`. Write-capabl
 ### Timeout
 
 Delegations timeout after **15 minutes**.
+
+### Upstream Parity Boundaries
+
+This is plugin-compatible lifecycle parity, not runtime-internal parity. It does not replicate:
+
+- Claude/OpenCode internal AppState/task queue internals
+- runtime notification priority controls
+- write-capable background execution with native undo/branching parity
+
+Write-capable sub-agents should continue to use native `task`.
 
 ### Real-Time Monitoring
 

@@ -160,33 +160,82 @@ interface AssistantSessionMessageItem {
 	parts: Part[]
 }
 
+type DelegationStatus = "registered" | "running" | "complete" | "error" | "cancelled" | "timeout"
+
+type DelegationTerminalStatus = Extract<
+	DelegationStatus,
+	"complete" | "error" | "cancelled" | "timeout"
+>
+
 interface DelegationProgress {
 	toolCalls: number
-	lastUpdate: Date
+	lastUpdateAt: Date
+	lastHeartbeatAt: Date
 	lastMessage?: string
 	lastMessageAt?: Date
 }
 
-const MAX_RUN_TIME_MS = 15 * 60 * 1000 // 15 minutes
+interface DelegationNotificationState {
+	terminalNotifiedAt?: Date
+	terminalNotificationCount: number
+}
 
-interface Delegation {
-	id: string // Human-readable ID (e.g., "swift-amber-falcon")
+interface ParentNotificationState {
+	allCompleteNotifiedAt?: Date
+	allCompleteNotificationCount: number
+	allCompleteCycle: number
+	allCompleteCycleToken: string
+	allCompleteNotifiedCycle?: number
+	allCompleteNotifiedCycleToken?: string
+	allCompleteScheduledCycle?: number
+	allCompleteScheduledCycleToken?: string
+	allCompleteScheduledTimer?: ReturnType<typeof setTimeout>
+}
+
+interface DelegationRetrievalState {
+	retrievedAt?: Date
+	retrievalCount: number
+	lastReaderSessionID?: string
+}
+
+interface DelegationArtifactState {
+	filePath: string
+	persistedAt?: Date
+	byteLength?: number
+	persistError?: string
+}
+
+interface DelegationRecord {
+	id: string
+	rootSessionID: string
 	sessionID: string
 	parentSessionID: string
 	parentMessageID: string
 	parentAgent: string
 	prompt: string
 	agent: string
-	status: "running" | "complete" | "error" | "cancelled" | "timeout"
-	startedAt: Date
+	notificationCycle: number
+	notificationCycleToken: string
+	status: DelegationStatus
+	createdAt: Date
+	startedAt?: Date
 	completedAt?: Date
+	updatedAt: Date
+	timeoutAt: Date
 	progress: DelegationProgress
+	notification: DelegationNotificationState
+	retrieval: DelegationRetrievalState
+	artifact: DelegationArtifactState
 	error?: string
-	// Generated on completion by small_model
 	title?: string
 	description?: string
 	result?: string
 }
+
+const DEFAULT_MAX_RUN_TIME_MS = 15 * 60 * 1000 // 15 minutes
+const TERMINAL_WAIT_GRACE_MS = 10_000
+const READ_POLL_INTERVAL_MS = 250
+const ALL_COMPLETE_QUIET_PERIOD_MS = 50
 
 interface DelegateInput {
 	parentSessionID: string
@@ -198,10 +247,20 @@ interface DelegateInput {
 
 interface DelegationListItem {
 	id: string
-	status: string
+	status: DelegationStatus
 	title?: string
 	description?: string
 	agent?: string
+	unread?: boolean
+}
+
+interface DelegationManagerOptions {
+	maxRunTimeMs?: number
+	readPollIntervalMs?: number
+	terminalWaitGraceMs?: number
+	allCompleteQuietPeriodMs?: number
+	idGenerator?: () => string
+	metadataGenerator?: typeof generateMetadata
 }
 
 // ==========================================
@@ -312,18 +371,63 @@ async function parseAgentWriteCapability(
 /**
  * DELEGATION MANAGER
  */
-class DelegationManager {
-	private delegations: Map<string, Delegation> = new Map()
+function isTerminalStatus(status: DelegationStatus): status is DelegationTerminalStatus {
+	return (
+		status === "complete" || status === "error" || status === "cancelled" || status === "timeout"
+	)
+}
+
+function isActiveStatus(status: DelegationStatus): boolean {
+	return status === "registered" || status === "running"
+}
+
+function normalizeId(value: string): string {
+	return value.trim()
+}
+
+function parsePersistedStatus(raw: string | undefined): DelegationStatus {
+	if (!raw) return "complete"
+	if (raw === "registered") return "registered"
+	if (raw === "running") return "running"
+	if (raw === "complete") return "complete"
+	if (raw === "error") return "error"
+	if (raw === "cancelled") return "cancelled"
+	if (raw === "timeout") return "timeout"
+	return "complete"
+}
+
+export class DelegationManager {
+	private delegations: Map<string, DelegationRecord> = new Map()
+	private delegationsBySession: Map<string, string> = new Map()
+	private terminalWaiters: Map<string, { promise: Promise<void>; resolve: () => void }> = new Map()
+	private timeoutTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
 	private client: OpencodeClient
 	private baseDir: string
 	private log: Logger
-	// Track pending delegations per parent session for batched notifications
+	private maxRunTimeMs: number
+	private readPollIntervalMs: number
+	private terminalWaitGraceMs: number
+	private allCompleteQuietPeriodMs: number
+	private idGenerator: () => string
+	private metadataGenerator: typeof generateMetadata
 	private pendingByParent: Map<string, Set<string>> = new Map()
+	private parentNotificationState: Map<string, ParentNotificationState> = new Map()
 
-	constructor(client: OpencodeClient, baseDir: string, log: Logger) {
+	constructor(
+		client: OpencodeClient,
+		baseDir: string,
+		log: Logger,
+		options: DelegationManagerOptions = {},
+	) {
 		this.client = client
 		this.baseDir = baseDir
 		this.log = log
+		this.maxRunTimeMs = options.maxRunTimeMs ?? DEFAULT_MAX_RUN_TIME_MS
+		this.readPollIntervalMs = options.readPollIntervalMs ?? READ_POLL_INTERVAL_MS
+		this.terminalWaitGraceMs = options.terminalWaitGraceMs ?? TERMINAL_WAIT_GRACE_MS
+		this.allCompleteQuietPeriodMs = options.allCompleteQuietPeriodMs ?? ALL_COMPLETE_QUIET_PERIOD_MS
+		this.idGenerator = options.idGenerator ?? generateReadableId
+		this.metadataGenerator = options.metadataGenerator ?? generateMetadata
 	}
 
 	/**
@@ -368,25 +472,535 @@ class DelegationManager {
 		return dir
 	}
 
+	private createTerminalWaiter(id: string): void {
+		if (this.terminalWaiters.has(id)) return
+
+		let resolve: (() => void) | undefined
+		const promise = new Promise<void>((innerResolve) => {
+			resolve = innerResolve
+		})
+
+		if (!resolve) {
+			throw new Error(`Failed to initialize terminal waiter for delegation ${id}`)
+		}
+
+		this.terminalWaiters.set(id, { promise, resolve })
+	}
+
+	private resolveTerminalWaiter(id: string): void {
+		const waiter = this.terminalWaiters.get(id)
+		if (!waiter) return
+		waiter.resolve()
+	}
+
+	private clearTimeoutTimer(id: string): void {
+		const timer = this.timeoutTimers.get(id)
+		if (!timer) return
+		clearTimeout(timer)
+		this.timeoutTimers.delete(id)
+	}
+
+	private scheduleTimeout(id: string): void {
+		this.clearTimeoutTimer(id)
+		const timer = setTimeout(() => {
+			void this.handleTimeout(id)
+		}, this.maxRunTimeMs + 5_000)
+		this.timeoutTimers.set(id, timer)
+	}
+
+	private updateDelegation(
+		id: string,
+		mutate: (delegation: DelegationRecord, now: Date) => void,
+	): DelegationRecord | undefined {
+		const delegation = this.delegations.get(id)
+		if (!delegation) return undefined
+
+		const now = new Date()
+		mutate(delegation, now)
+		delegation.updatedAt = now
+		return delegation
+	}
+
+	private registerDelegation(input: {
+		id: string
+		rootSessionID: string
+		sessionID: string
+		parentSessionID: string
+		parentMessageID: string
+		parentAgent: string
+		prompt: string
+		agent: string
+		artifactPath: string
+	}): DelegationRecord {
+		if (!this.pendingByParent.has(input.parentSessionID)) {
+			this.pendingByParent.set(input.parentSessionID, new Set())
+			this.resetParentAllCompleteNotificationCycle(input.parentSessionID)
+		}
+
+		const parentNotificationState = this.getParentNotificationState(input.parentSessionID)
+		const notificationCycle = parentNotificationState.allCompleteCycle
+		const notificationCycleToken = parentNotificationState.allCompleteCycleToken
+
+		const now = new Date()
+		const delegation: DelegationRecord = {
+			id: input.id,
+			rootSessionID: input.rootSessionID,
+			sessionID: input.sessionID,
+			parentSessionID: input.parentSessionID,
+			parentMessageID: input.parentMessageID,
+			parentAgent: input.parentAgent,
+			prompt: input.prompt,
+			agent: input.agent,
+			notificationCycle,
+			notificationCycleToken,
+			status: "registered",
+			createdAt: now,
+			updatedAt: now,
+			timeoutAt: new Date(now.getTime() + this.maxRunTimeMs),
+			progress: {
+				toolCalls: 0,
+				lastUpdateAt: now,
+				lastHeartbeatAt: now,
+			},
+			notification: {
+				terminalNotificationCount: 0,
+			},
+			retrieval: {
+				retrievalCount: 0,
+			},
+			artifact: {
+				filePath: input.artifactPath,
+			},
+		}
+
+		this.delegations.set(delegation.id, delegation)
+		this.delegationsBySession.set(delegation.sessionID, delegation.id)
+		this.createTerminalWaiter(delegation.id)
+		this.pendingByParent.get(delegation.parentSessionID)?.add(delegation.id)
+
+		return delegation
+	}
+
+	private markStarted(id: string): DelegationRecord | undefined {
+		return this.updateDelegation(id, (delegation, now) => {
+			if (isTerminalStatus(delegation.status)) return
+			delegation.status = "running"
+			delegation.startedAt = now
+			delegation.progress.lastUpdateAt = now
+			delegation.progress.lastHeartbeatAt = now
+		})
+	}
+
+	private markProgress(id: string, messageText?: string): DelegationRecord | undefined {
+		return this.updateDelegation(id, (delegation, now) => {
+			if (isTerminalStatus(delegation.status)) return
+			if (delegation.status === "registered") {
+				delegation.status = "running"
+				delegation.startedAt = delegation.startedAt ?? now
+			}
+
+			delegation.progress.lastUpdateAt = now
+			delegation.progress.lastHeartbeatAt = now
+
+			if (messageText) {
+				delegation.progress.lastMessage = messageText
+				delegation.progress.lastMessageAt = now
+			}
+		})
+	}
+
+	private markTerminal(
+		id: string,
+		status: DelegationTerminalStatus,
+		error?: string,
+	): { transitioned: boolean; delegation?: DelegationRecord } {
+		const delegation = this.delegations.get(id)
+		if (!delegation) return { transitioned: false }
+
+		if (isTerminalStatus(delegation.status)) {
+			return { transitioned: false, delegation }
+		}
+
+		const now = new Date()
+		delegation.status = status
+		delegation.completedAt = now
+		delegation.updatedAt = now
+		if (error) {
+			delegation.error = error
+		}
+
+		const pending = this.pendingByParent.get(delegation.parentSessionID)
+		if (pending) {
+			pending.delete(delegation.id)
+			if (pending.size === 0) {
+				this.pendingByParent.delete(delegation.parentSessionID)
+			}
+		}
+
+		this.clearTimeoutTimer(id)
+		this.resolveTerminalWaiter(id)
+
+		return { transitioned: true, delegation }
+	}
+
+	private markNotified(id: string): DelegationRecord | undefined {
+		return this.updateDelegation(id, (delegation, now) => {
+			delegation.notification.terminalNotifiedAt = now
+			delegation.notification.terminalNotificationCount += 1
+		})
+	}
+
+	private getParentNotificationState(parentSessionID: string): ParentNotificationState {
+		const existing = this.parentNotificationState.get(parentSessionID)
+		if (existing) return existing
+
+		const initialized: ParentNotificationState = {
+			allCompleteNotificationCount: 0,
+			allCompleteCycle: 0,
+			allCompleteCycleToken: this.buildAllCompleteCycleToken(parentSessionID, 0),
+		}
+		this.parentNotificationState.set(parentSessionID, initialized)
+		return initialized
+	}
+
+	private buildAllCompleteCycleToken(parentSessionID: string, cycle: number): string {
+		return `${parentSessionID}:${cycle}`
+	}
+
+	private resetParentAllCompleteNotificationCycle(parentSessionID: string): void {
+		const state = this.getParentNotificationState(parentSessionID)
+		this.cancelScheduledAllComplete(state)
+		state.allCompleteCycle += 1
+		state.allCompleteCycleToken = this.buildAllCompleteCycleToken(
+			parentSessionID,
+			state.allCompleteCycle,
+		)
+		state.allCompleteNotifiedAt = undefined
+		state.allCompleteNotifiedCycle = undefined
+		state.allCompleteNotifiedCycleToken = undefined
+	}
+
+	private cancelScheduledAllComplete(state: ParentNotificationState): void {
+		if (state.allCompleteScheduledTimer) {
+			clearTimeout(state.allCompleteScheduledTimer)
+		}
+		state.allCompleteScheduledTimer = undefined
+		state.allCompleteScheduledCycle = undefined
+		state.allCompleteScheduledCycleToken = undefined
+	}
+
+	private areCycleTerminalNotificationsComplete(
+		parentSessionID: string,
+		cycleToken: string,
+	): boolean {
+		let cycleDelegationCount = 0
+
+		for (const delegation of this.delegations.values()) {
+			if (delegation.parentSessionID !== parentSessionID) continue
+			if (delegation.notificationCycleToken !== cycleToken) continue
+
+			cycleDelegationCount += 1
+			if (!delegation.notification.terminalNotifiedAt) {
+				return false
+			}
+		}
+
+		return cycleDelegationCount > 0
+	}
+
+	private scheduleAllCompleteForParent(parentSessionID: string, parentAgent: string): void {
+		const state = this.getParentNotificationState(parentSessionID)
+		const cycle = state.allCompleteCycle
+		const cycleToken = state.allCompleteCycleToken
+		if (!this.areCycleTerminalNotificationsComplete(parentSessionID, cycleToken)) return
+
+		if (state.allCompleteNotifiedCycleToken === cycleToken) return
+		if (state.allCompleteScheduledCycleToken === cycleToken) return
+
+		this.cancelScheduledAllComplete(state)
+
+		state.allCompleteScheduledCycle = cycle
+		state.allCompleteScheduledCycleToken = cycleToken
+		state.allCompleteScheduledTimer = setTimeout(() => {
+			void this.dispatchScheduledAllComplete(parentSessionID, parentAgent, cycle, cycleToken)
+		}, this.allCompleteQuietPeriodMs)
+	}
+
+	private async dispatchScheduledAllComplete(
+		parentSessionID: string,
+		parentAgent: string,
+		cycle: number,
+		cycleToken: string,
+	): Promise<void> {
+		const state = this.getParentNotificationState(parentSessionID)
+
+		if (state.allCompleteScheduledCycleToken !== cycleToken) return
+
+		this.cancelScheduledAllComplete(state)
+
+		if (state.allCompleteCycleToken !== cycleToken) return
+		if (!this.areCycleTerminalNotificationsComplete(parentSessionID, cycleToken)) return
+		if (state.allCompleteNotifiedCycleToken === cycleToken) return
+
+		try {
+			await this.client.session.prompt({
+				path: { id: parentSessionID },
+				body: {
+					noReply: false,
+					agent: parentAgent,
+					parts: [
+						{
+							type: "text",
+							text: this.buildAllCompleteNotification(parentSessionID, cycle, cycleToken),
+						},
+					],
+				},
+			})
+		} catch (error) {
+			await this.debugLog(
+				`all-complete notification failed for ${parentSessionID} cycle=${cycleToken}: ${
+					error instanceof Error ? error.message : "Unknown error"
+				}`,
+			)
+			return
+		}
+
+		if (state.allCompleteCycleToken !== cycleToken) return
+		if (!this.areCycleTerminalNotificationsComplete(parentSessionID, cycleToken)) return
+
+		state.allCompleteNotifiedAt = new Date()
+		state.allCompleteNotificationCount += 1
+		state.allCompleteNotifiedCycle = cycle
+		state.allCompleteNotifiedCycleToken = cycleToken
+	}
+
+	private markRetrieved(id: string, readerSessionID: string): DelegationRecord | undefined {
+		return this.updateDelegation(id, (delegation, now) => {
+			delegation.retrieval.retrievedAt = now
+			delegation.retrieval.retrievalCount += 1
+			delegation.retrieval.lastReaderSessionID = readerSessionID
+		})
+	}
+
+	private hasUnreadCompletion(delegation: DelegationRecord): boolean {
+		if (!isTerminalStatus(delegation.status)) return false
+		if (!delegation.notification.terminalNotifiedAt) return false
+		if (!delegation.completedAt) return false
+
+		if (!delegation.retrieval.retrievedAt) return true
+		return delegation.retrieval.retrievedAt.getTime() < delegation.completedAt.getTime()
+	}
+
+	private async waitForTerminal(id: string, timeoutMs: number): Promise<"terminal" | "timeout"> {
+		const delegation = this.delegations.get(id)
+		if (!delegation) return "timeout"
+		if (isTerminalStatus(delegation.status)) return "terminal"
+
+		const waiter = this.terminalWaiters.get(id)
+		if (!waiter) return "timeout"
+
+		let timer: ReturnType<typeof setTimeout> | undefined
+		try {
+			const result = await Promise.race<"terminal" | "timeout">([
+				waiter.promise.then(() => "terminal"),
+				new Promise<"timeout">((resolve) => {
+					timer = setTimeout(() => resolve("timeout"), timeoutMs)
+				}),
+			])
+			return result
+		} finally {
+			if (timer) clearTimeout(timer)
+		}
+	}
+
+	private async generateUniqueDelegationId(artifactDir: string): Promise<string> {
+		for (let attempt = 0; attempt < 20; attempt++) {
+			const candidate = this.idGenerator()
+			if (this.delegations.has(candidate)) continue
+
+			const candidatePath = path.join(artifactDir, `${candidate}.md`)
+			try {
+				await fs.access(candidatePath)
+			} catch {
+				return candidate
+			}
+		}
+
+		throw new Error("Failed to generate unique delegation ID after 20 attempts")
+	}
+
+	private getDelegationBySession(sessionID: string): DelegationRecord | undefined {
+		const delegationId = this.delegationsBySession.get(sessionID)
+		if (!delegationId) return undefined
+		return this.delegations.get(delegationId)
+	}
+
+	private isVisibleToSession(delegation: DelegationRecord, rootSessionID: string): boolean {
+		return delegation.rootSessionID === rootSessionID
+	}
+
+	private buildTerminalNotification(delegation: DelegationRecord, remainingCount: number): string {
+		const lines = [
+			"<task-notification>",
+			`<task-id>${delegation.id}</task-id>`,
+			`<status>${delegation.status}</status>`,
+			`<summary>Background agent ${delegation.status}: ${delegation.title || delegation.id}</summary>`,
+			delegation.title ? `<title>${delegation.title}</title>` : "",
+			delegation.description ? `<description>${delegation.description}</description>` : "",
+			delegation.error ? `<error>${delegation.error}</error>` : "",
+			`<artifact>${delegation.artifact.filePath}</artifact>`,
+			`<retrieval>Use delegation_read("${delegation.id}") for full output.</retrieval>`,
+			remainingCount > 0 ? `<remaining>${remainingCount}</remaining>` : "",
+			"</task-notification>",
+		]
+
+		return lines.filter((line) => line.length > 0).join("\n")
+	}
+
+	private buildAllCompleteNotification(
+		parentSessionID: string,
+		cycle: number,
+		cycleToken: string,
+	): string {
+		// cycle-token is a boundary watermark.
+		// Receivers should ignore all-complete payloads whose token is older than
+		// the latest known registration cycle for this parent session.
+		return [
+			"<task-notification>",
+			"<type>all-complete</type>",
+			"<status>completed</status>",
+			"<summary>All delegations complete.</summary>",
+			`<parent-session-id>${parentSessionID}</parent-session-id>`,
+			`<cycle>${cycle}</cycle>`,
+			`<cycle-token>${cycleToken}</cycle-token>`,
+			"</task-notification>",
+		].join("\n")
+	}
+
+	private buildDeterministicTerminalReadResponse(delegation: DelegationRecord): string {
+		const lines = [
+			`Delegation ID: ${delegation.id}`,
+			`Status: ${delegation.status}`,
+			`Agent: ${delegation.agent}`,
+			`Started: ${delegation.startedAt?.toISOString() || delegation.createdAt.toISOString()}`,
+			`Completed: ${delegation.completedAt?.toISOString() || "N/A"}`,
+			`Artifact: ${delegation.artifact.filePath}`,
+		]
+
+		if (delegation.title) lines.push(`Title: ${delegation.title}`)
+		if (delegation.description) lines.push(`Description: ${delegation.description}`)
+		if (delegation.error) lines.push(`Error: ${delegation.error}`)
+
+		lines.push(`\nUse delegation_read("${delegation.id}") again after persistence completes.`)
+		return lines.join("\n")
+	}
+
+	private async readPersistedArtifact(filePath: string): Promise<string | null> {
+		try {
+			return await fs.readFile(filePath, "utf8")
+		} catch {
+			return null
+		}
+	}
+
+	private async waitForPersistedArtifact(
+		filePath: string,
+		maxWaitMs: number,
+	): Promise<string | null> {
+		const start = Date.now()
+		while (Date.now() - start < maxWaitMs) {
+			const content = await this.readPersistedArtifact(filePath)
+			if (content !== null) return content
+			await new Promise((resolve) => setTimeout(resolve, this.readPollIntervalMs))
+		}
+
+		return null
+	}
+
+	private async resolveDelegationResult(delegation: DelegationRecord): Promise<string> {
+		if (delegation.status === "error") {
+			return `Error: ${delegation.error || "Delegation failed."}`
+		}
+
+		if (delegation.status === "cancelled") {
+			return "Delegation was cancelled before completion."
+		}
+
+		if (delegation.status === "timeout") {
+			const partial = await this.getResult(delegation)
+			return `${partial}\n\n[TIMEOUT REACHED]`
+		}
+
+		return await this.getResult(delegation)
+	}
+
+	private async finalizeDelegation(
+		delegationId: string,
+		status: DelegationTerminalStatus,
+		error?: string,
+	): Promise<void> {
+		const { transitioned, delegation } = this.markTerminal(delegationId, status, error)
+		if (!transitioned || !delegation) return
+
+		await this.debugLog(`finalizeDelegation(${delegation.id}, ${status}) started`)
+
+		const resolvedResult = await this.resolveDelegationResult(delegation)
+		delegation.result = resolvedResult
+
+		if (resolvedResult.trim().length > 0) {
+			const metadata = await this.metadataGenerator(
+				this.client,
+				resolvedResult,
+				delegation.sessionID,
+				(msg) => this.debugLog(msg),
+			)
+			delegation.title = metadata.title
+			delegation.description = metadata.description
+		}
+
+		await this.persistOutput(delegation, resolvedResult)
+		await this.notifyParent(delegation.id)
+	}
+
+	private async notifyParent(delegationId: string): Promise<void> {
+		try {
+			const delegation = this.delegations.get(delegationId)
+			if (!delegation) return
+			if (!isTerminalStatus(delegation.status)) return
+			if (delegation.notification.terminalNotifiedAt) {
+				await this.debugLog(`notifyParent skipped for ${delegation.id}; already notified`)
+				return
+			}
+
+			const remainingCount = this.getPendingCount(delegation.parentSessionID)
+			const terminalNotification = this.buildTerminalNotification(delegation, remainingCount)
+
+			await this.client.session.prompt({
+				path: { id: delegation.parentSessionID },
+				body: {
+					noReply: true,
+					agent: delegation.parentAgent,
+					parts: [{ type: "text", text: terminalNotification }],
+				},
+			})
+
+			this.markNotified(delegation.id)
+			this.scheduleAllCompleteForParent(delegation.parentSessionID, delegation.parentAgent)
+
+			await this.debugLog(
+				`notifyParent sent for ${delegation.id} (remaining=${remainingCount}, status=${delegation.status})`,
+			)
+		} catch (error) {
+			await this.debugLog(
+				`notifyParent failed for ${delegationId}: ${error instanceof Error ? error.message : "Unknown error"}`,
+			)
+		}
+	}
+
 	/**
 	 * Delegate a task to an agent
 	 */
-	async delegate(input: DelegateInput): Promise<Delegation> {
-		// Generate readable ID
-		const id = generateReadableId()
-		await this.debugLog(`delegate() called, generated ID: ${id}`)
-
-		// Check for ID collisions (regenerate if needed)
-		let finalId = id
-		let attempts = 0
-		while (this.delegations.has(finalId) && attempts < 10) {
-			finalId = generateReadableId()
-			attempts++
-		}
-		if (this.delegations.has(finalId)) {
-			throw new Error("Failed to generate unique delegation ID after 10 attempts")
-		}
-
+	async delegate(input: DelegateInput): Promise<DelegationRecord> {
 		// Validate agent exists before creating session
 		const agentsResult = await this.client.app.agents({})
 		const agents = (agentsResult.data ?? []) as {
@@ -413,15 +1027,22 @@ class DelegationManager {
 			throw new Error(
 				`Agent "${input.agent}" is write-capable and requires the native \`task\` tool for proper undo/branching support.\n\n` +
 					`Use \`task\` instead of \`delegate\` for write-capable agents.\n\n` +
-					`Read-only agents (researcher, explore) use \`delegate\`.\n` +
-					`Write-capable agents (coder, scribe) use \`task\`.`,
+					`Read-only sub-agents (edit/write/bash denied) use \`delegate\`.\n` +
+					`Write-capable sub-agents (any write permission) use \`task\`.`,
 			)
 		}
+
+		const artifactDir = await this.ensureDelegationsDir(input.parentSessionID)
+		const rootSessionID = await this.getRootSessionID(input.parentSessionID)
+		const stableId = await this.generateUniqueDelegationId(artifactDir)
+		const artifactPath = path.join(artifactDir, `${stableId}.md`)
+
+		await this.debugLog(`delegate() called, generated stable ID: ${stableId}`)
 
 		// Create isolated session for delegation
 		const sessionResult = await this.client.session.create({
 			body: {
-				title: `Delegation: ${finalId}`,
+				title: `Delegation: ${stableId}`,
 				parentID: input.parentSessionID,
 			},
 		})
@@ -432,49 +1053,21 @@ class DelegationManager {
 			throw new Error("Failed to create delegation session")
 		}
 
-		const delegation: Delegation = {
-			id: finalId,
+		const delegation = this.registerDelegation({
+			id: stableId,
+			rootSessionID,
 			sessionID: sessionResult.data.id,
 			parentSessionID: input.parentSessionID,
 			parentMessageID: input.parentMessageID,
 			parentAgent: input.parentAgent,
 			prompt: input.prompt,
 			agent: input.agent,
-			status: "running",
-			startedAt: new Date(),
-			progress: {
-				toolCalls: 0,
-				lastUpdate: new Date(),
-			},
-		}
+			artifactPath,
+		})
 
-		await this.debugLog(`Created delegation ${delegation.id}`)
-		this.delegations.set(delegation.id, delegation)
-
-		// Track this delegation for batched notification
-		const parentId = input.parentSessionID
-		if (!this.pendingByParent.has(parentId)) {
-			this.pendingByParent.set(parentId, new Set())
-		}
-		this.pendingByParent.get(parentId)?.add(delegation.id)
-		await this.debugLog(
-			`Tracking delegation ${delegation.id} for parent ${parentId}. Pending count: ${this.pendingByParent.get(parentId)?.size}`,
-		)
-
-		await this.debugLog(
-			`Delegation added to map. Current delegations: ${Array.from(this.delegations.keys()).join(", ")}`,
-		)
-
-		// Set a timer for the global max run time
-		setTimeout(() => {
-			const current = this.delegations.get(delegation.id)
-			if (current && current.status === "running") {
-				this.handleTimeout(delegation.id)
-			}
-		}, MAX_RUN_TIME_MS + 5000) // Adding 5s buffer
-
-		// Ensure delegations directory exists (early check)
-		await this.ensureDelegationsDir(input.parentSessionID)
+		await this.debugLog(`Registered delegation ${delegation.id} before execution`)
+		this.scheduleTimeout(delegation.id)
+		this.markStarted(delegation.id)
 
 		// Fire the prompt (using prompt() instead of promptAsync() to properly initialize agent loop)
 		// Agent param is critical for MCP tools - tells OpenCode which agent's config to use
@@ -494,11 +1087,7 @@ class DelegationManager {
 				},
 			})
 			.catch((error: Error) => {
-				delegation.status = "error"
-				delegation.error = error.message
-				delegation.completedAt = new Date()
-				this.persistOutput(delegation, `Error: ${error.message}`)
-				this.notifyParent(delegation)
+				void this.finalizeDelegation(delegation.id, "error", error.message)
 			})
 
 		return delegation
@@ -509,13 +1098,9 @@ class DelegationManager {
 	 */
 	private async handleTimeout(delegationId: string): Promise<void> {
 		const delegation = this.delegations.get(delegationId)
-		if (!delegation || delegation.status !== "running") return
+		if (!delegation || isTerminalStatus(delegation.status)) return
 
 		await this.debugLog(`handleTimeout for delegation ${delegation.id}`)
-
-		delegation.status = "timeout"
-		delegation.completedAt = new Date()
-		delegation.error = `Delegation timed out after ${MAX_RUN_TIME_MS / 1000}s`
 
 		// Try to cancel the session
 		try {
@@ -526,30 +1111,11 @@ class DelegationManager {
 			// Ignore
 		}
 
-		// Get whatever result was produced so far
-		const result = await this.getResult(delegation)
-		await this.persistOutput(delegation, `${result}\n\n[TIMEOUT REACHED]`)
-
-		// Notify parent session
-		await this.notifyParent(delegation)
-	}
-
-	/**
-	 * Wait for a delegation to complete (polling)
-	 */
-	private async waitForCompletion(delegationId: string): Promise<void> {
-		const pollInterval = 1000
-		const startTime = Date.now()
-
-		const delegation = this.delegations.get(delegationId)
-		if (!delegation) return
-
-		while (
-			delegation.status === "running" &&
-			Date.now() - startTime < MAX_RUN_TIME_MS + 10000 // Slightly more than global limit
-		) {
-			await new Promise((resolve) => setTimeout(resolve, pollInterval))
-		}
+		await this.finalizeDelegation(
+			delegation.id,
+			"timeout",
+			`Delegation timed out after ${this.maxRunTimeMs / 1000}s`,
+		)
 	}
 
 	/**
@@ -557,35 +1123,16 @@ class DelegationManager {
 	 */
 	async handleSessionIdle(sessionID: string): Promise<void> {
 		const delegation = this.findBySession(sessionID)
-		if (!delegation || delegation.status !== "running") return
+		if (!delegation || isTerminalStatus(delegation.status)) return
 
 		await this.debugLog(`handleSessionIdle for delegation ${delegation.id}`)
-
-		delegation.status = "complete"
-		delegation.completedAt = new Date()
-
-		// Get the result
-		const result = await this.getResult(delegation)
-		delegation.result = result
-
-		// Generate title and description using small model
-		const metadata = await generateMetadata(this.client, result, delegation.sessionID, (msg) =>
-			this.debugLog(msg),
-		)
-		delegation.title = metadata.title
-		delegation.description = metadata.description
-
-		// Persist output with generated metadata
-		await this.persistOutput(delegation, result)
-
-		// Notify parent session
-		await this.notifyParent(delegation)
+		await this.finalizeDelegation(delegation.id, "complete")
 	}
 
 	/**
 	 * Get the result from a delegation's session
 	 */
-	private async getResult(delegation: Delegation): Promise<string> {
+	private async getResult(delegation: DelegationRecord): Promise<string> {
 		try {
 			const messages = await this.client.session.messages({
 				path: { id: delegation.sessionID },
@@ -642,12 +1189,8 @@ class DelegationManager {
 	/**
 	 * Persist delegation output to storage
 	 */
-	private async persistOutput(delegation: Delegation, content: string): Promise<void> {
+	private async persistOutput(delegation: DelegationRecord, content: string): Promise<void> {
 		try {
-			// Ensure we resolve the root session ID of the PARENT session for storage
-			const dir = await this.ensureDelegationsDir(delegation.parentSessionID)
-			const filePath = path.join(dir, `${delegation.id}.md`)
-
 			// Use title/description if available (generated by small model), otherwise fallback
 			const title = delegation.title || delegation.id
 			const description = delegation.description || "(No description generated)"
@@ -659,96 +1202,30 @@ ${description}
 **ID:** ${delegation.id}
 **Agent:** ${delegation.agent}
 **Status:** ${delegation.status}
-**Started:** ${delegation.startedAt.toISOString()}
+**Session:** ${delegation.sessionID}
+**Started:** ${(delegation.startedAt || delegation.createdAt).toISOString()}
 **Completed:** ${delegation.completedAt?.toISOString() || "N/A"}
 
 ---
 
 `
-			await fs.writeFile(filePath, header + content, "utf8")
-			await this.debugLog(`Persisted output to ${filePath}`)
-		} catch (error) {
-			await this.debugLog(
-				`Failed to persist output: ${error instanceof Error ? error.message : "Unknown error"}`,
-			)
-		}
-	}
+			await fs.writeFile(delegation.artifact.filePath, header + content, "utf8")
 
-	/**
-	 * Notify parent session that delegation is complete.
-	 * Uses batching: individual notifications are silent (noReply: true),
-	 * but when ALL delegations for a parent session complete, triggers a response.
-	 */
-	private async notifyParent(delegation: Delegation): Promise<void> {
-		try {
-			// Use generated title/description if available
-			const title = delegation.title || delegation.id
-			const statusText = delegation.status === "complete" ? "complete" : delegation.status
-			const result = delegation.result || "(No result)"
-
-			// Mark this delegation as complete in the pending tracker
-			const pendingSet = this.pendingByParent.get(delegation.parentSessionID)
-			if (pendingSet) {
-				pendingSet.delete(delegation.id)
-			}
-
-			// Check if ALL delegations for this parent are now complete
-			const allComplete = !pendingSet || pendingSet.size === 0
-
-			// Clean up if all complete
-			if (allComplete && pendingSet) {
-				this.pendingByParent.delete(delegation.parentSessionID)
-			}
-
-			const remainingCount = pendingSet?.size || 0
-
-			// Always send the completed delegation notification first
-			const progressNote =
-				remainingCount > 0
-					? `
-**${remainingCount} delegation${remainingCount === 1 ? "" : "s"} still in progress.** You WILL be notified when ALL complete.
-❌ Do NOT poll \`delegation_list\` - continue productive work.`
-					: ""
-			const completionNotification = `<task-notification>
-<task-id>${delegation.id}</task-id>
-<status>${statusText}</status>
-<summary>Agent "${title}" ${statusText}</summary>
-<result>${result}</result>
-${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
-</task-notification>${progressNote}`
-
-			await this.client.session.prompt({
-				path: { id: delegation.parentSessionID },
-				body: {
-					noReply: true,
-					agent: delegation.parentAgent,
-					parts: [{ type: "text", text: completionNotification }],
-				},
+			const stats = await fs.stat(delegation.artifact.filePath)
+			this.updateDelegation(delegation.id, (record, now) => {
+				record.artifact.persistedAt = now
+				record.artifact.byteLength = stats.size
+				record.artifact.persistError = undefined
 			})
 
-			// If all delegations complete, send a minimal completion notice that triggers response
-			if (allComplete) {
-				const allCompleteNotification = `<task-notification>
-<status>completed</status>
-<summary>All delegations complete.</summary>
-</task-notification>`
-
-				await this.client.session.prompt({
-					path: { id: delegation.parentSessionID },
-					body: {
-						noReply: false,
-						agent: delegation.parentAgent,
-						parts: [{ type: "text", text: allCompleteNotification }],
-					},
-				})
-			}
-
-			await this.debugLog(
-				`Notified parent session ${delegation.parentSessionID} (allComplete=${allComplete}, remaining=${pendingSet?.size || 0})`,
-			)
+			await this.debugLog(`Persisted output to ${delegation.artifact.filePath}`)
 		} catch (error) {
+			this.updateDelegation(delegation.id, (record) => {
+				record.artifact.persistError =
+					error instanceof Error ? error.message : "Unknown persistence error"
+			})
 			await this.debugLog(
-				`Failed to notify parent: ${error instanceof Error ? error.message : "Unknown error"}`,
+				`Failed to persist output: ${error instanceof Error ? error.message : "Unknown error"}`,
 			)
 		}
 	}
@@ -757,67 +1234,103 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 	 * Read a delegation's output by ID. Blocks if the delegation is still running.
 	 */
 	async readOutput(sessionID: string, id: string): Promise<string> {
-		// Try to find the file
-		let filePath: string | undefined
-		try {
-			const dir = await this.getDelegationsDir(sessionID)
-			filePath = path.join(dir, `${id}.md`)
-			// Check if file exists
-			await fs.access(filePath)
-			return await fs.readFile(filePath, "utf8")
-		} catch {
-			// File doesn't exist yet, continue to check memory
+		const normalizedId = normalizeId(id)
+		if (!normalizedId) {
+			throw new Error("Delegation ID is required")
 		}
 
-		// Check if it's currently running in memory
-		const delegation = this.delegations.get(id)
-		if (delegation) {
-			if (delegation.status === "running") {
-				await this.debugLog(`readOutput: waiting for delegation ${delegation.id} to complete`)
-				await this.waitForCompletion(delegation.id)
+		const rootSessionID = await this.getRootSessionID(sessionID)
+		let delegation = this.delegations.get(normalizedId)
+		if (delegation && !this.isVisibleToSession(delegation, rootSessionID)) {
+			delegation = undefined
+		}
 
-				// Re-check after waiting
-				const dir = await this.getDelegationsDir(sessionID)
-				filePath = path.join(dir, `${id}.md`)
-				try {
-					return await fs.readFile(filePath, "utf8")
-				} catch {
-					// Still failed to read
-				}
+		const fallbackFilePath = path.join(
+			await this.getDelegationsDir(sessionID),
+			`${normalizedId}.md`,
+		)
 
-				// If still no file after waiting (e.g. error/timeout/cancel)
-				const updated = this.delegations.get(id)
-				if (updated && updated.status !== "running") {
-					const title = updated.title || updated.id
-					return `Delegation "${title}" ended with status: ${updated.status}. ${updated.error || ""}`
-				}
+		const immediateArtifactPath = delegation?.artifact.filePath || fallbackFilePath
+		const immediateRead = await this.readPersistedArtifact(immediateArtifactPath)
+		if (immediateRead !== null) {
+			if (delegation) this.markRetrieved(delegation.id, sessionID)
+			return immediateRead
+		}
+
+		if (!delegation) {
+			throw new Error(
+				`Delegation "${normalizedId}" not found.\n\nUse delegation_list() to see available delegations.`,
+			)
+		}
+
+		if (isActiveStatus(delegation.status)) {
+			const remainingMs = Math.max(
+				delegation.timeoutAt.getTime() - Date.now() + this.terminalWaitGraceMs,
+				this.readPollIntervalMs,
+			)
+
+			await this.debugLog(
+				`readOutput: waiting up to ${remainingMs}ms for delegation ${delegation.id} to reach terminal state`,
+			)
+
+			const waitResult = await this.waitForTerminal(delegation.id, remainingMs)
+			if (waitResult === "timeout" && isActiveStatus(delegation.status)) {
+				await this.handleTimeout(delegation.id)
 			}
 		}
 
-		throw new Error(
-			`Delegation "${id}" not found.\n\nUse delegation_list() to see available delegations.`,
-		)
+		if (isTerminalStatus(delegation.status)) {
+			const delayedPersisted = await this.waitForPersistedArtifact(
+				delegation.artifact.filePath,
+				Math.max(this.readPollIntervalMs * 8, 500),
+			)
+			if (delayedPersisted !== null) {
+				this.markRetrieved(delegation.id, sessionID)
+				return delayedPersisted
+			}
+		}
+
+		const persisted = await this.readPersistedArtifact(delegation.artifact.filePath)
+		if (persisted !== null) {
+			this.markRetrieved(delegation.id, sessionID)
+			return persisted
+		}
+
+		if (isTerminalStatus(delegation.status)) {
+			return this.buildDeterministicTerminalReadResponse(delegation)
+		}
+
+		return `Delegation "${delegation.id}" is still running. You will receive a <task-notification> when it reaches a terminal state.`
 	}
 
 	/**
 	 * List all delegations for a session
 	 */
 	async listDelegations(sessionID: string): Promise<DelegationListItem[]> {
+		const rootSessionID = await this.getRootSessionID(sessionID)
 		const results: DelegationListItem[] = []
 
-		// Add in-memory delegations that match this session (or parent)
+		// Add in-memory delegations in this root session scope
 		for (const delegation of this.delegations.values()) {
+			if (!this.isVisibleToSession(delegation, rootSessionID)) continue
+
 			results.push({
 				id: delegation.id,
 				status: delegation.status,
-				title: delegation.title || "(generating...)",
-				description: delegation.description || "(generating...)",
+				title: delegation.title || delegation.id,
+				description:
+					delegation.description ||
+					(delegation.status === "running" || delegation.status === "registered"
+						? "(running)"
+						: "(no description)"),
+				agent: delegation.agent,
+				unread: this.hasUnreadCompletion(delegation),
 			})
 		}
 
 		// Check filesystem for persisted delegations
 		try {
-			const dir = await this.getDelegationsDir(sessionID)
+			const dir = await this.getDelegationsDir(rootSessionID)
 			const files = await fs.readdir(dir)
 
 			for (const file of files) {
@@ -829,6 +1342,7 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 						let title = "(loaded from storage)"
 						let description = ""
 						let agent: string | undefined
+						let status: DelegationStatus = "complete"
 						try {
 							const filePath = path.join(dir, file)
 							const content = await fs.readFile(filePath, "utf8")
@@ -836,6 +1350,8 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 							if (titleMatch) title = titleMatch[1]
 							const agentMatch = content.match(/^\*\*Agent:\*\* (.+)$/m)
 							if (agentMatch) agent = agentMatch[1]
+							const statusMatch = content.match(/^\*\*Status:\*\* (.+)$/m)
+							status = parsePersistedStatus(statusMatch?.[1]?.trim())
 							// Get first paragraph after title as description
 							const lines = content.split("\n")
 							if (lines.length > 2 && lines[2]) {
@@ -846,10 +1362,11 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 						}
 						results.push({
 							id,
-							status: "complete",
+							status,
 							title,
 							description,
 							agent,
+							unread: false,
 						})
 					}
 				}
@@ -858,6 +1375,7 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 			// Directory may not exist yet
 		}
 
+		results.sort((a, b) => a.id.localeCompare(b.id))
 		return results
 	}
 
@@ -866,18 +1384,11 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 	 * Used internally for cleanup (timeout, etc.)
 	 */
 	async deleteDelegation(sessionID: string, id: string): Promise<boolean> {
-		// Find delegation by id
-		let delegationId: string | undefined
-		for (const [dId, d] of this.delegations) {
-			if (d.id === id) {
-				delegationId = dId
-				break
-			}
-		}
+		const normalizedId = normalizeId(id)
+		const delegation = this.delegations.get(normalizedId)
 
-		if (delegationId) {
-			const delegation = this.delegations.get(delegationId)
-			if (delegation?.status === "running") {
+		if (delegation) {
+			if (isActiveStatus(delegation.status)) {
 				try {
 					await this.client.session.delete({
 						path: { id: delegation.sessionID },
@@ -885,16 +1396,19 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 				} catch {
 					// Session may already be deleted
 				}
-				delegation.status = "cancelled"
-				delegation.completedAt = new Date()
+				this.markTerminal(delegation.id, "cancelled", "Delegation deleted by cleanup")
 			}
-			this.delegations.delete(delegationId)
+
+			this.clearTimeoutTimer(delegation.id)
+			this.terminalWaiters.delete(delegation.id)
+			this.delegationsBySession.delete(delegation.sessionID)
+			this.delegations.delete(delegation.id)
 		}
 
 		// Remove from filesystem
 		try {
 			const dir = await this.getDelegationsDir(sessionID)
-			const filePath = path.join(dir, `${id}.md`)
+			const filePath = path.join(dir, `${normalizedId}.md`)
 			await fs.unlink(filePath)
 			return true
 		} catch {
@@ -905,8 +1419,8 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 	/**
 	 * Find a delegation by its session ID
 	 */
-	findBySession(sessionID: string): Delegation | undefined {
-		return Array.from(this.delegations.values()).find((d) => d.sessionID === sessionID)
+	findBySession(sessionID: string): DelegationRecord | undefined {
+		return this.getDelegationBySession(sessionID)
 	}
 
 	/**
@@ -914,13 +1428,8 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 	 */
 	handleMessageEvent(sessionID: string, messageText?: string): void {
 		const delegation = this.findBySession(sessionID)
-		if (!delegation || delegation.status !== "running") return
-
-		delegation.progress.lastUpdate = new Date()
-		if (messageText) {
-			delegation.progress.lastMessage = messageText
-			delegation.progress.lastMessageAt = new Date()
-		}
+		if (!delegation) return
+		this.markProgress(delegation.id, messageText)
 	}
 
 	/**
@@ -928,14 +1437,33 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 	 */
 	getPendingCount(parentSessionID: string): number {
 		const pendingSet = this.pendingByParent.get(parentSessionID)
-		return pendingSet ? pendingSet.size : 0
+		if (!pendingSet) return 0
+		return Array.from(pendingSet).filter((id) => {
+			const delegation = this.delegations.get(id)
+			return delegation ? isActiveStatus(delegation.status) : false
+		}).length
 	}
 
 	/**
 	 * Get all currently running delegations (in-memory only)
 	 */
-	getRunningDelegations(): Delegation[] {
-		return Array.from(this.delegations.values()).filter((d) => d.status === "running")
+	getRunningDelegations(rootSessionID?: string): DelegationRecord[] {
+		return Array.from(this.delegations.values()).filter((delegation) => {
+			if (rootSessionID && delegation.rootSessionID !== rootSessionID) return false
+			return isActiveStatus(delegation.status)
+		})
+	}
+
+	getUnreadCompletedDelegations(rootSessionID: string, limit = 10): DelegationRecord[] {
+		return Array.from(this.delegations.values())
+			.filter((delegation) => delegation.rootSessionID === rootSessionID)
+			.filter((delegation) => this.hasUnreadCompletion(delegation))
+			.sort((a, b) => {
+				const aTime = a.completedAt?.getTime() || 0
+				const bTime = b.completedAt?.getTime() || 0
+				return bTime - aTime
+			})
+			.slice(0, limit)
 	}
 
 	/**
@@ -946,7 +1474,7 @@ ${delegation.error ? `\n<error>${delegation.error}</error>` : ""}
 		limit: number = 10,
 	): Promise<DelegationListItem[]> {
 		const all = await this.listDelegations(sessionID)
-		return all.filter((d) => d.status !== "running").slice(-limit)
+		return all.filter((d) => isTerminalStatus(d.status)).slice(-limit)
 	}
 
 	/**
@@ -986,8 +1514,8 @@ Use this for:
 - Parallel work that can run in background
 - Any task where you want persistent, retrievable output
 
-On completion, a notification will arrive with the ID, title, description, and result.
-Use \`delegation_read\` with the ID to retrieve the result again if it is lost during compaction.`,
+On completion, a notification will arrive with the ID and terminal summary.
+Use \`delegation_read\` with the ID to retrieve full persisted output (including after compaction).`,
 		args: {
 			prompt: tool.schema
 				.string()
@@ -995,7 +1523,7 @@ Use \`delegation_read\` with the ID to retrieve the result again if it is lost d
 			agent: tool.schema
 				.string()
 				.describe(
-					'Agent to delegate to: "explore" (codebase search), "researcher" (external research), "scribe" (docs/commits), or "general".',
+					'Agent to delegate to. Must be a read-only sub-agent (edit/write/bash denied), such as "researcher" or "explore".',
 				),
 		},
 		async execute(args: DelegateArgs, toolCtx: ToolContext): Promise<string> {
@@ -1069,8 +1597,9 @@ Shows both running and completed delegations.`,
 
 			const lines = delegations.map((d) => {
 				const titlePart = d.title ? ` | ${d.title}` : ""
+				const unreadPart = d.unread ? " [unread]" : ""
 				const descPart = d.description ? `\n  → ${d.description}` : ""
-				return `- **${d.id}**${titlePart} [${d.status}]${descPart}`
+				return `- **${d.id}**${titlePart} [${d.status}]${unreadPart}${descPart}`
 			})
 
 			return `## Delegations\n\n${lines.join("\n")}`
@@ -1098,16 +1627,16 @@ Agents route based on their permissions:
 
 | Agent Type | Tool | Why |
 |------------|------|-----|
-| Read-only (researcher, explore) | \`delegate\` | Background session, async |
-| Write-capable (coder, scribe) | \`task\` | Native task, preserves undo/branching |
+| Read-only sub-agents (edit/write/bash denied) | \`delegate\` | Background session, async |
+| Write-capable sub-agents (any write permission) | \`task\` | Native task, preserves undo/branching |
 
-**Read-only agents** have edit="deny", write="deny", bash={"*":"deny"}.
-**Write-capable agents** have any write tool enabled.
+**Read-only sub-agents** have edit="deny", write="deny", bash={"*":"deny"}.
+**Write-capable sub-agents** have any write tool enabled.
 
 ## How It Works
 
-1. For read-only agents: Call \`delegate\` with detailed prompt
-2. For write-capable agents: Call \`task\` with detailed prompt
+1. For read-only sub-agents: Call \`delegate\` with detailed prompt
+2. For write-capable sub-agents: Call \`task\` with detailed prompt
 3. Continue productive work while it runs
 4. Receive notification when complete
 5. Call \`delegation_read(id)\` to retrieve results
@@ -1133,8 +1662,10 @@ interface DelegationForContext {
 	agent?: string
 	title?: string
 	description?: string
-	status: string
+	status: DelegationStatus
 	startedAt?: Date
+	completedAt?: Date
+	lastHeartbeatAt?: Date
 	prompt?: string
 }
 
@@ -1143,9 +1674,9 @@ interface DelegationForContext {
  * Includes running delegations with notification reminder (only when running exist),
  * and recent completed delegations with full descriptions.
  */
-function formatDelegationContext(
+export function formatDelegationContext(
 	running: DelegationForContext[],
-	completed: DelegationForContext[],
+	unreadCompleted: DelegationForContext[],
 ): string {
 	const sections: string[] = ["<delegation-context>"]
 
@@ -1157,6 +1688,9 @@ function formatDelegationContext(
 			sections.push(`### \`${d.id}\`${d.agent ? ` (${d.agent})` : ""}`)
 			if (d.startedAt) {
 				sections.push(`**Started:** ${d.startedAt.toISOString()}`)
+			}
+			if (d.lastHeartbeatAt) {
+				sections.push(`**Last heartbeat:** ${d.lastHeartbeatAt.toISOString()}`)
 			}
 			if (d.prompt) {
 				const truncatedPrompt = d.prompt.length > 200 ? `${d.prompt.slice(0, 200)}...` : d.prompt
@@ -1173,11 +1707,11 @@ function formatDelegationContext(
 		sections.push("")
 	}
 
-	// Completed delegations (recent)
-	if (completed.length > 0) {
-		sections.push("## Recent Completed Delegations")
+	// Unread completed delegations (recent)
+	if (unreadCompleted.length > 0) {
+		sections.push("## Unread Completed Delegations")
 		sections.push("")
-		for (const d of completed) {
+		for (const d of unreadCompleted) {
 			const statusEmoji =
 				d.status === "complete"
 					? "✅"
@@ -1190,14 +1724,19 @@ function formatDelegationContext(
 			sections.push(`**Title:** ${d.title || "(no title)"}`)
 			sections.push(`**Status:** ${d.status}`)
 			sections.push(`**Description:** ${d.description || "(no description)"}`)
+			if (d.completedAt) {
+				sections.push(`**Completed:** ${d.completedAt.toISOString()}`)
+			}
+			sections.push(`**Retrieve:** \`delegation_read("${d.id}")\``)
 			sections.push("")
 		}
-		sections.push("> Use `delegation_list()` to see all delegations for this session.")
+		sections.push("> These are unread terminal delegations carried forward through compaction.")
 		sections.push("")
 	}
 
 	sections.push("## Retrieval")
 	sections.push('Use `delegation_read("id")` to access full delegation output.')
+	sections.push("Do not poll delegation_list for completion; rely on task notifications.")
 	sections.push("</delegation-context>")
 
 	return sections.join("\n")
@@ -1272,8 +1811,8 @@ export const BackgroundAgentsPlugin: Plugin = async (ctx) => {
 			throw new Error(
 				`❌ Agent '${agentName}' is read-only and should use the delegate tool for async background execution.\n\n` +
 					`Read-only agents have: edit="deny", write="deny", bash={"*":"deny"}\n` +
-					`Use delegate for: researcher, explore\n` +
-					`Use task for: coder, scribe`,
+					`Use delegate for read-only sub-agents.\n` +
+					`Use task for write-capable sub-agents.`,
 			)
 		},
 
@@ -1289,53 +1828,66 @@ export const BackgroundAgentsPlugin: Plugin = async (ctx) => {
 		) => {
 			const rootSessionID = await manager.getRootSessionID(input.sessionID)
 
-			// Get running delegations for this session tree
-			const running = manager
-				.getRunningDelegations()
-				.filter((d) => d.parentSessionID === input.sessionID || d.parentSessionID === rootSessionID)
-				.map((d) => ({
-					id: d.id,
-					agent: d.agent,
-					title: d.title,
-					description: d.description,
-					status: d.status,
-					startedAt: d.startedAt,
-					prompt: d.prompt,
-				}))
+			// Running delegations in this root session tree
+			const running = manager.getRunningDelegations(rootSessionID).map((d) => ({
+				id: d.id,
+				agent: d.agent,
+				title: d.title,
+				description: d.description,
+				status: d.status,
+				startedAt: d.startedAt,
+				lastHeartbeatAt: d.progress.lastHeartbeatAt,
+				prompt: d.prompt,
+			}))
 
-			// Get recent completed delegations (last 10)
-			const allDelegations = await manager.listDelegations(input.sessionID)
-			const completed = allDelegations
-				.filter((d) => d.status !== "running")
-				.slice(-10)
-				.map((d) => ({
-					id: d.id,
-					agent: d.agent,
-					title: d.title,
-					description: d.description,
-					status: d.status,
-				}))
+			// Unread completed delegations to carry forward through compaction
+			const unreadCompleted = manager.getUnreadCompletedDelegations(rootSessionID, 10).map((d) => ({
+				id: d.id,
+				agent: d.agent,
+				title: d.title,
+				description: d.description,
+				status: d.status,
+				completedAt: d.completedAt,
+			}))
 
 			// Early exit if nothing to inject
-			if (running.length === 0 && completed.length === 0) return
+			if (running.length === 0 && unreadCompleted.length === 0) return
 
-			output.context.push(formatDelegationContext(running, completed))
+			output.context.push(formatDelegationContext(running, unreadCompleted))
 		},
 
 		// Event hook
 		event: async ({ event }: { event: Event }): Promise<void> => {
+			if (event.type === "session.status") {
+				const statusType = event.properties.status?.type
+				const sessionID = event.properties.sessionID
+				if (statusType === "idle" && sessionID) {
+					await manager.handleSessionIdle(sessionID)
+				}
+			}
+
 			if (event.type === "session.idle") {
 				const sessionID = event.properties.sessionID
-				const delegation = manager.findBySession(sessionID)
-				if (delegation) {
+				if (sessionID) {
 					await manager.handleSessionIdle(sessionID)
 				}
 			}
 
 			if (event.type === "message.updated") {
-				const sessionID = event.properties.info.sessionID
+				const eventProperties = event.properties as {
+					info: { sessionID?: string; role?: string }
+					parts?: Part[]
+				}
+				const sessionID = eventProperties.info.sessionID
 				if (sessionID) {
-					manager.handleMessageEvent(sessionID)
+					const messageText =
+						eventProperties.info.role === "assistant"
+							? (eventProperties.parts
+									?.filter((part) => part.type === "text")
+									.map((part) => part.text)
+									.join("\n") ?? undefined)
+							: undefined
+					manager.handleMessageEvent(sessionID, messageText)
 				}
 			}
 		},

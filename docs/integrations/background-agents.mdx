@@ -32,11 +32,22 @@ ocx add kdco/workspace --from https://registry.kdco.dev
 ```
 1. Delegate    →  "Research OAuth2 PKCE best practices"
 2. Continue    →  Keep coding, brainstorming, reviewing
-3. Notified    →  <system-reminder> tells you it's done
+3. Notified    →  <task-notification> arrives on terminal state
 4. Retrieve    →  AI calls delegation_read() to get the result
 ```
 
 Results are persisted to `~/.local/share/opencode/delegations/` as markdown files. Each delegation is automatically tagged with a title and summary.
+
+## Lifecycle Behavior
+
+The plugin now follows Claude Code's background-agent lifecycle as closely as possible within plugin boundaries:
+
+- **Stable task IDs** across in-memory state, markdown artifact filename, notifications, and retrieval.
+- **Explicit lifecycle transitions** (`registered` → `running` → terminal state).
+- **Terminal-state protection** (late progress/idle events cannot overwrite terminal status).
+- **Persistence-before-notify** (terminal markdown artifact is written before model-facing completion notification).
+- **Blocking retrieval** (`delegation_read(id)` waits for terminal/timeout, then returns persisted output or deterministic terminal info).
+- **Compaction carry-forward** for running and unread completed delegations with retrieval instructions.
 
 ## Tools
 
@@ -48,15 +59,26 @@ Results are persisted to `~/.local/share/opencode/delegations/` as markdown file
 
 ## Limitations
 
-### Read-Only Agents Only
+### Read-Only Sub-Agents Only
 
-Only read-only agents (`researcher`, `explore`) can use `delegate`. Write-capable agents (`coder`, `scribe`) must use the native `task` tool.
+Only read-only sub-agents (permissions: `edit=deny`, `write=deny`, `bash={"*":"deny"}`) can use `delegate`.
+Any write-capable sub-agent (any write/edit/bash allow) must use the native `task` tool.
 
 **Why?** Background delegations run in isolated sessions outside OpenCode's session tree. The undo/branching system cannot track changes made in background sessions.
 
 ### Timeout
 
 Delegations timeout after **15 minutes**.
+
+### Claude Parity Boundaries
+
+This is plugin-level parity, not runtime-internal parity. The plugin does **not** reproduce OpenCode/Claude runtime internals such as:
+
+- internal AppState/task queue processors
+- runtime notification priority controls
+- write-capable background sessions with native undo/branching parity
+
+Write-capable sub-agents still use native `task`. Read-only sub-agents use `delegate`.
 
 ### Real-Time Monitoring
 
