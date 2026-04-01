@@ -28,7 +28,7 @@ export const profileSchema = z.object({
 	/** OCX configuration from ocx.jsonc */
 	ocx: profileOcxConfigSchema,
 	/** OpenCode configuration from opencode.jsonc (optional, passthrough) */
-	opencode: z.record(z.unknown()).optional(),
+	opencode: z.record(z.string(), z.unknown()).optional(),
 	/** Whether AGENTS.md exists in this profile */
 	hasAgents: z.boolean(),
 })

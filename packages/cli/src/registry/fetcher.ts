@@ -50,7 +50,7 @@ const LEGACY_TARGET_KIND_MAP = {
 } as const
 
 const packumentEnvelopeSchema = packumentSchema.extend({
-	versions: z.record(z.unknown()),
+	versions: z.record(z.string(), z.unknown()),
 })
 
 function createCompatibilityError(

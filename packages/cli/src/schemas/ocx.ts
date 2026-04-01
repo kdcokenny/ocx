@@ -50,7 +50,7 @@ export const profileOcxConfigSchema = z.object({
 	 * Configured registries for OCX profiles
 	 * Same format as ocx.jsonc registries
 	 */
-	registries: z.record(registryConfigSchema).default({}),
+	registries: z.record(z.string(), registryConfigSchema).default({}),
 
 	/**
 	 * Optional default component path for installations

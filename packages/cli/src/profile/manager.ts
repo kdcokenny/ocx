@@ -301,7 +301,7 @@ export class ProfileManager {
 		// Validate name
 		const result = profileNameSchema.safeParse(name)
 		if (!result.success) {
-			throw new InvalidProfileNameError(name, result.error.errors[0]?.message ?? "Invalid name")
+			throw new InvalidProfileNameError(name, result.error.issues[0]?.message ?? "Invalid name")
 		}
 
 		// Check doesn't exist
@@ -370,7 +370,7 @@ export class ProfileManager {
 		if (!oldResult.success) {
 			throw new InvalidProfileNameError(
 				oldName,
-				oldResult.error.errors[0]?.message ?? "Invalid name",
+				oldResult.error.issues[0]?.message ?? "Invalid name",
 			)
 		}
 
@@ -379,7 +379,7 @@ export class ProfileManager {
 		if (!newResult.success) {
 			throw new InvalidProfileNameError(
 				newName,
-				newResult.error.errors[0]?.message ?? "Invalid name",
+				newResult.error.issues[0]?.message ?? "Invalid name",
 			)
 		}
 

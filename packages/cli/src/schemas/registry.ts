@@ -245,8 +245,8 @@ export const mcpServerObjectSchema = z
 		 * Can be a single string (e.g., "npx foo") or array (e.g., ["npx", "foo"])
 		 */
 		command: z.union([z.string(), z.array(z.string())]).optional(),
-		environment: z.record(z.string()).optional(),
-		headers: z.record(z.string()).optional(),
+		environment: z.record(z.string(), z.string()).optional(),
+		headers: z.record(z.string(), z.string()).optional(),
 		/**
 		 * OAuth configuration.
 		 * - true: Enable OAuth with defaults
@@ -327,9 +327,9 @@ export const providerConfigSchema = z
 		/** API base URL */
 		api: z.string().optional(),
 		/** Custom headers */
-		headers: z.record(z.string()).optional(),
+		headers: z.record(z.string(), z.string()).optional(),
 		/** Environment variables for API keys */
-		env: z.record(z.string()).optional(),
+		env: z.record(z.string(), z.string()).optional(),
 		/** Whether provider is enabled */
 		enabled: z.boolean().optional(),
 	})
@@ -419,7 +419,7 @@ export type ServerConfig = z.infer<typeof serverConfigSchema>
 /**
  * Keybind configuration - maps action names to key combinations.
  */
-export const keybindConfigSchema = z.record(z.string())
+export const keybindConfigSchema = z.record(z.string(), z.string())
 
 export type KeybindConfig = z.infer<typeof keybindConfigSchema>
 
@@ -461,7 +461,7 @@ export const agentConfigSchema = z.object({
 	mode: z.enum(["primary", "subagent", "all"]).optional(),
 
 	/** Tool enable/disable patterns */
-	tools: z.record(z.boolean()).optional(),
+	tools: z.record(z.string(), z.boolean()).optional(),
 
 	/** Sampling temperature (provider-specific limits) */
 	temperature: z.number().optional(),
@@ -477,7 +477,13 @@ export const agentConfigSchema = z.object({
 	 * Use `{ "*": "deny" }` for bash to enable read-only agent detection.
 	 */
 	permission: z
-		.record(z.union([z.enum(["ask", "allow", "deny"]), z.record(z.enum(["ask", "allow", "deny"]))]))
+		.record(
+			z.string(),
+			z.union([
+				z.enum(["ask", "allow", "deny"]),
+				z.record(z.string(), z.enum(["ask", "allow", "deny"])),
+			]),
+		)
 		.optional(),
 
 	/** UI color for the agent */
@@ -487,7 +493,7 @@ export const agentConfigSchema = z.object({
 	disable: z.boolean().optional(),
 
 	/** Custom options for the agent */
-	options: z.record(z.any()).optional(),
+	options: z.record(z.string(), z.any()).optional(),
 })
 
 export type AgentConfig = z.infer<typeof agentConfigSchema>
@@ -505,16 +511,27 @@ export const permissionConfigSchema = z
 		 * - Use patterns like `{ "git *": "allow", "*": "deny" }` for partial access
 		 */
 		bash: z
-			.union([z.enum(["ask", "allow", "deny"]), z.record(z.enum(["ask", "allow", "deny"]))])
+			.union([
+				z.enum(["ask", "allow", "deny"]),
+				z.record(z.string(), z.enum(["ask", "allow", "deny"])),
+			])
 			.optional(),
 		/** File edit permissions */
 		edit: z
-			.union([z.enum(["ask", "allow", "deny"]), z.record(z.enum(["ask", "allow", "deny"]))])
+			.union([
+				z.enum(["ask", "allow", "deny"]),
+				z.record(z.string(), z.enum(["ask", "allow", "deny"])),
+			])
 			.optional(),
 		/** MCP server permissions */
-		mcp: z.record(z.enum(["ask", "allow", "deny"])).optional(),
+		mcp: z.record(z.string(), z.enum(["ask", "allow", "deny"])).optional(),
 	})
-	.catchall(z.union([z.enum(["ask", "allow", "deny"]), z.record(z.enum(["ask", "allow", "deny"]))]))
+	.catchall(
+		z.union([
+			z.enum(["ask", "allow", "deny"]),
+			z.record(z.string(), z.enum(["ask", "allow", "deny"])),
+		]),
+	)
 
 export type PermissionConfig = z.infer<typeof permissionConfigSchema>
 
@@ -545,16 +562,16 @@ export const opencodeConfigSchema = z.object({
 	default_agent: z.string().optional(),
 
 	/** MCP servers (matches opencode.json 'mcp' field) */
-	mcp: z.record(mcpServerRefSchema).optional(),
+	mcp: z.record(z.string(), mcpServerRefSchema).optional(),
 
 	/** NPM plugin packages to add to opencode.json 'plugin' array */
 	plugin: z.array(z.string()).optional(),
 
 	/** Tool enable/disable patterns */
-	tools: z.record(z.boolean()).optional(),
+	tools: z.record(z.string(), z.boolean()).optional(),
 
 	/** Per-agent configuration */
-	agent: z.record(agentConfigSchema).optional(),
+	agent: z.record(z.string(), agentConfigSchema).optional(),
 
 	/** Global instructions to append */
 	instructions: z.array(z.string()).optional(),
@@ -563,16 +580,16 @@ export const opencodeConfigSchema = z.object({
 	permission: permissionConfigSchema.optional(),
 
 	/** Provider configurations */
-	provider: z.record(providerConfigSchema).optional(),
+	provider: z.record(z.string(), providerConfigSchema).optional(),
 
 	/** LSP configurations */
-	lsp: z.record(lspConfigSchema).optional(),
+	lsp: z.record(z.string(), lspConfigSchema).optional(),
 
 	/** Formatter configurations */
-	formatter: z.record(formatterConfigSchema).optional(),
+	formatter: z.record(z.string(), formatterConfigSchema).optional(),
 
 	/** Custom command configurations */
-	command: z.record(commandConfigSchema).optional(),
+	command: z.record(z.string(), commandConfigSchema).optional(),
 
 	/** TUI configuration */
 	tui: tuiConfigSchema.optional(),
@@ -992,7 +1009,7 @@ export const packumentSchema = z.object({
 	}),
 
 	/** All versions */
-	versions: z.record(componentManifestSchema),
+	versions: z.record(z.string(), componentManifestSchema),
 })
 
 export type Packument = z.infer<typeof packumentSchema>

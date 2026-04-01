@@ -73,7 +73,9 @@ export async function buildRegistry(
 	// Validate registry schema
 	const parseResult = registrySchema.safeParse(registryData)
 	if (!parseResult.success) {
-		const errors = parseResult.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`)
+		const errors = parseResult.error.issues.map(
+			(issue) => `${issue.path.join(".")}: ${issue.message}`,
+		)
 		throw new BuildRegistryError("Registry validation failed", errors)
 	}
 

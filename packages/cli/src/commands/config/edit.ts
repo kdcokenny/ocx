@@ -56,7 +56,7 @@ async function runConfigEdit(options: ConfigEditOptions): Promise<void> {
 		const parseResult = profileNameSchema.safeParse(options.profile)
 		if (!parseResult.success) {
 			throw new ValidationError(
-				`Invalid profile name "${options.profile}": ${parseResult.error.errors[0]?.message ?? "Invalid name"}`,
+				`Invalid profile name "${options.profile}": ${parseResult.error.issues[0]?.message ?? "Invalid name"}`,
 			)
 		}
 

@@ -25,7 +25,7 @@ export const registryConfigSchema = z.object({
 	url: z.string().url("Registry URL must be a valid URL"),
 
 	/** Optional auth headers (supports ${ENV_VAR} expansion) */
-	headers: z.record(z.string()).optional(),
+	headers: z.record(z.string(), z.string()).optional(),
 })
 
 export type RegistryConfig = z.infer<typeof registryConfigSchema>
@@ -42,7 +42,7 @@ export const ocxConfigSchema = z.object({
 	profile: z.string().optional(),
 
 	/** Configured registries */
-	registries: z.record(registryConfigSchema).default({}),
+	registries: z.record(z.string(), registryConfigSchema).default({}),
 
 	/** Lock registries - prevent adding/removing (enterprise feature) */
 	lockRegistries: z.boolean().default(false),
@@ -120,7 +120,7 @@ export const installedComponentSchema = z.object({
 	 * Stored for runtime instruction path resolution.
 	 * Install-root-relative paths in instructions array are resolved at runtime.
 	 */
-	opencode: z.record(z.unknown()).optional(),
+	opencode: z.record(z.string(), z.unknown()).optional(),
 })
 
 export type InstalledComponent = z.infer<typeof installedComponentSchema>

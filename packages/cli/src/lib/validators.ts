@@ -128,7 +128,9 @@ export function validateRegistrySource(
 	const parseResult = registrySchema.safeParse(registryData)
 
 	if (!parseResult.success) {
-		const errors = parseResult.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`)
+		const errors = parseResult.error.issues.map(
+			(issue) => `${issue.path.join(".")}: ${issue.message}`,
+		)
 		return {
 			valid: false,
 			errors,
