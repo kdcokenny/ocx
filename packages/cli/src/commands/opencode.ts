@@ -9,8 +9,16 @@
 
 import * as path from "node:path"
 import type { Command } from "commander"
+import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
 import { ConfigResolver } from "../config/resolver"
-import { getProfileDir, getProfileOpencodeConfig } from "../profile/paths"
+import {
+	findLocalConfigDir,
+	getProfileDir,
+	getProfileOpencodeConfig,
+	OPENCODE_CONFIG_FILE,
+} from "../profile/paths"
+import { dedupePluginsByCanonicalName, extractCanonicalPluginName } from "../registry/merge"
+import { ConfigError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
@@ -30,6 +38,370 @@ import {
 interface OpencodeOptions {
 	profile?: string
 	rename?: boolean
+}
+
+type OpencodeLeafOrigin = "profile" | "local"
+type OpencodePathSegment = string | number
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function formatJsoncParseError(parseErrors: ParseError[]): string {
+	if (parseErrors.length === 0) {
+		return "Unknown parse error"
+	}
+
+	const firstError = parseErrors[0]
+	if (!firstError) {
+		return "Unknown parse error"
+	}
+
+	return `${printParseErrorCode(firstError.error)} at offset ${firstError.offset}`
+}
+
+function pathSegmentsToKey(segments: OpencodePathSegment[]): string {
+	if (segments.length === 0) {
+		return "$"
+	}
+
+	let key = ""
+	for (const segment of segments) {
+		if (typeof segment === "number") {
+			key += `[${segment}]`
+			continue
+		}
+
+		key = key.length === 0 ? segment : `${key}.${segment}`
+	}
+
+	return key
+}
+
+function collectLeafOriginsForValue(
+	value: unknown,
+	origin: OpencodeLeafOrigin,
+	pathSegments: OpencodePathSegment[],
+	origins: Map<string, OpencodeLeafOrigin>,
+): void {
+	if (value === undefined) {
+		return
+	}
+
+	if (isPlainObject(value)) {
+		for (const [key, nestedValue] of Object.entries(value)) {
+			collectLeafOriginsForValue(nestedValue, origin, [...pathSegments, key], origins)
+		}
+		return
+	}
+
+	if (Array.isArray(value)) {
+		for (const [index, nestedValue] of value.entries()) {
+			collectLeafOriginsForValue(nestedValue, origin, [...pathSegments, index], origins)
+		}
+		return
+	}
+
+	origins.set(pathSegmentsToKey(pathSegments), origin)
+}
+
+function mergeInstructionArrayOrigins(
+	profileValues: string[],
+	localValues: string[],
+	pathSegments: OpencodePathSegment[],
+	origins: Map<string, OpencodeLeafOrigin>,
+): void {
+	const mergedValues = Array.from(new Set([...profileValues, ...localValues]))
+	const firstOwnerByValue = new Map<string, OpencodeLeafOrigin>()
+
+	for (const value of profileValues) {
+		if (!firstOwnerByValue.has(value)) {
+			firstOwnerByValue.set(value, "profile")
+		}
+	}
+
+	for (const value of localValues) {
+		if (!firstOwnerByValue.has(value)) {
+			firstOwnerByValue.set(value, "local")
+		}
+	}
+
+	for (const [index, value] of mergedValues.entries()) {
+		origins.set(
+			pathSegmentsToKey([...pathSegments, index]),
+			firstOwnerByValue.get(value) ?? "local",
+		)
+	}
+}
+
+function mergePluginArrayOrigins(
+	profileValues: string[],
+	localValues: string[],
+	pathSegments: OpencodePathSegment[],
+	origins: Map<string, OpencodeLeafOrigin>,
+): void {
+	const combined = [...profileValues, ...localValues]
+	const mergedValues = dedupePluginsByCanonicalName(combined)
+	const lastOwnerByCanonical = new Map<string, OpencodeLeafOrigin>()
+
+	for (let index = combined.length - 1; index >= 0; index--) {
+		const pluginSpecifier = combined[index]
+		if (!pluginSpecifier) {
+			continue
+		}
+
+		const canonicalName = extractCanonicalPluginName(pluginSpecifier)
+		if (!lastOwnerByCanonical.has(canonicalName)) {
+			lastOwnerByCanonical.set(canonicalName, index < profileValues.length ? "profile" : "local")
+		}
+	}
+
+	for (const [index, pluginSpecifier] of mergedValues.entries()) {
+		const canonicalName = extractCanonicalPluginName(pluginSpecifier)
+		origins.set(
+			pathSegmentsToKey([...pathSegments, index]),
+			lastOwnerByCanonical.get(canonicalName) ?? "local",
+		)
+	}
+}
+
+function isTopLevelOpencodeArrayPath(
+	pathSegments: OpencodePathSegment[],
+	expectedKey: "instructions" | "plugin",
+): boolean {
+	return pathSegments.length === 1 && pathSegments[0] === expectedKey
+}
+
+function mergeLeafOriginsAtPath(args: {
+	profileValue: unknown
+	localValue: unknown
+	pathSegments: OpencodePathSegment[]
+	origins: Map<string, OpencodeLeafOrigin>
+}): void {
+	const { profileValue, localValue, pathSegments, origins } = args
+
+	if (localValue === undefined) {
+		collectLeafOriginsForValue(profileValue, "profile", pathSegments, origins)
+		return
+	}
+
+	if (profileValue === undefined) {
+		collectLeafOriginsForValue(localValue, "local", pathSegments, origins)
+		return
+	}
+
+	if (isPlainObject(profileValue) && isPlainObject(localValue)) {
+		const keys = new Set([...Object.keys(profileValue), ...Object.keys(localValue)])
+		for (const key of keys) {
+			mergeLeafOriginsAtPath({
+				profileValue: profileValue[key],
+				localValue: localValue[key],
+				pathSegments: [...pathSegments, key],
+				origins,
+			})
+		}
+		return
+	}
+
+	if (Array.isArray(profileValue) && Array.isArray(localValue)) {
+		if (isTopLevelOpencodeArrayPath(pathSegments, "instructions")) {
+			if (
+				profileValue.every((value) => typeof value === "string") &&
+				localValue.every((value) => typeof value === "string")
+			) {
+				mergeInstructionArrayOrigins(profileValue, localValue, pathSegments, origins)
+				return
+			}
+		}
+
+		if (isTopLevelOpencodeArrayPath(pathSegments, "plugin")) {
+			if (
+				profileValue.every((value) => typeof value === "string") &&
+				localValue.every((value) => typeof value === "string")
+			) {
+				mergePluginArrayOrigins(profileValue, localValue, pathSegments, origins)
+				return
+			}
+		}
+	}
+
+	collectLeafOriginsForValue(localValue, "local", pathSegments, origins)
+}
+
+function buildMergedLeafOriginsForOpencodeConfig(args: {
+	profileConfig: Record<string, unknown>
+	localConfig: Record<string, unknown>
+}): Map<string, OpencodeLeafOrigin> {
+	const origins = new Map<string, OpencodeLeafOrigin>()
+
+	mergeLeafOriginsAtPath({
+		profileValue: args.profileConfig,
+		localValue: args.localConfig,
+		pathSegments: [],
+		origins,
+	})
+
+	return origins
+}
+
+function parseFileTokenReference(value: string): string | null {
+	if (!value.startsWith("{file:")) {
+		return null
+	}
+
+	if (!value.endsWith("}")) {
+		return null
+	}
+
+	const tokenPath = value.slice("{file:".length, -1)
+	return tokenPath.length > 0 ? tokenPath : null
+}
+
+function isWindowsAbsolutePath(value: string): boolean {
+	return /^[A-Za-z]:[\\/]/.test(value)
+}
+
+function isRelativeFileTokenPath(value: string): boolean {
+	if (value.startsWith("~")) {
+		return false
+	}
+
+	if (path.isAbsolute(value)) {
+		return false
+	}
+
+	if (isWindowsAbsolutePath(value)) {
+		return false
+	}
+
+	return true
+}
+
+function rewriteProfileRelativeFileTokenAtLeaf(args: {
+	value: string
+	pathSegments: OpencodePathSegment[]
+	origins: Map<string, OpencodeLeafOrigin>
+	profileDir: string
+}): string {
+	const tokenPath = parseFileTokenReference(args.value)
+	if (!tokenPath) {
+		return args.value
+	}
+
+	const leafPath = pathSegmentsToKey(args.pathSegments)
+	if (args.origins.get(leafPath) !== "profile") {
+		return args.value
+	}
+
+	if (!isRelativeFileTokenPath(tokenPath)) {
+		return args.value
+	}
+
+	return `{file:${path.resolve(args.profileDir, tokenPath)}}`
+}
+
+function rewriteProfileRelativeFileTokensInValue(args: {
+	value: unknown
+	pathSegments: OpencodePathSegment[]
+	origins: Map<string, OpencodeLeafOrigin>
+	profileDir: string
+}): unknown {
+	const { value, pathSegments, origins, profileDir } = args
+
+	if (typeof value === "string") {
+		return rewriteProfileRelativeFileTokenAtLeaf({
+			value,
+			pathSegments,
+			origins,
+			profileDir,
+		})
+	}
+
+	if (Array.isArray(value)) {
+		return value.map((item, index) =>
+			rewriteProfileRelativeFileTokensInValue({
+				value: item,
+				pathSegments: [...pathSegments, index],
+				origins,
+				profileDir,
+			}),
+		)
+	}
+
+	if (isPlainObject(value)) {
+		const rewritten: Record<string, unknown> = {}
+		for (const [key, nestedValue] of Object.entries(value)) {
+			rewritten[key] = rewriteProfileRelativeFileTokensInValue({
+				value: nestedValue,
+				pathSegments: [...pathSegments, key],
+				origins,
+				profileDir,
+			})
+		}
+		return rewritten
+	}
+
+	return value
+}
+
+async function loadLocalOpencodeConfigForProfileRewrite(
+	projectDir: string,
+): Promise<Record<string, unknown>> {
+	const localConfigDir = findLocalConfigDir(projectDir)
+	if (!localConfigDir) {
+		return {}
+	}
+
+	const localOpencodePath = path.join(localConfigDir, OPENCODE_CONFIG_FILE)
+	const localOpencodeFile = Bun.file(localOpencodePath)
+	if (!(await localOpencodeFile.exists())) {
+		return {}
+	}
+
+	let text: string
+	try {
+		text = await localOpencodeFile.text()
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : "Unknown read error"
+		throw new ConfigError(`Failed to read local OpenCode config at ${localOpencodePath}: ${reason}`)
+	}
+
+	const parseErrors: ParseError[] = []
+	const parsed = parseJsonc(text, parseErrors, { allowTrailingComma: true })
+	if (parseErrors.length > 0) {
+		const errorDetail = formatJsoncParseError(parseErrors)
+		throw new ConfigError(
+			`Invalid JSONC in local OpenCode config at ${localOpencodePath}: ${errorDetail}`,
+		)
+	}
+
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		throw new ConfigError(
+			`Invalid local OpenCode config at ${localOpencodePath}: root must be an object`,
+		)
+	}
+
+	return parsed as Record<string, unknown>
+}
+
+async function rewriteProfileRelativeFileTokensInMergedConfig(args: {
+	mergedConfig: Record<string, unknown>
+	profileConfig: Record<string, unknown>
+	projectDir: string
+	profileDir: string
+}): Promise<Record<string, unknown>> {
+	const localConfig = await loadLocalOpencodeConfigForProfileRewrite(args.projectDir)
+	const leafOrigins = buildMergedLeafOriginsForOpencodeConfig({
+		profileConfig: args.profileConfig,
+		localConfig,
+	})
+
+	return rewriteProfileRelativeFileTokensInValue({
+		value: args.mergedConfig,
+		pathSegments: [],
+		origins: leafOrigins,
+		profileDir: args.profileDir,
+	}) as Record<string, unknown>
 }
 
 /**
@@ -246,19 +618,29 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 	}
 
 	// Build the config to pass to OpenCode
+	let opencodeConfigForLaunch = config.opencode
+	if (config.profileName) {
+		opencodeConfigForLaunch = await rewriteProfileRelativeFileTokensInMergedConfig({
+			mergedConfig: config.opencode,
+			profileConfig: profile?.opencode ?? {},
+			projectDir,
+			profileDir: getProfileDir(config.profileName),
+		})
+	}
+
 	// Merge discovered instructions with user-configured instructions
 	// Order: discovered/global/profile/registry/project first, then user config instructions last (highest priority)
-	const userInstructions = Array.isArray(config.opencode.instructions)
-		? config.opencode.instructions
+	const userInstructions = Array.isArray(opencodeConfigForLaunch.instructions)
+		? opencodeConfigForLaunch.instructions
 		: []
 	const allInstructions = [...config.instructions, ...userInstructions]
 	// Deduplicate while preserving last occurrence (last-wins)
 	const dedupedInstructions = dedupeLastWins(allInstructions)
 
 	const configToPass =
-		dedupedInstructions.length > 0 || Object.keys(config.opencode).length > 0
+		dedupedInstructions.length > 0 || Object.keys(opencodeConfigForLaunch).length > 0
 			? {
-					...config.opencode,
+					...opencodeConfigForLaunch,
 					instructions: dedupedInstructions.length > 0 ? dedupedInstructions : undefined,
 				}
 			: undefined

@@ -29,6 +29,12 @@ interface OpencodeCapturePayload {
 	fileContents: Record<string, string>
 }
 
+interface PromptCapturePayload {
+	promptToken: string | null
+	resolvedPromptPath: string | null
+	promptContent: string | null
+}
+
 async function createProfile(testDir: string, name: string): Promise<string> {
 	const profileDir = join(testDir, "opencode", "profiles", name)
 	await mkdir(profileDir, { recursive: true })
@@ -125,6 +131,70 @@ async function runOcCapture(args: {
 async function readCapturePayload(payloadPath: string): Promise<OpencodeCapturePayload> {
 	const text = await readFile(payloadPath, "utf8")
 	return JSON.parse(text) as OpencodeCapturePayload
+}
+
+async function createPromptCaptureScript(testDir: string): Promise<string> {
+	const scriptPath = join(testDir, "capture-prompt.ts")
+
+	await Bun.write(
+		scriptPath,
+		[
+			'import { readFileSync } from "node:fs"',
+			'import { isAbsolute, resolve } from "node:path"',
+			"",
+			"const outputPath = process.env.OCX_CAPTURE_OUTPUT_PATH",
+			"if (!outputPath) {",
+			'  throw new Error("OCX_CAPTURE_OUTPUT_PATH is required")',
+			"}",
+			"",
+			"const configContent = process.env.OPENCODE_CONFIG_CONTENT ?? '{}'",
+			"const parsed = JSON.parse(configContent)",
+			"const promptToken = parsed?.agent?.planner?.prompt",
+			"",
+			"let resolvedPromptPath = null",
+			"let promptContent = null",
+			"",
+			"if (typeof promptToken === 'string' && promptToken.startsWith('{file:') && promptToken.endsWith('}')) {",
+			"  const tokenPath = promptToken.slice('{file:'.length, -1)",
+			"  resolvedPromptPath = isAbsolute(tokenPath) ? tokenPath : resolve(process.cwd(), tokenPath)",
+			"  promptContent = readFileSync(resolvedPromptPath, 'utf8')",
+			"}",
+			"",
+			"await Bun.write(",
+			"  outputPath,",
+			"  JSON.stringify({ promptToken, resolvedPromptPath, promptContent }, null, 2),",
+			")",
+		].join("\n"),
+	)
+
+	return scriptPath
+}
+
+async function runOcPromptCapture(args: {
+	testDir: string
+	profileName?: string
+	env?: Record<string, string | undefined>
+}): Promise<{ result: Awaited<ReturnType<typeof runCLIIsolated>>; payloadPath: string }> {
+	const scriptPath = await createPromptCaptureScript(args.testDir)
+	const payloadPath = join(args.testDir, "oc-prompt-capture.json")
+
+	const profileArgs = args.profileName ? ["--profile", args.profileName] : []
+	const result = await runCLIIsolated(
+		["oc", "--no-rename", ...profileArgs, scriptPath],
+		args.testDir,
+		{
+			OPENCODE_BIN: "bun",
+			OCX_CAPTURE_OUTPUT_PATH: payloadPath,
+			...args.env,
+		},
+	)
+
+	return { result, payloadPath }
+}
+
+async function readPromptCapturePayload(payloadPath: string): Promise<PromptCapturePayload> {
+	const text = await readFile(payloadPath, "utf8")
+	return JSON.parse(text) as PromptCapturePayload
 }
 
 async function listMergedDirs(tmpRoot: string): Promise<string[]> {
@@ -908,6 +978,80 @@ describe("ocx oc profile overlay integration", () => {
 
 			const payload = await readCapturePayload(payloadPath)
 			expect(payload.fileContents["agents/shared.md"]).toBe("from-project")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("resolves planner prompt from profile-owned relative file token when project has same relative path", async () => {
+		const testDir = await createTempDir("oc-overlay-profile-prompt-token")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			await mkdir(join(profileDir, "prompts"), { recursive: true })
+			await Bun.write(join(profileDir, "prompts", "planner.md"), "profile prompt")
+			await Bun.write(
+				join(profileDir, "opencode.jsonc"),
+				JSON.stringify({
+					agent: {
+						planner: {
+							prompt: "{file:./prompts/planner.md}",
+						},
+					},
+				}),
+			)
+
+			await mkdir(join(testDir, "prompts"), { recursive: true })
+			await Bun.write(join(testDir, "prompts", "planner.md"), "project prompt")
+
+			const { result, payloadPath } = await runOcPromptCapture({
+				testDir,
+				profileName: "work",
+			})
+			expect(result.exitCode).toBe(0)
+
+			const payload = await readPromptCapturePayload(payloadPath)
+			expect(payload.promptContent).toBe("profile prompt")
+			expect(payload.promptToken).toBe(`{file:${join(profileDir, "prompts", "planner.md")}}`)
+			expect(payload.resolvedPromptPath).toBe(join(profileDir, "prompts", "planner.md"))
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("preserves missing-target failure behavior after profile token rewrite", async () => {
+		const testDir = await createTempDir("oc-overlay-profile-prompt-token-missing")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			const tmpRoot = join(testDir, "tmp")
+			await mkdir(tmpRoot, { recursive: true })
+
+			await Bun.write(
+				join(profileDir, "opencode.jsonc"),
+				JSON.stringify({
+					agent: {
+						planner: {
+							prompt: "{file:./prompts/missing-planner.md}",
+						},
+					},
+				}),
+			)
+
+			await mkdir(join(testDir, "prompts"), { recursive: true })
+			await Bun.write(join(testDir, "prompts", "missing-planner.md"), "project fallback")
+
+			const { result } = await runOcPromptCapture({
+				testDir,
+				profileName: "work",
+				env: {
+					TMPDIR: tmpRoot,
+				},
+			})
+			expect(result.exitCode).not.toBe(0)
+			expect(result.output).toContain(join(profileDir, "prompts", "missing-planner.md"))
+			expect(result.output).not.toContain(join(testDir, "prompts", "missing-planner.md"))
+
+			const leftovers = await listMergedDirs(tmpRoot)
+			expect(leftovers).toEqual([])
 		} finally {
 			await cleanupTempDir(testDir)
 		}

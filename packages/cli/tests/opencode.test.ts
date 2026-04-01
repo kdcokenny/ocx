@@ -17,6 +17,31 @@ async function createProfile(testDir: string, name: string): Promise<void> {
 	await Bun.write(join(profileDir, "ocx.jsonc"), "{}")
 }
 
+async function createConfigContentCaptureScript(testDir: string): Promise<{
+	scriptPath: string
+	outputPath: string
+}> {
+	const scriptPath = join(testDir, "capture-config-content.ts")
+	const outputPath = join(testDir, "captured-config-content.json")
+
+	await Bun.write(
+		scriptPath,
+		[
+			"const outputPath = process.argv[2]",
+			"if (!outputPath) {",
+			'  throw new Error("missing output path")',
+			"}",
+			"const payload = {",
+			"  configContent: process.env.OPENCODE_CONFIG_CONTENT ?? null,",
+			"  configDir: process.env.OPENCODE_CONFIG_DIR ?? null,",
+			"}",
+			"await Bun.write(outputPath, JSON.stringify(payload, null, 2))",
+		].join("\n"),
+	)
+
+	return { scriptPath, outputPath }
+}
+
 describe("dedupeLastWins", () => {
 	it("preserves last occurrence when duplicates exist", () => {
 		const result = dedupeLastWins(["a", "b", "a", "c"])
@@ -708,6 +733,344 @@ describe("oc command CLI contract", () => {
 			expect(captured.opencodeBin).toBe(expectedOpencodeBin)
 			expect(captured.opencodeBin).not.toBe("false")
 			expect(captured.ocxBin).toBe(join(import.meta.dir, "..", "src", "index.ts"))
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("rewrites profile-owned relative {file:...} tokens to absolute profile paths in OPENCODE_CONFIG_CONTENT (regression #175)", async () => {
+		const testDir = await createTempDir("oc-profile-relative-file-token-rewrite")
+		try {
+			await createProfile(testDir, "work")
+
+			const profileDir = join(testDir, "opencode", "profiles", "work")
+			await mkdir(join(profileDir, "prompts"), { recursive: true })
+			await Bun.write(join(profileDir, "prompts", "planner.md"), "profile planner")
+			await Bun.write(
+				join(profileDir, "opencode.jsonc"),
+				JSON.stringify({
+					agent: {
+						planner: {
+							prompt: "{file:./prompts/planner.md}",
+						},
+					},
+				}),
+			)
+
+			await mkdir(join(testDir, "prompts"), { recursive: true })
+			await Bun.write(join(testDir, "prompts", "planner.md"), "project planner")
+
+			const { scriptPath, outputPath } = await createConfigContentCaptureScript(testDir)
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", scriptPath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const payloadText = await Bun.file(outputPath).text()
+			const payload = JSON.parse(payloadText) as {
+				configContent: string | null
+			}
+			expect(payload.configContent).not.toBeNull()
+
+			const parsedConfig = JSON.parse(payload.configContent as string) as {
+				agent?: { planner?: { prompt?: string } }
+			}
+			const plannerPrompt = parsedConfig.agent?.planner?.prompt
+			expect(plannerPrompt).toBe(`{file:${join(profileDir, "prompts", "planner.md")}}`)
+			expect(plannerPrompt).not.toBe("{file:./prompts/planner.md}")
+			expect(plannerPrompt).not.toContain(join(testDir, "prompts", "planner.md"))
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("rewrites only profile-owned relative file tokens per nested leaf path", async () => {
+		const testDir = await createTempDir("oc-profile-relative-file-token-nested-origins")
+		try {
+			await createProfile(testDir, "work")
+
+			const profileDir = join(testDir, "opencode", "profiles", "work")
+			await Bun.write(
+				join(profileDir, "opencode.jsonc"),
+				JSON.stringify({
+					agent: {
+						planner: {
+							prompt: "{file:./prompts/profile-planner.md}",
+						},
+						researcher: {
+							prompt: "{file:./prompts/profile-researcher.md}",
+						},
+						reviewer: {
+							absolutePrompt: "{file:/tmp/absolute-prompt.md}",
+							tildePrompt: "{file:~/prompt.md}",
+							nonFileToken: "prefix {file:./prompts/not-a-token.md}",
+							numericValue: 7,
+						},
+					},
+					settings: {
+						enabled: true,
+					},
+				}),
+			)
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(localConfigDir, { recursive: true })
+			await Bun.write(
+				join(localConfigDir, "opencode.jsonc"),
+				JSON.stringify({
+					agent: {
+						researcher: {
+							prompt: "{file:./prompts/project-researcher.md}",
+						},
+						reviewer: {
+							localPrompt: "{file:./prompts/project-reviewer.md}",
+						},
+					},
+				}),
+			)
+
+			const { scriptPath, outputPath } = await createConfigContentCaptureScript(testDir)
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", scriptPath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const payload = JSON.parse(await Bun.file(outputPath).text()) as {
+				configContent: string | null
+			}
+			const parsedConfig = JSON.parse(payload.configContent as string) as {
+				agent?: {
+					planner?: { prompt?: string }
+					researcher?: { prompt?: string }
+					reviewer?: {
+						absolutePrompt?: string
+						tildePrompt?: string
+						nonFileToken?: string
+						localPrompt?: string
+						numericValue?: unknown
+					}
+				}
+				settings?: { enabled?: unknown }
+			}
+
+			expect(parsedConfig.agent?.planner?.prompt).toBe(
+				`{file:${join(profileDir, "prompts", "profile-planner.md")}}`,
+			)
+			expect(parsedConfig.agent?.researcher?.prompt).toBe("{file:./prompts/project-researcher.md}")
+			expect(parsedConfig.agent?.reviewer?.localPrompt).toBe("{file:./prompts/project-reviewer.md}")
+			expect(parsedConfig.agent?.reviewer?.absolutePrompt).toBe("{file:/tmp/absolute-prompt.md}")
+			expect(parsedConfig.agent?.reviewer?.tildePrompt).toBe("{file:~/prompt.md}")
+			expect(parsedConfig.agent?.reviewer?.nonFileToken).toBe(
+				"prefix {file:./prompts/not-a-token.md}",
+			)
+			expect(parsedConfig.agent?.reviewer?.numericValue).toBe(7)
+			expect(parsedConfig.settings?.enabled).toBe(true)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("tracks top-level instructions array ownership with merge+dedupe semantics", async () => {
+		const testDir = await createTempDir("oc-profile-relative-file-token-top-level-instructions")
+		try {
+			await createProfile(testDir, "work")
+
+			const profileDir = join(testDir, "opencode", "profiles", "work")
+			await Bun.write(
+				join(profileDir, "opencode.jsonc"),
+				JSON.stringify({
+					instructions: ["{file:./prompts/profile-only.md}", "{file:./prompts/shared.md}"],
+				}),
+			)
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(localConfigDir, { recursive: true })
+			await Bun.write(
+				join(localConfigDir, "opencode.jsonc"),
+				JSON.stringify({
+					instructions: ["{file:./prompts/shared.md}", "{file:./prompts/local-only.md}"],
+				}),
+			)
+
+			const { scriptPath, outputPath } = await createConfigContentCaptureScript(testDir)
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", scriptPath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const payload = JSON.parse(await Bun.file(outputPath).text()) as {
+				configContent: string | null
+			}
+			const parsedConfig = JSON.parse(payload.configContent as string) as {
+				instructions?: string[]
+			}
+			const promptInstructions = (parsedConfig.instructions ?? []).filter((instruction) =>
+				instruction.includes("prompts/"),
+			)
+			expect(promptInstructions).toEqual([
+				`{file:${join(profileDir, "prompts", "profile-only.md")}}`,
+				`{file:${join(profileDir, "prompts", "shared.md")}}`,
+				"{file:./prompts/local-only.md}",
+			])
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("tracks top-level plugin canonical dedupe ownership without rewriting local winners", async () => {
+		const testDir = await createTempDir("oc-profile-relative-file-token-top-level-plugin")
+		try {
+			await createProfile(testDir, "work")
+
+			const profileDir = join(testDir, "opencode", "profiles", "work")
+			await Bun.write(
+				join(profileDir, "opencode.jsonc"),
+				JSON.stringify({
+					plugin: [
+						"npm:@scope/tool@1.0.0",
+						"{file:./prompts/profile-plugin-token.md}",
+						"npm:keep-profile",
+					],
+				}),
+			)
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(localConfigDir, { recursive: true })
+			await Bun.write(
+				join(localConfigDir, "opencode.jsonc"),
+				JSON.stringify({
+					plugin: ["npm:@scope/tool@2.0.0", "{file:./prompts/local-plugin-token.md}"],
+				}),
+			)
+
+			const { scriptPath, outputPath } = await createConfigContentCaptureScript(testDir)
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", scriptPath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const payload = JSON.parse(await Bun.file(outputPath).text()) as {
+				configContent: string | null
+			}
+			const parsedConfig = JSON.parse(payload.configContent as string) as {
+				plugin?: string[]
+			}
+			expect(parsedConfig.plugin).toEqual([
+				`{file:${join(profileDir, "prompts", "profile-plugin-token.md")}}`,
+				"npm:keep-profile",
+				"npm:@scope/tool@2.0.0",
+				"{file:./prompts/local-plugin-token.md}",
+			])
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("does not apply top-level instructions ownership rules to nested non-special arrays", async () => {
+		const testDir = await createTempDir("oc-profile-relative-file-token-nested-array-replace")
+		try {
+			await createProfile(testDir, "work")
+
+			const profileDir = join(testDir, "opencode", "profiles", "work")
+			await Bun.write(
+				join(profileDir, "opencode.jsonc"),
+				JSON.stringify({
+					agent: {
+						planner: {
+							options: {
+								instructions: ["{file:./prompts/profile-nested.md}"],
+							},
+						},
+					},
+				}),
+			)
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(localConfigDir, { recursive: true })
+			await Bun.write(
+				join(localConfigDir, "opencode.jsonc"),
+				JSON.stringify({
+					agent: {
+						planner: {
+							options: {
+								instructions: ["{file:./prompts/local-nested.md}"],
+							},
+						},
+					},
+				}),
+			)
+
+			const { scriptPath, outputPath } = await createConfigContentCaptureScript(testDir)
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", scriptPath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const payload = JSON.parse(await Bun.file(outputPath).text()) as {
+				configContent: string | null
+			}
+			const parsedConfig = JSON.parse(payload.configContent as string) as {
+				agent?: { planner?: { options?: { instructions?: string[] } } }
+			}
+
+			expect(parsedConfig.agent?.planner?.options?.instructions).toEqual([
+				"{file:./prompts/local-nested.md}",
+			])
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("keeps rewritten missing profile targets unresolved for upstream error handling", async () => {
+		const testDir = await createTempDir("oc-profile-relative-file-token-missing-target")
+		try {
+			await createProfile(testDir, "work")
+
+			const profileDir = join(testDir, "opencode", "profiles", "work")
+			await Bun.write(
+				join(profileDir, "opencode.jsonc"),
+				JSON.stringify({
+					agent: {
+						planner: {
+							prompt: "{file:./prompts/missing-planner.md}",
+						},
+					},
+				}),
+			)
+
+			const { scriptPath, outputPath } = await createConfigContentCaptureScript(testDir)
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", scriptPath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const payload = JSON.parse(await Bun.file(outputPath).text()) as {
+				configContent: string | null
+			}
+			const parsedConfig = JSON.parse(payload.configContent as string) as {
+				agent?: { planner?: { prompt?: string } }
+			}
+			expect(parsedConfig.agent?.planner?.prompt).toBe(
+				`{file:${join(profileDir, "prompts", "missing-planner.md")}}`,
+			)
 		} finally {
 			await cleanupTempDir(testDir)
 		}
