@@ -134,6 +134,7 @@ Both curl commands must return JSON output. If either fails, the corresponding
 registry server is not running—start it before proceeding.
 
 - [x] **Run result (2026-02-23):** PASS — `curl http://localhost:8787/index.json | head -5` and `curl http://localhost:8788/index.json | head -5` both returned JSON after restarting local registries.
+- [x] **Run result (2026-04-01):** PASS — with `workers/kdco-registry` and `workers/ocx-kit` running concurrently, both `curl http://localhost:8787/index.json | head -5` and `curl http://localhost:8788/index.json | head -5` returned JSON.
 
 ### 1.1 Create Isolated Environment
 
@@ -193,7 +194,7 @@ If the version does not match the current codebase, verify `$OCX_BIN` points to 
   test -f "$OCX_BIN" && echo "OK: Binary exists"
   $OCX_BIN --version              # Should show current dev version
   ```
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 1.2 Cleanup Between Test Sections
 
@@ -227,7 +228,8 @@ If the version does not match the current codebase, verify `$OCX_BIN` points to 
 - [x] **Expected:** Environment cleaned up
 - [x] **Verify:** No leftover test artifacts
 - [x] **Run result (2026-02-24):** PASS — ran `unset XDG_CONFIG_HOME` and `rm -rf /tmp/ocx-v2-test /tmp/ocx-v2-test-project`; verification confirmed both paths were removed.
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Run result (2026-04-01):** PASS — executed `unset XDG_CONFIG_HOME` and `rm -rf /tmp/ocx-v2-test /tmp/ocx-v2-test-project`; both paths were cleaned up.
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 1.4 Stop Local Registry Servers
 
@@ -241,7 +243,8 @@ If the version does not match the current codebase, verify `$OCX_BIN` points to 
   one registry endpoint remained reachable during verification; rerun stop+verify
   before closing the session.
 - [x] **Run result (2026-02-24):** PASS — after stopping active `wrangler dev` processes, both `curl -sf http://localhost:8787/index.json` and `curl -sf http://localhost:8788/index.json` failed as expected, confirming the registries were no longer reachable.
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Run result (2026-04-01):** PASS — after stopping local `wrangler dev` processes, both `curl -sf http://localhost:8787/index.json` and `curl -sf http://localhost:8788/index.json` failed as expected.
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ---
 
@@ -488,7 +491,7 @@ Test cases from README.md lines 34-53.
   cat $XDG_CONFIG_HOME/opencode/profiles/default/opencode.jsonc
   cat $XDG_CONFIG_HOME/opencode/profiles/default/AGENTS.md
   ```
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 2.2 `ocx profile add work` (Manual Creation)
 
@@ -526,7 +529,7 @@ Test cases from README.md lines 34-53.
   ```bash
   cat $XDG_CONFIG_HOME/opencode/ocx.jsonc  # Should contain kit registry
   ```
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 2.4 Install Profile from Registry (Alternative to 2.2)
 
@@ -553,7 +556,8 @@ Test cases from README.md lines 34-53.
   ```
 - [x] **Run result (2026-02-24):** FAIL — after running the alternative-path precondition (`$OCX_BIN profile rm work --global`), `$OCX_BIN profile add work --source kit/omo --global` failed with `error Registry "kit" is not configured globally.` and instructed to run `ocx registry add <url> --name kit --global`.
 - [x] **Run result (2026-02-24, retry with prerequisite):** PASS — confirmed `kit` was missing from global config, ran `$OCX_BIN registry add http://localhost:8788 --name kit --global`, then `$OCX_BIN profile add work --source kit/omo --global` succeeded and `opencode.jsonc` was pinned to `opencode/big-pickle` as documented.
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Run result (2026-04-01):** PASS — after adding `kit` globally (`$OCX_BIN registry add http://localhost:8788 --name kit --global`), `$OCX_BIN profile add work --source kit/omo --global` succeeded, profile files were present, and model pins were written to `opencode.jsonc`.
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 2.5 Launch OpenCode with Profile
 
@@ -567,7 +571,7 @@ Test cases from README.md lines 34-53.
   ```
 - [x] **Expected:** OpenCode runs with work profile and free Zen model, executes command
 - [x] **Verify:** Command output shows "hello"
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 2.6 Set Default Profile via Environment
 
@@ -600,7 +604,7 @@ Test cases from README.md lines 79-96.
   cat .opencode/ocx.jsonc
   cat .opencode/opencode.jsonc
   ```
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 3.2 One-Command Install with Ephemeral Registry
 
@@ -627,7 +631,7 @@ Test cases from README.md lines 79-96.
   cat .ocx/receipt.jsonc  # Should list kdco/workspace
   cat .opencode/ocx.jsonc  # Should NOT contain registry.kdco.dev
   ```
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 3.3 Add npm Plugin Directly
 
@@ -663,7 +667,7 @@ Test cases from README.md lines 79-96.
   $OCX_BIN registry list  # Should show kdco
   ls .opencode/  # Should contain workspace files
   ```
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ---
 
@@ -740,7 +744,7 @@ All variations from `cli/commands.mdx` (init section).
   cat my-registry/registry.jsonc
   rm -rf my-registry
   ```
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 4.7 `ocx init --registry` with Author
 
