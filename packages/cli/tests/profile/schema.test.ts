@@ -70,7 +70,7 @@ describe("profileNameSchema - empty names", () => {
 	it("should reject empty string", () => {
 		const result = profileNameSchema.safeParse("")
 		expect(result.success).toBe(false)
-		expect(result.error?.errors[0]?.message).toContain("required")
+		expect(result.error?.issues[0]?.message).toContain("required")
 	})
 })
 
@@ -83,7 +83,7 @@ describe("profileNameSchema - length validation", () => {
 		const name = "a".repeat(33)
 		const result = profileNameSchema.safeParse(name)
 		expect(result.success).toBe(false)
-		expect(result.error?.errors[0]?.message).toContain("32 characters")
+		expect(result.error?.issues[0]?.message).toContain("32 characters")
 	})
 
 	it("should reject very long names", () => {
@@ -101,7 +101,7 @@ describe("profileNameSchema - first character validation", () => {
 	it("should reject name starting with number", () => {
 		const result = profileNameSchema.safeParse("123profile")
 		expect(result.success).toBe(false)
-		expect(result.error?.errors[0]?.message).toContain("start with a letter")
+		expect(result.error?.issues[0]?.message).toContain("start with a letter")
 	})
 
 	it("should reject name starting with hyphen", () => {
