@@ -914,7 +914,7 @@ describe("oc command CLI contract", () => {
 				instructions?: string[]
 			}
 			const promptInstructions = (parsedConfig.instructions ?? []).filter((instruction) =>
-				instruction.includes("prompts/"),
+				instruction.replaceAll("\\", "/").includes("prompts/"),
 			)
 			expect(promptInstructions).toEqual([
 				`{file:${join(profileDir, "prompts", "profile-only.md")}}`,
