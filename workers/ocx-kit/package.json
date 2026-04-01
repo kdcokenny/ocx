@@ -3,6 +3,7 @@
 	"private": true,
 	"scripts": {
 		"build": "bun scripts/build.ts",
+		"check:types": "tsc --noEmit -p tsconfig.json",
 		"deploy": "bun run build && wrangler deploy",
 		"dev": "bun run build && wrangler dev --inspector-port 0"
 	},

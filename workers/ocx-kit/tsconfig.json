@@ -3,14 +3,13 @@
 		"target": "ESNext",
 		"module": "ESNext",
 		"moduleResolution": "bundler",
-		"lib": ["ESNext"],
+		"lib": ["ESNext", "DOM"],
 		"strict": true,
 		"skipLibCheck": true,
 		"noEmit": true,
 		"isolatedModules": true,
 		"allowImportingTsExtensions": true,
-		"resolveJsonModule": true,
-		"types": ["bun", "node"]
+		"resolveJsonModule": true
 	},
-	"include": ["src/**/*", "worker-configuration.d.ts"]
+	"include": ["scripts/**/*.ts", "types/**/*.d.ts"]
 }

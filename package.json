@@ -31,7 +31,7 @@
 		"husky": "^9.1.7",
 		"pkg-pr-new": "^0.0.66",
 		"turbo": "^2.9.3",
-		"typescript": "^5.9.3",
+		"typescript": "^6.0.2",
 		"wrangler": "^4.79.0"
 	}
 }

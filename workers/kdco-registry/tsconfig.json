@@ -12,5 +12,5 @@
 		"resolveJsonModule": true,
 		"types": ["bun", "node"]
 	},
-	"include": ["src/**/*", "worker-configuration.d.ts"]
+	"include": ["files/**/*.ts", "scripts/**/*.ts", "types/**/*.d.ts"]
 }
