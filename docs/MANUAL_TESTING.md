@@ -296,7 +296,8 @@ Both commands must return "OK". If either fails, restart the corresponding serve
 
 - [x] **Setup:** Fixture servers running on ports 9876 (kdco) and 9877 (kit)
 - [x] **Run result (2026-02-24):** PASS — both fixture indexes returned pinned `version: 1.4.6`.
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Run result (2026-04-01):** PASS — both fixture servers started in one shell session and returned pinned `version: 1.4.6` on ports 9876/9877.
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 1.5.1 Happy Path: Install from V1 Pinned Fixtures
 
@@ -315,7 +316,8 @@ Both commands must return "OK". If either fails, restart the corresponding serve
   cat .ocx/receipt.jsonc  # Should list kdco-v1/workspace
   ```
 - [x] **Run result (2026-02-24):** PASS — `kdco-v1/workspace` recorded in receipt; parity suites passed.
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Run result (2026-04-01):** PASS — `kdco-v1/workspace` installed from pinned fixture and `.ocx/receipt.jsonc` recorded the component; parity command `bun test tests/registry/fetcher.test.ts tests/registry.test.ts` passed (`122 pass, 0 fail`).
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 **Automated parity checks required for kit/ws and kit/omo profile fixtures:**
 
@@ -386,7 +388,8 @@ Confirm both suites pass and include legacy fixture coverage for `kit/ws` and
   - Command output includes `rc=<value>` and `rc` is non-zero (CONFIG error, typically 78)
   - Error message includes `unsupported-schema-version` and references unsupported major (v3) / supported major (v2)
 - [x] **Run result (2026-02-24):** PASS — failed with `rc=78` and `unsupported-schema-version` (v3 unsupported).
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Run result (2026-04-01):** PASS — failed with `rc=78` and `unsupported-schema-version` when adding `http://localhost:9875` before any registry write.
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ### 1.5.3 Guardrail: Missing Legacy Component Fails Loudly
 
@@ -469,7 +472,8 @@ When V1 compatibility testing is complete:
   curl -sf http://localhost:9877/index.json 2>/dev/null && echo "FAIL: 9877 still running" || echo "OK: 9877 stopped"
   ```
 - [x] **Run result (2026-02-24):** PASS — both fixture endpoints were unreachable after shutdown.
-- [x] **Last tested:** _v2.0.2 on 2026-03-21_
+- [x] **Run result (2026-04-01):** PASS — after stopping fixture servers, both `curl -sf http://localhost:9876/index.json` and `curl -sf http://localhost:9877/index.json` failed as expected.
+- [x] **Last tested:** _v2.0.4 on 2026-04-01_
 
 ---
 
