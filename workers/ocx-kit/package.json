@@ -4,7 +4,7 @@
 	"scripts": {
 		"build": "bun scripts/build.ts",
 		"deploy": "bun run build && wrangler deploy",
-		"dev": "bun run build && wrangler dev"
+		"dev": "bun run build && wrangler dev --inspector-port 0"
 	},
 	"devDependencies": {
 		"ocx": "workspace:*",
