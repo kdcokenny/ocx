@@ -8,6 +8,6 @@
 	},
 	"devDependencies": {
 		"ocx": "workspace:*",
-		"wrangler": "^4.54.0"
+		"wrangler": "^4.79.0"
 	}
 }

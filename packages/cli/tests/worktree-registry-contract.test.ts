@@ -165,7 +165,7 @@ describe("kdco/worktree registry packaging contract", () => {
 			/"name"\s*:\s*"worktree"[\s\S]*?"files"\s*:\s*\[([\s\S]*?)\]/,
 		)
 		expect(worktreeComponentMatch).toBeTruthy()
-		if (!worktreeComponentMatch || !worktreeComponentMatch[1]) {
+		if (!worktreeComponentMatch?.[1]) {
 			throw new Error("Expected worktree component files array in registry manifest")
 		}
 

@@ -7,6 +7,6 @@
 		"dev": "bun run build && wrangler dev"
 	},
 	"devDependencies": {
-		"wrangler": "^4.54.0"
+		"wrangler": "^4.79.0"
 	}
 }

@@ -690,7 +690,7 @@ export async function fetchFileContent(
 }
 
 // Re-export types for convenience
-export type { ComponentManifest, RegistryIndex, McpServer }
+export type { ComponentManifest, McpServer, RegistryIndex }
 
 /** @internal Clear cache for testing purposes only */
 export function _clearFetcherCacheForTests(): void {

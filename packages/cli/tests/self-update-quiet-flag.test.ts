@@ -83,7 +83,7 @@ describe("registerUpdateCheckHook - quiet flag handling", () => {
 		if (originalIsTTYDescriptor !== undefined) {
 			Object.defineProperty(process.stdout, "isTTY", originalIsTTYDescriptor)
 		} else {
-			delete (process.stdout as any).isTTY
+			delete (process.stdout as { isTTY?: boolean }).isTTY
 		}
 
 		// Restore environment variables
