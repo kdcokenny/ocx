@@ -19,6 +19,7 @@
 		"build": "turbo run build",
 		"dev": "turbo run dev",
 		"check": "turbo run check",
+		"release:tag": "bun run --cwd packages/cli release:tag",
 		"format": "biome check --write .",
 		"test": "turbo run test",
 		"prepare": "husky"

@@ -39,6 +39,7 @@
 	"scripts": {
 		"build": "bun run scripts/build.ts",
 		"build:binary": "bun run scripts/build-binary.ts",
+		"release:tag": "bun run scripts/release-tag.ts",
 		"check": "bun check:biome && bun check:types",
 		"check:biome": "biome check .",
 		"check:types": "tsc --noEmit",

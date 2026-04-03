@@ -57,6 +57,28 @@ export interface PluginValidationResult {
 	warnings: string[]
 }
 
+/**
+ * Tri-state result for exact npm `name@version` lookups.
+ *
+ * - `published`: registry definitively contains the exact version
+ * - `missing`: registry definitively returns 404 for the exact version
+ * - `indeterminate-error`: any ambiguous/failed lookup (network, timeout,
+ *   non-404 HTTP, malformed response, or mismatched response payload)
+ */
+export type ExactNpmVersionState =
+	| { state: "published" }
+	| { state: "missing" }
+	| { state: "indeterminate-error"; reason: string }
+
+/**
+ * Injectable seam for exact npm version lookups.
+ */
+export type ExactNpmVersionLookup = (
+	packageName: string,
+	version: string,
+	signal?: AbortSignal,
+) => Promise<ExactNpmVersionState>
+
 // =============================================================================
 // CONSTANTS
 // =============================================================================
@@ -74,6 +96,9 @@ const NPM_FETCH_TIMEOUT_MS = 30_000
  */
 const NPM_NAME_REGEX = /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/
 const MAX_NAME_LENGTH = 214
+
+/** Stable semver only (no prerelease/build metadata). */
+const STABLE_SEMVER_REGEX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
 // =============================================================================
 // PARSING
@@ -253,6 +278,96 @@ export async function validateNpmPackage(
 		// Wrap other errors
 		const message = error instanceof Error ? error.message : String(error)
 		throw new NetworkError(`Failed to fetch npm package \`${packageName}\`: ${message}`)
+	}
+}
+
+/**
+ * Exact npm `name@version` lookup.
+ *
+ * Uses `GET /<name>/<version>` as the source of truth and fails closed:
+ * only a definitive 404 returns `missing`; all other irregular outcomes
+ * return `indeterminate-error`.
+ */
+export const lookupExactNpmVersionState: ExactNpmVersionLookup = async (
+	packageName,
+	version,
+	signal,
+) => {
+	try {
+		validateNpmPackageName(packageName)
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		return { state: "indeterminate-error", reason: `invalid-package-name:${message}` }
+	}
+
+	const trimmedVersion = version.trim()
+	if (!STABLE_SEMVER_REGEX.test(trimmedVersion)) {
+		return {
+			state: "indeterminate-error",
+			reason: "invalid-version:exact-lookup-requires-stable-semver",
+		}
+	}
+
+	const encodedName = packageName.startsWith("@")
+		? `@${encodeURIComponent(packageName.slice(1))}`
+		: encodeURIComponent(packageName)
+	const encodedVersion = encodeURIComponent(trimmedVersion)
+	const url = `${NPM_REGISTRY_BASE}/${encodedName}/${encodedVersion}`
+
+	try {
+		const fetchSignal = signal ?? AbortSignal.timeout(NPM_FETCH_TIMEOUT_MS)
+		const response = await fetch(url, {
+			signal: fetchSignal,
+			headers: { Accept: "application/json" },
+		})
+
+		if (response.status === 404) {
+			return { state: "missing" }
+		}
+
+		if (!response.ok) {
+			return {
+				state: "indeterminate-error",
+				reason: `http-${response.status}`,
+			}
+		}
+
+		let payload: unknown
+		try {
+			payload = await response.json()
+		} catch {
+			return {
+				state: "indeterminate-error",
+				reason: "malformed-response:invalid-json",
+			}
+		}
+
+		if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+			return {
+				state: "indeterminate-error",
+				reason: "malformed-response:non-object",
+			}
+		}
+
+		const objectPayload = payload as Record<string, unknown>
+		const responseName = objectPayload.name
+		const responseVersion = objectPayload.version
+
+		if (responseName !== packageName || responseVersion !== trimmedVersion) {
+			return {
+				state: "indeterminate-error",
+				reason: "malformed-response:mismatched-name-or-version",
+			}
+		}
+
+		return { state: "published" }
+	} catch (error) {
+		if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
+			return { state: "indeterminate-error", reason: "timeout" }
+		}
+
+		const message = error instanceof Error ? error.message : String(error)
+		return { state: "indeterminate-error", reason: `network:${message}` }
 	}
 }
 
