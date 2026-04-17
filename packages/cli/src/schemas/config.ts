@@ -9,7 +9,8 @@ import { existsSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { parse as parseJsonc } from "jsonc-parser"
-import { z } from "zod"
+import type { infer as ZodInfer } from "zod"
+import { array, boolean, literal, object, record, string, unknown, enum as zEnum } from "zod"
 import { normalizeRegistryUrl } from "../utils/url"
 import { qualifiedComponentSchema } from "./registry"
 
@@ -20,38 +21,38 @@ import { qualifiedComponentSchema } from "./registry"
 /**
  * Registry configuration in ocx.jsonc
  */
-export const registryConfigSchema = z.object({
+export const registryConfigSchema = object({
 	/** Registry URL */
-	url: z.string().url("Registry URL must be a valid URL"),
+	url: string().url("Registry URL must be a valid URL"),
 
 	/** Optional auth headers (supports ${ENV_VAR} expansion) */
-	headers: z.record(z.string(), z.string()).optional(),
+	headers: record(string(), string()).optional(),
 })
 
-export type RegistryConfig = z.infer<typeof registryConfigSchema>
+export type RegistryConfig = ZodInfer<typeof registryConfigSchema>
 
 /**
  * Main OCX config schema (ocx.jsonc)
  * V2: Adds profile field for local profile selection
  */
-export const ocxConfigSchema = z.object({
+export const ocxConfigSchema = object({
 	/** Schema URL for IDE support */
-	$schema: z.string().optional(),
+	$schema: string().optional(),
 
 	/** Profile selection - specifies which global profile to layer with local config */
-	profile: z.string().optional(),
+	profile: string().optional(),
 
 	/** Configured registries */
-	registries: z.record(z.string(), registryConfigSchema).default({}),
+	registries: record(string(), registryConfigSchema).default({}),
 
 	/** Lock registries - prevent adding/removing (enterprise feature) */
-	lockRegistries: z.boolean().default(false),
+	lockRegistries: boolean().default(false),
 
 	/** Skip version compatibility checks */
-	skipCompatCheck: z.boolean().default(false),
+	skipCompatCheck: boolean().default(false),
 })
 
-export type OcxConfig = z.infer<typeof ocxConfigSchema>
+export type OcxConfig = ZodInfer<typeof ocxConfigSchema>
 
 export interface ReadOcxConfigOptions {
 	/**
@@ -73,57 +74,55 @@ export const RECEIPT_FILE = "receipt.jsonc"
  * Canonical ID format: "registryUrl::registryName/component@resolvedRevision"
  * Includes ownership tracking and sha256 baseline for integrity
  */
-export const installedComponentSchema = z.object({
+export const installedComponentSchema = object({
 	/** Registry URL where this was installed from */
-	registryUrl: z.string(),
+	registryUrl: string(),
 
 	/** Registry name (configured alias from ocx.jsonc) */
-	registryName: z.string(),
+	registryName: string(),
 
 	/** Component name */
-	name: z.string(),
+	name: string(),
 
 	/** Resolved version/revision (not tags) */
-	revision: z.string(),
+	revision: string(),
 
 	/** SHA-256 hash of installed files for integrity (baseline) */
-	hash: z.string(),
+	hash: string(),
 
 	/** Target files where installed (root-relative paths) with individual hashes */
-	files: z.array(
-		z.object({
+	files: array(
+		object({
 			/** File path relative to install root */
-			path: z.string(),
+			path: string(),
 			/** SHA-256 hash of this specific file */
-			hash: z.string(),
+			hash: string(),
 		}),
 	),
 
 	/** ISO timestamp of installation */
-	installedAt: z.string(),
+	installedAt: string(),
 
 	/** ISO timestamp of last update (optional, only set after update) */
-	updatedAt: z.string().optional(),
+	updatedAt: string().optional(),
 
 	/** Ownership metadata - who/what installed this component */
-	owner: z
-		.object({
-			/** Owner type: user, profile, or system */
-			type: z.enum(["user", "profile", "system"]),
-			/** Owner identifier (username, profile name, etc.) */
-			id: z.string().optional(),
-		})
-		.optional(),
+	owner: object({
+		/** Owner type: user, profile, or system */
+		type: zEnum(["user", "profile", "system"]),
+		/** Owner identifier (username, profile name, etc.) */
+		id: string().optional(),
+	}).optional(),
 
 	/**
 	 * OpenCode config provided by this component.
 	 * Stored for runtime instruction path resolution.
 	 * Install-root-relative paths in instructions array are resolved at runtime.
 	 */
-	opencode: z.record(z.string(), z.unknown()).optional(),
+	opencode: record(string(), unknown()).optional(),
 })
 
-export type InstalledComponent = z.infer<typeof installedComponentSchema>
+export type InstalledComponent = ZodInfer<typeof installedComponentSchema>
 
 /**
  * V1: Receipt file schema (.ocx/receipt.jsonc)
@@ -132,18 +131,18 @@ export type InstalledComponent = z.infer<typeof installedComponentSchema>
  *
  * Keys use canonical ID format: "registryUrl::registryName/component@resolvedRevision"
  */
-export const receiptSchema = z.object({
+export const receiptSchema = object({
 	/** Receipt format version */
-	version: z.literal(1),
+	version: literal(1),
 
 	/** Install root (for validation) */
-	root: z.string().optional(),
+	root: string().optional(),
 
 	/** Installed components, keyed by canonical ID */
-	installed: z.record(z.string(), installedComponentSchema).default({}),
+	installed: record(string(), installedComponentSchema).default({}),
 })
 
-export type Receipt = z.infer<typeof receiptSchema>
+export type Receipt = ZodInfer<typeof receiptSchema>
 
 // =============================================================================
 // OCX LOCKFILE SCHEMA (LEGACY - V1 compat)
@@ -153,67 +152,67 @@ export type Receipt = z.infer<typeof receiptSchema>
  * LEGACY V1: Installed component entry in lockfile
  * Key format: "alias/component" (e.g., "kdco/researcher")
  */
-export const legacyInstalledComponentSchema = z.object({
+export const legacyInstalledComponentSchema = object({
 	/** Registry alias this was installed from */
-	registry: z.string(),
+	registry: string(),
 
 	/** Version at time of install */
-	version: z.string(),
+	version: string(),
 
 	/** SHA-256 hash of installed files for integrity */
-	hash: z.string(),
+	hash: string(),
 
 	/** Target files where installed (clean paths, no alias prefix) */
-	files: z.array(z.string()),
+	files: array(string()),
 
 	/** ISO timestamp of installation */
-	installedAt: z.string(),
+	installedAt: string(),
 
 	/** ISO timestamp of last update (optional, only set after update) */
-	updatedAt: z.string().optional(),
+	updatedAt: string().optional(),
 })
 
-export type LegacyInstalledComponent = z.infer<typeof legacyInstalledComponentSchema>
+export type LegacyInstalledComponent = ZodInfer<typeof legacyInstalledComponentSchema>
 
 /**
  * Profile source tracking for profiles installed from registries.
  * Optional field in OcxLock - only present for profile installs.
  */
-export const installedFromSchema = z.object({
+export const installedFromSchema = object({
 	/** Registry alias this profile was installed from */
-	registry: z.string(),
+	registry: string(),
 
 	/** Component name in the registry */
-	component: z.string(),
+	component: string(),
 
 	/** Registry version at time of install */
-	version: z.string().optional(),
+	version: string().optional(),
 
 	/** SHA-256 hash of profile files for integrity */
-	hash: z.string(),
+	hash: string(),
 
 	/** ISO timestamp of installation */
-	installedAt: z.string(),
+	installedAt: string(),
 })
 
-export type InstalledFrom = z.infer<typeof installedFromSchema>
+export type InstalledFrom = ZodInfer<typeof installedFromSchema>
 
 /**
  * OCX lockfile schema (ocx.lock)
  * Keys are qualified component refs: "alias/component"
  */
-export const ocxLockSchema = z.object({
+export const ocxLockSchema = object({
 	/** Lockfile format version */
-	lockVersion: z.literal(1),
+	lockVersion: literal(1),
 
 	/** Profile source info (only present for profiles installed from registry) */
 	installedFrom: installedFromSchema.optional(),
 
 	/** Installed components, keyed by "alias/component" */
-	installed: z.record(qualifiedComponentSchema, legacyInstalledComponentSchema).default({}),
+	installed: record(qualifiedComponentSchema, legacyInstalledComponentSchema).default({}),
 })
 
-export type OcxLock = z.infer<typeof ocxLockSchema>
+export type OcxLock = ZodInfer<typeof ocxLockSchema>
 
 // =============================================================================
 // RECEIPT FILE HELPERS (V1)

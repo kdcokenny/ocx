@@ -6,7 +6,8 @@
  */
 
 import { isAbsolute, normalize } from "node:path"
-import { z } from "zod"
+import type { infer as ZodInfer } from "zod"
+import { any, array, boolean, number, object, record, string, union, enum as zEnum } from "zod"
 import {
 	OCX_DOMAIN,
 	REGISTRY_SCHEMA_LATEST_MAJOR,
@@ -31,8 +32,7 @@ import { PathValidationError, validatePath } from "../utils/path-security"
  * - npm:@scope/pkg
  * - npm:@scope/pkg@1.0.0
  */
-export const npmSpecifierSchema = z
-	.string()
+export const npmSpecifierSchema = string()
 	.refine((val) => val.startsWith("npm:"), {
 		message: 'npm specifier must start with "npm:" prefix',
 	})
@@ -50,7 +50,7 @@ export const npmSpecifierSchema = z
 		},
 	)
 
-export type NpmSpecifier = z.infer<typeof npmSpecifierSchema>
+export type NpmSpecifier = ZodInfer<typeof npmSpecifierSchema>
 
 // =============================================================================
 // OPENCODE NAMING CONSTRAINTS (from OpenCode docs)
@@ -65,8 +65,7 @@ export type NpmSpecifier = z.infer<typeof npmSpecifierSchema>
  *
  * Regex: ^[a-z0-9]+(-[a-z0-9]+)*$
  */
-export const openCodeNameSchema = z
-	.string()
+export const openCodeNameSchema = string()
 	.min(1, "Name cannot be empty")
 	.max(64, "Name cannot exceed 64 characters")
 	.regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
@@ -88,12 +87,13 @@ export const namespaceSchema = aliasSchema
  * Qualified component reference: alias/component
  * Used in CLI commands and lockfile keys
  */
-export const qualifiedComponentSchema = z
-	.string()
-	.regex(/^[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/, {
+export const qualifiedComponentSchema = string().regex(
+	/^[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/,
+	{
 		message:
 			'Must be in format "alias/component" (e.g., "kdco/researcher"). Both parts must be lowercase alphanumeric with hyphens.',
-	})
+	},
+)
 
 /**
  * Parse a qualified component reference into its alias and component tokens.
@@ -133,7 +133,7 @@ export function createQualifiedComponent(namespace: string, component: string): 
  * - Bare string: "utils" -> same registry alias (implicit)
  * - Qualified: "acme/utils" -> cross-registry (explicit)
  */
-export const dependencyRefSchema = z.string().refine(
+export const dependencyRefSchema = string().refine(
 	(dep) => {
 		// Either a bare component name or a qualified alias/component
 		const barePattern = /^[a-z0-9]+(-[a-z0-9]+)*$/
@@ -150,7 +150,7 @@ export const dependencyRefSchema = z.string().refine(
 // FILE TARGET SCHEMAS
 // =============================================================================
 
-export const componentTypeSchema = z.enum([
+export const componentTypeSchema = zEnum([
 	"agent",
 	"skill",
 	"plugin",
@@ -160,7 +160,7 @@ export const componentTypeSchema = z.enum([
 	"profile",
 ])
 
-export type ComponentType = z.infer<typeof componentTypeSchema>
+export type ComponentType = ZodInfer<typeof componentTypeSchema>
 
 /** Reserved targets (installer-owned files) */
 const RESERVED_TARGETS = new Set([".ocx", "ocx.lock"])
@@ -186,8 +186,7 @@ const BLOCKED_PATHS = [
  * Blocks protected paths that could compromise security or OCX functionality.
  * Validates path safety using schema-level checks.
  */
-export const targetPathSchema = z
-	.string()
+export const targetPathSchema = string()
 	.min(1, "Target path cannot be empty")
 	.refine(
 		(path) => {
@@ -219,67 +218,65 @@ export const targetPathSchema = z
  * OAuth configuration for MCP servers.
  * Supports advanced OAuth flows with custom client configuration.
  */
-export const oauthConfigSchema = z.object({
+export const oauthConfigSchema = object({
 	/** OAuth client ID */
-	clientId: z.string().optional(),
+	clientId: string().optional(),
 	/** OAuth scopes to request */
-	scopes: z.array(z.string()).optional(),
+	scopes: array(string()).optional(),
 	/** OAuth authorization URL */
-	authUrl: z.string().optional(),
+	authUrl: string().optional(),
 	/** OAuth token URL */
-	tokenUrl: z.string().optional(),
+	tokenUrl: string().optional(),
 })
 
-export type OAuthConfig = z.infer<typeof oauthConfigSchema>
+export type OAuthConfig = ZodInfer<typeof oauthConfigSchema>
 
 /**
  * Full MCP server configuration object
  */
-export const mcpServerObjectSchema = z
-	.object({
-		type: z.enum(["remote", "local"]),
-		/** Server URL (relaxed validation - allows non-URL strings) */
-		url: z.string().optional(),
-		/**
-		 * Command to run for local servers.
-		 * Can be a single string (e.g., "npx foo") or array (e.g., ["npx", "foo"])
-		 */
-		command: z.union([z.string(), z.array(z.string())]).optional(),
-		environment: z.record(z.string(), z.string()).optional(),
-		headers: z.record(z.string(), z.string()).optional(),
-		/**
-		 * OAuth configuration.
-		 * - true: Enable OAuth with defaults
-		 * - object: Enable OAuth with custom configuration
-		 */
-		oauth: z.union([z.boolean(), oauthConfigSchema]).optional(),
-		enabled: z.boolean().default(true),
-	})
-	.refine(
-		(data) => {
-			if (data.type === "remote" && !data.url) {
-				return false
-			}
-			if (data.type === "local" && !data.command) {
-				return false
-			}
-			return true
-		},
-		{
-			message: "Remote MCP servers require 'url', local servers require 'command'",
-		},
-	)
+export const mcpServerObjectSchema = object({
+	type: zEnum(["remote", "local"]),
+	/** Server URL (relaxed validation - allows non-URL strings) */
+	url: string().optional(),
+	/**
+	 * Command to run for local servers.
+	 * Can be a single string (e.g., "npx foo") or array (e.g., ["npx", "foo"])
+	 */
+	command: union([string(), array(string())]).optional(),
+	environment: record(string(), string()).optional(),
+	headers: record(string(), string()).optional(),
+	/**
+	 * OAuth configuration.
+	 * - true: Enable OAuth with defaults
+	 * - object: Enable OAuth with custom configuration
+	 */
+	oauth: union([boolean(), oauthConfigSchema]).optional(),
+	enabled: boolean().default(true),
+}).refine(
+	(data) => {
+		if (data.type === "remote" && !data.url) {
+			return false
+		}
+		if (data.type === "local" && !data.command) {
+			return false
+		}
+		return true
+	},
+	{
+		message: "Remote MCP servers require 'url', local servers require 'command'",
+	},
+)
 
-export type McpServer = z.infer<typeof mcpServerObjectSchema>
+export type McpServer = ZodInfer<typeof mcpServerObjectSchema>
 
 /**
  * Cargo-style MCP server reference:
  * - String: URL shorthand for remote server (e.g., "https://mcp.example.com")
  * - Object: Full configuration
  */
-export const mcpServerRefSchema = z.union([z.string(), mcpServerObjectSchema])
+export const mcpServerRefSchema = union([string(), mcpServerObjectSchema])
 
-export type McpServerRef = z.infer<typeof mcpServerRefSchema>
+export type McpServerRef = ZodInfer<typeof mcpServerRefSchema>
 
 // =============================================================================
 // COMPONENT FILE SCHEMA (Cargo-style: string path or full object)
@@ -289,26 +286,26 @@ export type McpServerRef = z.infer<typeof mcpServerRefSchema>
  * Full file configuration object.
  * Target validation is deferred to normalizeFile() where component type is known.
  */
-export const componentFileObjectSchema = z.object({
+export const componentFileObjectSchema = object({
 	/** Source path in registry */
-	path: z.string().min(1, "File path cannot be empty"),
+	path: string().min(1, "File path cannot be empty"),
 	/** Target path - validation deferred to normalizeFile() for type-aware checking */
-	target: z.string().min(1, "Target path cannot be empty"),
+	target: string().min(1, "Target path cannot be empty"),
 })
 
-export type ComponentFileObject = z.infer<typeof componentFileObjectSchema>
+export type ComponentFileObject = ZodInfer<typeof componentFileObjectSchema>
 
 /**
  * Cargo-style file schema:
  * - String: Path shorthand, target auto-inferred (e.g., "plugins/foo.ts" -> "plugins/foo.ts")
  * - Object: Full configuration with explicit target
  */
-export const componentFileSchema = z.union([
-	z.string().min(1, "File path cannot be empty"),
+export const componentFileSchema = union([
+	string().min(1, "File path cannot be empty"),
 	componentFileObjectSchema,
 ])
 
-export type ComponentFile = z.infer<typeof componentFileSchema>
+export type ComponentFile = ZodInfer<typeof componentFileSchema>
 
 // =============================================================================
 // OPENCODE CONFIG BLOCK SCHEMA
@@ -322,20 +319,18 @@ export type ComponentFile = z.infer<typeof componentFileSchema>
  * Provider configuration for AI model providers.
  * Supports custom API endpoints, headers, and environment variables.
  */
-export const providerConfigSchema = z
-	.object({
-		/** API base URL */
-		api: z.string().optional(),
-		/** Custom headers */
-		headers: z.record(z.string(), z.string()).optional(),
-		/** Environment variables for API keys */
-		env: z.record(z.string(), z.string()).optional(),
-		/** Whether provider is enabled */
-		enabled: z.boolean().optional(),
-	})
-	.passthrough()
+export const providerConfigSchema = object({
+	/** API base URL */
+	api: string().optional(),
+	/** Custom headers */
+	headers: record(string(), string()).optional(),
+	/** Environment variables for API keys */
+	env: record(string(), string()).optional(),
+	/** Whether provider is enabled */
+	enabled: boolean().optional(),
+}).passthrough()
 
-export type ProviderConfig = z.infer<typeof providerConfigSchema>
+export type ProviderConfig = ZodInfer<typeof providerConfigSchema>
 
 // -----------------------------------------------------------------------------
 // LSP, Formatter, Command Configuration
@@ -345,46 +340,40 @@ export type ProviderConfig = z.infer<typeof providerConfigSchema>
  * Language Server Protocol configuration.
  * Defines how to start and configure LSP servers.
  */
-export const lspConfigSchema = z
-	.object({
-		/** Command to run (string or array of args) */
-		command: z.union([z.string(), z.array(z.string())]).optional(),
-		/** Whether LSP is enabled */
-		enabled: z.boolean().optional(),
-	})
-	.passthrough()
+export const lspConfigSchema = object({
+	/** Command to run (string or array of args) */
+	command: union([string(), array(string())]).optional(),
+	/** Whether LSP is enabled */
+	enabled: boolean().optional(),
+}).passthrough()
 
-export type LspConfig = z.infer<typeof lspConfigSchema>
+export type LspConfig = ZodInfer<typeof lspConfigSchema>
 
 /**
  * Formatter configuration for code formatting.
  * Defines the command and file patterns to format.
  */
-export const formatterConfigSchema = z
-	.object({
-		/** Command to run (string or array of args) */
-		command: z.union([z.string(), z.array(z.string())]).optional(),
-		/** Glob pattern for files to format */
-		glob: z.string().optional(),
-	})
-	.passthrough()
+export const formatterConfigSchema = object({
+	/** Command to run (string or array of args) */
+	command: union([string(), array(string())]).optional(),
+	/** Glob pattern for files to format */
+	glob: string().optional(),
+}).passthrough()
 
-export type FormatterConfig = z.infer<typeof formatterConfigSchema>
+export type FormatterConfig = ZodInfer<typeof formatterConfigSchema>
 
 /**
  * Custom command configuration.
  * Defines executable commands with descriptions.
  */
-export const commandConfigSchema = z
-	.object({
-		/** Command description */
-		description: z.string().optional(),
-		/** The command to run */
-		run: z.string().optional(),
-	})
-	.passthrough()
+export const commandConfigSchema = object({
+	/** Command description */
+	description: string().optional(),
+	/** The command to run */
+	run: string().optional(),
+}).passthrough()
 
-export type CommandConfig = z.infer<typeof commandConfigSchema>
+export type CommandConfig = ZodInfer<typeof commandConfigSchema>
 
 // -----------------------------------------------------------------------------
 // TUI, Server, Keybind, Watcher Configuration
@@ -393,49 +382,43 @@ export type CommandConfig = z.infer<typeof commandConfigSchema>
 /**
  * TUI (Terminal User Interface) configuration.
  */
-export const tuiConfigSchema = z
-	.object({
-		/** Disable TUI features */
-		disabled: z.boolean().optional(),
-	})
-	.passthrough()
+export const tuiConfigSchema = object({
+	/** Disable TUI features */
+	disabled: boolean().optional(),
+}).passthrough()
 
-export type TuiConfig = z.infer<typeof tuiConfigSchema>
+export type TuiConfig = ZodInfer<typeof tuiConfigSchema>
 
 /**
  * Server configuration for OpenCode server mode.
  */
-export const serverConfigSchema = z
-	.object({
-		/** Server host */
-		host: z.string().optional(),
-		/** Server port */
-		port: z.number().optional(),
-	})
-	.passthrough()
+export const serverConfigSchema = object({
+	/** Server host */
+	host: string().optional(),
+	/** Server port */
+	port: number().optional(),
+}).passthrough()
 
-export type ServerConfig = z.infer<typeof serverConfigSchema>
+export type ServerConfig = ZodInfer<typeof serverConfigSchema>
 
 /**
  * Keybind configuration - maps action names to key combinations.
  */
-export const keybindConfigSchema = z.record(z.string(), z.string())
+export const keybindConfigSchema = record(string(), string())
 
-export type KeybindConfig = z.infer<typeof keybindConfigSchema>
+export type KeybindConfig = ZodInfer<typeof keybindConfigSchema>
 
 /**
  * File watcher configuration for automatic reloads.
  */
-export const watcherConfigSchema = z
-	.object({
-		/** Patterns to include */
-		include: z.array(z.string()).optional(),
-		/** Patterns to exclude */
-		exclude: z.array(z.string()).optional(),
-	})
-	.passthrough()
+export const watcherConfigSchema = object({
+	/** Patterns to include */
+	include: array(string()).optional(),
+	/** Patterns to exclude */
+	exclude: array(string()).optional(),
+}).passthrough()
 
-export type WatcherConfig = z.infer<typeof watcherConfigSchema>
+export type WatcherConfig = ZodInfer<typeof watcherConfigSchema>
 
 // -----------------------------------------------------------------------------
 // Agent Configuration
@@ -444,152 +427,138 @@ export type WatcherConfig = z.infer<typeof watcherConfigSchema>
 /**
  * Agent configuration options (matches opencode.json agent schema)
  */
-export const agentConfigSchema = z.object({
+export const agentConfigSchema = object({
 	/** Per-agent model override */
-	model: z.string().optional(),
+	model: string().optional(),
 
 	/** Agent description for self-documentation */
-	description: z.string().optional(),
+	description: string().optional(),
 
 	/** Maximum iterations/steps for the agent (must be positive integer) */
-	steps: z.number().int().positive().optional(),
+	steps: number().int().positive().optional(),
 
 	/** @deprecated Use `steps` instead (must be positive integer) */
-	maxSteps: z.number().int().positive().optional(),
+	maxSteps: number().int().positive().optional(),
 
 	/** Agent mode */
-	mode: z.enum(["primary", "subagent", "all"]).optional(),
+	mode: zEnum(["primary", "subagent", "all"]).optional(),
 
 	/** Tool enable/disable patterns */
-	tools: z.record(z.string(), z.boolean()).optional(),
+	tools: record(string(), boolean()).optional(),
 
 	/** Sampling temperature (provider-specific limits) */
-	temperature: z.number().optional(),
+	temperature: number().optional(),
 
 	/** Nucleus sampling parameter */
-	top_p: z.number().optional(),
+	top_p: number().optional(),
 
 	/** Additional prompt text */
-	prompt: z.string().optional(),
+	prompt: string().optional(),
 
 	/**
 	 * Permission matrix for agent operations.
 	 * Use `{ "*": "deny" }` for bash to enable read-only agent detection.
 	 */
-	permission: z
-		.record(
-			z.string(),
-			z.union([
-				z.enum(["ask", "allow", "deny"]),
-				z.record(z.string(), z.enum(["ask", "allow", "deny"])),
-			]),
-		)
-		.optional(),
+	permission: record(
+		string(),
+		union([zEnum(["ask", "allow", "deny"]), record(string(), zEnum(["ask", "allow", "deny"]))]),
+	).optional(),
 
 	/** UI color for the agent */
-	color: z.string().optional(),
+	color: string().optional(),
 
 	/** Whether the agent is disabled */
-	disable: z.boolean().optional(),
+	disable: boolean().optional(),
 
 	/** Custom options for the agent */
-	options: z.record(z.string(), z.any()).optional(),
+	options: record(string(), any()).optional(),
 })
 
-export type AgentConfig = z.infer<typeof agentConfigSchema>
+export type AgentConfig = ZodInfer<typeof agentConfigSchema>
 
 /**
  * Permission configuration schema (matches opencode.json permission schema)
  * Supports both simple values and per-path patterns
  */
-export const permissionConfigSchema = z
-	.object({
-		/**
-		 * Bash command permissions.
-		 * - Use `"allow"` for full bash access
-		 * - Use `{ "*": "deny" }` to deny all bash (required for read-only agent detection)
-		 * - Use patterns like `{ "git *": "allow", "*": "deny" }` for partial access
-		 */
-		bash: z
-			.union([
-				z.enum(["ask", "allow", "deny"]),
-				z.record(z.string(), z.enum(["ask", "allow", "deny"])),
-			])
-			.optional(),
-		/** File edit permissions */
-		edit: z
-			.union([
-				z.enum(["ask", "allow", "deny"]),
-				z.record(z.string(), z.enum(["ask", "allow", "deny"])),
-			])
-			.optional(),
-		/** MCP server permissions */
-		mcp: z.record(z.string(), z.enum(["ask", "allow", "deny"])).optional(),
-	})
-	.catchall(
-		z.union([
-			z.enum(["ask", "allow", "deny"]),
-			z.record(z.string(), z.enum(["ask", "allow", "deny"])),
-		]),
-	)
+export const permissionConfigSchema = object({
+	/**
+	 * Bash command permissions.
+	 * - Use `"allow"` for full bash access
+	 * - Use `{ "*": "deny" }` to deny all bash (required for read-only agent detection)
+	 * - Use patterns like `{ "git *": "allow", "*": "deny" }` for partial access
+	 */
+	bash: union([
+		zEnum(["ask", "allow", "deny"]),
+		record(string(), zEnum(["ask", "allow", "deny"])),
+	]).optional(),
+	/** File edit permissions */
+	edit: union([
+		zEnum(["ask", "allow", "deny"]),
+		record(string(), zEnum(["ask", "allow", "deny"])),
+	]).optional(),
+	/** MCP server permissions */
+	mcp: record(string(), zEnum(["ask", "allow", "deny"])).optional(),
+}).catchall(
+	union([zEnum(["ask", "allow", "deny"]), record(string(), zEnum(["ask", "allow", "deny"]))]),
+)
 
-export type PermissionConfig = z.infer<typeof permissionConfigSchema>
+export type PermissionConfig = ZodInfer<typeof permissionConfigSchema>
 
 /**
  * OpenCode configuration block
  * Mirrors opencode.json structure exactly for 1:1 mapping
  */
-export const opencodeConfigSchema = z.object({
+export const opencodeConfigSchema = object({
 	/** JSON Schema URL for IDE support */
-	$schema: z.string().optional(),
+	$schema: string().optional(),
 
 	/** UI theme name */
-	theme: z.string().optional(),
+	theme: string().optional(),
 
 	/** Logging level */
-	logLevel: z.string().optional(),
+	logLevel: string().optional(),
 
 	/** Username for display */
-	username: z.string().optional(),
+	username: string().optional(),
 
 	/** Default model to use */
-	model: z.string().optional(),
+	model: string().optional(),
 
 	/** Small/fast model for simple tasks */
-	small_model: z.string().optional(),
+	small_model: string().optional(),
 
 	/** Default agent to use */
-	default_agent: z.string().optional(),
+	default_agent: string().optional(),
 
 	/** MCP servers (matches opencode.json 'mcp' field) */
-	mcp: z.record(z.string(), mcpServerRefSchema).optional(),
+	mcp: record(string(), mcpServerRefSchema).optional(),
 
 	/** NPM plugin packages to add to opencode.json 'plugin' array */
-	plugin: z.array(z.string()).optional(),
+	plugin: array(string()).optional(),
 
 	/** Tool enable/disable patterns */
-	tools: z.record(z.string(), z.boolean()).optional(),
+	tools: record(string(), boolean()).optional(),
 
 	/** Per-agent configuration */
-	agent: z.record(z.string(), agentConfigSchema).optional(),
+	agent: record(string(), agentConfigSchema).optional(),
 
 	/** Global instructions to append */
-	instructions: z.array(z.string()).optional(),
+	instructions: array(string()).optional(),
 
 	/** Permission configuration */
 	permission: permissionConfigSchema.optional(),
 
 	/** Provider configurations */
-	provider: z.record(z.string(), providerConfigSchema).optional(),
+	provider: record(string(), providerConfigSchema).optional(),
 
 	/** LSP configurations */
-	lsp: z.record(z.string(), lspConfigSchema).optional(),
+	lsp: record(string(), lspConfigSchema).optional(),
 
 	/** Formatter configurations */
-	formatter: z.record(z.string(), formatterConfigSchema).optional(),
+	formatter: record(string(), formatterConfigSchema).optional(),
 
 	/** Custom command configurations */
-	command: z.record(z.string(), commandConfigSchema).optional(),
+	command: record(string(), commandConfigSchema).optional(),
 
 	/** TUI configuration */
 	tui: tuiConfigSchema.optional(),
@@ -604,22 +573,22 @@ export const opencodeConfigSchema = z.object({
 	watcher: watcherConfigSchema.optional(),
 
 	/** Enable auto-updates */
-	auto_update: z.boolean().optional(),
+	auto_update: boolean().optional(),
 
 	/** Enable auto-compaction */
-	auto_compact: z.boolean().optional(),
+	auto_compact: boolean().optional(),
 
 	/** Share configuration (boolean or URL string) */
-	share: z.union([z.boolean(), z.string()]).optional(),
+	share: union([boolean(), string()]).optional(),
 })
 
-export type OpencodeConfig = z.infer<typeof opencodeConfigSchema>
+export type OpencodeConfig = ZodInfer<typeof opencodeConfigSchema>
 
 // =============================================================================
 // COMPONENT MANIFEST SCHEMA
 // =============================================================================
 
-export const componentManifestSchema = z.object({
+export const componentManifestSchema = object({
 	/** Component name (clean, no alias prefix) */
 	name: openCodeNameSchema,
 
@@ -627,7 +596,7 @@ export const componentManifestSchema = z.object({
 	type: componentTypeSchema,
 
 	/** Human-readable description */
-	description: z.string().min(1).max(1024),
+	description: string().min(1).max(1024),
 
 	/**
 	 * Files to install (Cargo-style)
@@ -635,20 +604,20 @@ export const componentManifestSchema = z.object({
 	 * - Object: { path: "...", target: "..." } for explicit control
 	 * - Optional: bundles (deps-only) may have no files
 	 */
-	files: z.array(componentFileSchema).default([]),
+	files: array(componentFileSchema).default([]),
 
 	/**
 	 * Dependencies on other components (Cargo-style)
 	 * - Bare string: "utils" -> same registry alias (implicit)
 	 * - Qualified: "acme/utils" -> cross-registry (explicit)
 	 */
-	dependencies: z.array(dependencyRefSchema).default([]),
+	dependencies: array(dependencyRefSchema).default([]),
 
 	/** NPM dependencies to install (supports pkg@version syntax) */
-	npmDependencies: z.array(z.string()).optional(),
+	npmDependencies: array(string()).optional(),
 
 	/** NPM dev dependencies to install (supports pkg@version syntax) */
-	npmDevDependencies: z.array(z.string()).optional(),
+	npmDevDependencies: array(string()).optional(),
 
 	/**
 	 * OpenCode configuration to merge into opencode.json
@@ -657,7 +626,7 @@ export const componentManifestSchema = z.object({
 	opencode: opencodeConfigSchema.optional(),
 })
 
-export type ComponentManifest = z.infer<typeof componentManifestSchema>
+export type ComponentManifest = ZodInfer<typeof componentManifestSchema>
 
 // =============================================================================
 // NORMALIZER FUNCTIONS (Parse, Don't Validate - Law 2)
@@ -938,117 +907,111 @@ const semverRegex = /^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$/
  * Omitting `name` or `version` is a validation error at parse time
  * (Law 4: Fail Fast, Fail Loud).
  */
-export const registrySchema = z
-	.object({
-		/** JSON Schema URL for IDE support */
-		$schema: z.string().optional(),
+export const registrySchema = object({
+	/** JSON Schema URL for IDE support */
+	$schema: string().optional(),
 
-		/** Registry display name (required — identifies the registry to users and tooling) */
-		name: z.string().min(1, "Registry name cannot be empty"),
+	/** Registry display name (required — identifies the registry to users and tooling) */
+	name: string().min(1, "Registry name cannot be empty"),
 
-		/** Registry version, semver (required — enables deterministic resolution and caching) */
-		version: z.string().regex(semverRegex, { message: "Version must be valid semver" }),
+	/** Registry version, semver (required — enables deterministic resolution and caching) */
+	version: string().regex(semverRegex, { message: "Version must be valid semver" }),
 
-		/** Registry author (required) */
-		author: z.string().min(1, "Author cannot be empty"),
+	/** Registry author (required) */
+	author: string().min(1, "Author cannot be empty"),
 
-		/** Minimum OpenCode version required (semver, e.g., "1.0.0") */
-		opencode: z
-			.string()
-			.regex(semverRegex, {
-				message: "OpenCode version must be valid semver",
-			})
-			.optional(),
+	/** Minimum OpenCode version required (semver, e.g., "1.0.0") */
+	opencode: string()
+		.regex(semverRegex, {
+			message: "OpenCode version must be valid semver",
+		})
+		.optional(),
 
-		/** Minimum OCX CLI version required (semver, e.g., "1.0.0") */
-		ocx: z
-			.string()
-			.regex(semverRegex, {
-				message: "OCX version must be valid semver",
-			})
-			.optional(),
+	/** Minimum OCX CLI version required (semver, e.g., "1.0.0") */
+	ocx: string()
+		.regex(semverRegex, {
+			message: "OCX version must be valid semver",
+		})
+		.optional(),
 
-		/** Components in this registry */
-		components: z.array(componentManifestSchema),
-	})
-	.refine(
-		(data) => {
-			// All dependencies must either:
-			// 1. Be a bare name that exists in this registry
-			// 2. Be a qualified cross-registry reference (validated at install time)
-			const componentNames = new Set(data.components.map((c) => c.name))
-			for (const component of data.components) {
-				for (const dep of component.dependencies) {
-					// Only validate bare (same-registry) dependencies
-					if (!dep.includes("/") && !componentNames.has(dep)) {
-						return false
-					}
+	/** Components in this registry */
+	components: array(componentManifestSchema),
+}).refine(
+	(data) => {
+		// All dependencies must either:
+		// 1. Be a bare name that exists in this registry
+		// 2. Be a qualified cross-registry reference (validated at install time)
+		const componentNames = new Set(data.components.map((c) => c.name))
+		for (const component of data.components) {
+			for (const dep of component.dependencies) {
+				// Only validate bare (same-registry) dependencies
+				if (!dep.includes("/") && !componentNames.has(dep)) {
+					return false
 				}
 			}
-			return true
-		},
-		{
-			message:
-				"Bare dependencies must reference components that exist in the registry. Use qualified references (e.g., 'other-registry/component') for cross-registry dependencies.",
-		},
-	)
+		}
+		return true
+	},
+	{
+		message:
+			"Bare dependencies must reference components that exist in the registry. Use qualified references (e.g., 'other-registry/component') for cross-registry dependencies.",
+	},
+)
 
-export type Registry = z.infer<typeof registrySchema>
+export type Registry = ZodInfer<typeof registrySchema>
 
 // =============================================================================
 // PACKUMENT SCHEMA (npm-style versioned component)
 // =============================================================================
 
-export const packumentSchema = z.object({
+export const packumentSchema = object({
 	/** Component name */
 	name: openCodeNameSchema,
 
 	/** Latest version */
-	"dist-tags": z.object({
-		latest: z.string(),
+	"dist-tags": object({
+		latest: string(),
 	}),
 
 	/** All versions */
-	versions: z.record(z.string(), componentManifestSchema),
+	versions: record(string(), componentManifestSchema),
 })
 
-export type Packument = z.infer<typeof packumentSchema>
+export type Packument = ZodInfer<typeof packumentSchema>
 
 // =============================================================================
 // REGISTRY INDEX SCHEMA
 // =============================================================================
 
-export const registryIndexSchema = z.object({
+export const registryIndexSchema = object({
 	/** JSON Schema URL for IDE support */
-	$schema: z.string().optional(),
+	$schema: string().optional(),
 
 	/** Registry author */
-	author: z.string(),
+	author: string(),
 
 	/** Minimum OpenCode version required */
-	opencode: z
-		.string()
+	opencode: string()
 		.regex(semverRegex, {
 			message: "OpenCode version must be valid semver",
 		})
 		.optional(),
 
 	/** Minimum OCX CLI version required */
-	ocx: z
-		.string()
+	ocx: string()
 		.regex(semverRegex, {
 			message: "OCX version must be valid semver",
 		})
 		.optional(),
 
 	/** Component summaries for search */
-	components: z.array(
-		z.object({
+	components: array(
+		object({
 			name: openCodeNameSchema,
 			type: componentTypeSchema,
-			description: z.string(),
+			description: string(),
 		}),
 	),
 })
 
-export type RegistryIndex = z.infer<typeof registryIndexSchema>
+export type RegistryIndex = ZodInfer<typeof registryIndexSchema>

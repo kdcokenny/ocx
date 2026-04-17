@@ -16,7 +16,7 @@ import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative } from "node:path"
 import { Glob } from "bun"
 import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
-import { z } from "zod"
+import { array, object, string } from "zod"
 import { findLocalConfigDir, OCX_CONFIG_FILE } from "../profile/paths"
 import { ConfigError } from "../utils/errors"
 import { validatePath } from "../utils/path-security"
@@ -270,12 +270,10 @@ async function assertSafeOverlayDestinationPath(
 	}
 }
 
-const projectOverlayPolicySchema = z
-	.object({
-		include: z.array(z.string()).optional(),
-		exclude: z.array(z.string()).optional(),
-	})
-	.passthrough()
+const projectOverlayPolicySchema = object({
+	include: array(string()).optional(),
+	exclude: array(string()).optional(),
+}).passthrough()
 
 function validatePolicyPatterns(
 	policyPath: string,

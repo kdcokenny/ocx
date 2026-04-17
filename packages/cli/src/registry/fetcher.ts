@@ -4,7 +4,7 @@
  */
 
 import { posix as posixPath } from "node:path"
-import { z } from "zod"
+import { record, string, unknown } from "zod"
 import type { ComponentManifest, McpServer, RegistryIndex } from "../schemas/registry"
 import {
 	classifyRegistrySchemaIssue,
@@ -50,7 +50,7 @@ const LEGACY_TARGET_KIND_MAP = {
 } as const
 
 const packumentEnvelopeSchema = packumentSchema.extend({
-	versions: z.record(z.string(), z.unknown()),
+	versions: record(string(), unknown()),
 })
 
 function createCompatibilityError(

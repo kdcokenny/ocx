@@ -9,14 +9,15 @@
  */
 
 import { Glob } from "bun"
-import { z } from "zod"
+import type { infer as ZodInfer } from "zod"
+import { array, boolean, object, record, string } from "zod"
 import { safeRelativePathSchema } from "./common"
 import { registryConfigSchema } from "./config"
 
 /**
  * Validates that a string is a valid glob pattern.
  */
-const globPatternSchema = z.string().refine(
+const globPatternSchema = string().refine(
 	(pattern) => {
 		try {
 			new Glob(pattern)
@@ -39,18 +40,18 @@ const globPatternSchema = z.string().refine(
  * OpenCode configuration is stored separately in opencode.jsonc.
  * Profiles layer: global base + local overlay of same name (overlay wins).
  */
-export const profileOcxConfigSchema = z.object({
+export const profileOcxConfigSchema = object({
 	/** Schema URL for IDE support */
-	$schema: z.string().optional(),
+	$schema: string().optional(),
 
 	/** Path to OpenCode binary. Falls back to OPENCODE_BIN env var, then "opencode". */
-	bin: z.string().optional(),
+	bin: string().optional(),
 
 	/**
 	 * Configured registries for OCX profiles
 	 * Same format as ocx.jsonc registries
 	 */
-	registries: z.record(z.string(), registryConfigSchema).default({}),
+	registries: record(string(), registryConfigSchema).default({}),
 
 	/**
 	 * Optional default component path for installations
@@ -63,8 +64,7 @@ export const profileOcxConfigSchema = z.object({
 	 * Whether to set terminal/tmux window name when launching OpenCode.
 	 * Set to false to preserve your existing terminal title.
 	 */
-	renameWindow: z
-		.boolean()
+	renameWindow: boolean()
 		.default(true)
 		.describe("Set terminal/tmux window name when launching OpenCode"),
 
@@ -73,8 +73,7 @@ export const profileOcxConfigSchema = z.object({
 	 * Controls visibility of local config files.
 	 * Note: AGENTS.md is NOT excluded by default - uncomment in ocx.jsonc to exclude.
 	 */
-	exclude: z
-		.array(globPatternSchema)
+	exclude: array(globPatternSchema)
 		.default([
 			"**/CLAUDE.md",
 			"**/CONTEXT.md",
@@ -88,10 +87,9 @@ export const profileOcxConfigSchema = z.object({
 	 * V2: Glob patterns for project files to include (overrides exclude).
 	 * Use when you need specific files from otherwise excluded patterns.
 	 */
-	include: z
-		.array(globPatternSchema)
+	include: array(globPatternSchema)
 		.default([])
 		.describe("Glob patterns for project files to include (overrides exclude)"),
 })
 
-export type ProfileOcxConfig = z.infer<typeof profileOcxConfigSchema>
+export type ProfileOcxConfig = ZodInfer<typeof profileOcxConfigSchema>

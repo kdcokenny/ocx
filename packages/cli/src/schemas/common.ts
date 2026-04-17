@@ -5,7 +5,7 @@
  * Following Law 2: Parse at boundary - validate once, trust internally.
  */
 
-import { z } from "zod"
+import { string } from "zod"
 import { isAbsolutePath } from "../utils/path-helpers"
 
 /**
@@ -17,8 +17,7 @@ import { isAbsolutePath } from "../utils/path-helpers"
  * - Path traversal segments (..)
  * - Absolute paths (Unix and Windows, including UNC paths)
  */
-export const safeRelativePathSchema = z
-	.string()
+export const safeRelativePathSchema = string()
 	.refine((val) => !val.includes("\0"), "Path cannot contain null bytes")
 	.refine((val) => !val.split(/[/\\]/).some((seg) => seg === ".."), "Path cannot contain '..'")
 	.refine((val) => !isAbsolutePath(val), "Path must be relative, not absolute")
