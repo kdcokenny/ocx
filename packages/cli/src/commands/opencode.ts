@@ -705,7 +705,7 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 			return
 		}
 
-		const gitInfo = await getGitInfo(projectDir)
+		const gitInfo = shouldRename ? await getGitInfo(projectDir) : { repoName: null, branch: null }
 		if (preSpawnSignalExitCode !== null) {
 			childExitCode = preSpawnSignalExitCode
 			return

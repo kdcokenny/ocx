@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { mkdir, readFile } from "node:fs/promises"
+import { mkdir, readFile, symlink } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	buildOpenCodeEnv,
@@ -760,6 +760,41 @@ describe("oc command CLI contract", () => {
 			}
 			expect(parsedTitleContext.mayWriteOscTitle).toBe(false)
 			expect(parsedTitleContext.baseTitle).toContain("ocx[default]:")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("launches with --no-rename even when git is unavailable (regression)", async () => {
+		const testDir = await createTempDir("oc-contract-no-rename-no-git")
+		try {
+			const bunExecutable = Bun.which("bun")
+			if (!bunExecutable) {
+				throw new Error("bun executable is required for opencode CLI tests")
+			}
+
+			const isolatedBinDir = join(testDir, "isolated-bin")
+			await mkdir(isolatedBinDir, { recursive: true })
+			await symlink(bunExecutable, join(isolatedBinDir, "bun"))
+
+			const capturePath = join(testDir, "capture-no-git.ts")
+			const outputPath = join(testDir, "captured-no-git.json")
+			await Bun.write(
+				capturePath,
+				`const outputPath = process.argv[2];\nif (!outputPath) throw new Error("missing output path");\nawait Bun.write(outputPath, JSON.stringify({ ok: true }));\n`,
+			)
+
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "run", capturePath, outputPath],
+				testDir,
+				{
+					OPENCODE_BIN: "bun",
+					PATH: isolatedBinDir,
+				},
+			)
+
+			expect(result.exitCode).toBe(0)
+			expect(await Bun.file(outputPath).exists()).toBe(true)
 		} finally {
 			await cleanupTempDir(testDir)
 		}
