@@ -58,7 +58,13 @@
 			"name": "notify",
 			"type": "plugin",
 			"description": "Native OS notifications - get notified when tasks complete",
-			"files": ["plugins/notify.ts", "plugins/notify/backend.ts", "plugins/notify/cmux.ts"],
+			"files": [
+				"plugins/notify.ts",
+				"plugins/notify/backend.ts",
+				"plugins/notify/cmux.ts",
+				"plugins/notify/status.ts",
+				"plugins/notify/title.ts"
+			],
 			"dependencies": ["kdco-primitives"],
 			"npmDevDependencies": ["node-notifier@10.0.1", "detect-terminal@2.0.0"]
 		},

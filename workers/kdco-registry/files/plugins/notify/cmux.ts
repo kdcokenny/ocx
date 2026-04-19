@@ -1,9 +1,19 @@
 import { TimeoutError, withTimeout } from "../kdco-primitives/with-timeout"
+import { canUseCmuxWorkflow } from "../worktree/terminal"
 
 interface CmuxNotificationPayload {
 	title: string
 	body: string
 	subtitle?: string
+}
+
+interface CmuxStatusPayload {
+	key: string
+	text: string
+}
+
+interface CmuxClearStatusPayload {
+	key: string
 }
 
 type ResolveExecutable = (command: string) => string | null | undefined
@@ -22,15 +32,20 @@ const spawnCmuxWithBun: SpawnCmuxProcess = (command) =>
 	})
 
 export const CMUX_NOTIFY_TIMEOUT_MS = 1500
+export const CMUX_STATUS_TIMEOUT_MS = CMUX_NOTIFY_TIMEOUT_MS
+
+type CmuxExecutionOptions = {
+	timeoutMs?: number
+	spawnProcess?: SpawnCmuxProcess
+	cmuxCommand?: string
+}
 
 export function canUseCmuxNotification(
 	env: EnvironmentVariables = process.env,
 	resolveExecutable: ResolveExecutable = resolveWithBunWhich,
+	cmuxCommand: string = "cmux",
 ): boolean {
-	const workspaceID = env.CMUX_WORKSPACE_ID?.trim()
-	if (!workspaceID) return false
-
-	return Boolean(resolveExecutable("cmux"))
+	return canUseCmuxWorkflow(env, resolveExecutable, cmuxCommand)
 }
 
 export function buildCmuxNotifyArgs(payload: CmuxNotificationPayload): string[] {
@@ -46,21 +61,28 @@ export function buildCmuxNotifyArgs(payload: CmuxNotificationPayload): string[] 
 	return args
 }
 
-export async function sendCmuxNotification(
-	payload: CmuxNotificationPayload,
-	options?: {
-		timeoutMs?: number
-		spawnProcess?: SpawnCmuxProcess
-	},
-): Promise<boolean> {
+export function buildCmuxStatusArgs(payload: CmuxStatusPayload): string[] {
+	return ["set-status", payload.key, payload.text]
+}
+
+export function buildCmuxClearStatusArgs(payload: CmuxClearStatusPayload): string[] {
+	return ["clear-status", payload.key]
+}
+
+async function executeCmuxCommand(commandArgs: string[], options?: CmuxExecutionOptions): Promise<boolean> {
 	const timeoutMs = options?.timeoutMs ?? CMUX_NOTIFY_TIMEOUT_MS
 	const spawnProcess = options?.spawnProcess ?? spawnCmuxWithBun
+	const cmuxCommand = options?.cmuxCommand ?? "cmux"
 
 	try {
-		const proc = spawnProcess(["cmux", ...buildCmuxNotifyArgs(payload)])
+		const proc = spawnProcess([cmuxCommand, ...commandArgs])
 
 		try {
-			const exitCode = await withTimeout(proc.exited, timeoutMs, "cmux notify timed out")
+			const exitCode = await withTimeout(
+				proc.exited,
+				timeoutMs,
+				`cmux ${commandArgs[0] ?? "command"} timed out`,
+			)
 			return exitCode === 0
 		} catch (error) {
 			if (error instanceof TimeoutError) {
@@ -76,4 +98,31 @@ export async function sendCmuxNotification(
 	} catch {
 		return false
 	}
+}
+
+export async function sendCmuxNotification(
+	payload: CmuxNotificationPayload,
+	options?: CmuxExecutionOptions,
+): Promise<boolean> {
+	return executeCmuxCommand(buildCmuxNotifyArgs(payload), options)
+}
+
+export async function sendCmuxStatus(
+	payload: CmuxStatusPayload,
+	options?: CmuxExecutionOptions,
+): Promise<boolean> {
+	return executeCmuxCommand(buildCmuxStatusArgs(payload), {
+		...options,
+		timeoutMs: options?.timeoutMs ?? CMUX_STATUS_TIMEOUT_MS,
+	})
+}
+
+export async function clearCmuxStatus(
+	payload: CmuxClearStatusPayload,
+	options?: CmuxExecutionOptions,
+): Promise<boolean> {
+	return executeCmuxCommand(buildCmuxClearStatusArgs(payload), {
+		...options,
+		timeoutMs: options?.timeoutMs ?? CMUX_STATUS_TIMEOUT_MS,
+	})
 }

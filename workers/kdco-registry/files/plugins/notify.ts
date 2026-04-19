@@ -5,7 +5,7 @@
  * Philosophy: "Notify the human when the AI needs them back, not for every micro-event."
  *
  * Features:
- * - Uses cmux native notifications when running inside cmux
+ * - Uses cmux native notifications and session status when running inside cmux
  * - Auto-detects terminal emulator (Ghostty, Kitty, iTerm, WezTerm, etc.)
  * - Suppresses notifications when terminal is focused (like Ghostty does)
  * - Click notification to focus terminal
@@ -13,6 +13,7 @@
  *
  * Uses cmux CLI first (if available), then node-notifier fallback:
  * - cmux: `cmux notify --title ... --subtitle ... --body ...`
+ * - cmux status: `cmux set-status <key> <value>` / `cmux clear-status <key>`
  * - macOS: terminal-notifier (native NSUserNotificationCenter)
  * - Windows: SnoreToast (native toast notifications)
  * - Linux: notify-send (native desktop notifications)
@@ -29,7 +30,19 @@ import detectTerminal from "detect-terminal"
 import notifier from "node-notifier"
 import type { OpencodeClient } from "./kdco-primitives/types"
 import { sendNotificationWithFallback } from "./notify/backend"
-import { canUseCmuxNotification, sendCmuxNotification } from "./notify/cmux"
+import {
+	canUseCmuxNotification,
+	clearCmuxStatus,
+	sendCmuxNotification,
+	sendCmuxStatus,
+} from "./notify/cmux"
+import {
+	buildCmuxSessionStatusTransitionForEvent,
+	buildCmuxSessionStatusTransitionForQuestionTool,
+	getCmuxSessionStatusText,
+	type CmuxSessionStatusTransition,
+} from "./notify/status"
+import { parseOscTitleContext, writeOscTitleBestEffort } from "./notify/title"
 
 interface NotifyConfig {
 	/** Notify for child/sub-session events (default: false) */
@@ -237,8 +250,58 @@ interface NotificationRuntime {
 const QUESTION_DEDUPE_WINDOW_MS = 1500
 const READY_DEDUPE_WINDOW_MS = 1500
 const PERMISSION_DEDUPE_WINDOW_MS = 1500
+const CMUX_SESSION_STATUS_KEY_PREFIX = "opencode.session"
+const CMUX_BUSY_ANIMATION_INTERVAL_MS = 80
+const CMUX_BUSY_ANIMATION_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const
 
 type RecentNotifications = Map<string, number>
+type SessionLogicalState = CmuxSessionStatusTransition["logicalState"]
+type CmuxSessionLogicalStateBySessionID = Map<
+	string,
+	SessionLogicalState
+>
+type TitleSessionLogicalStateBySessionID = Map<string, SessionLogicalState>
+type CmuxSessionStatusWriteIntent =
+	| {
+		readonly sessionID: string
+		readonly kind: "set-status"
+		readonly text: string
+	}
+	| {
+		readonly sessionID: string
+		readonly kind: "clear-status"
+	}
+
+function isCmuxSessionStatusWriteIntentEqual(
+	left: CmuxSessionStatusWriteIntent,
+	right: CmuxSessionStatusWriteIntent,
+): boolean {
+	if (left.kind !== right.kind) return false
+	if (left.kind === "clear-status" || right.kind === "clear-status") return true
+	return left.text === right.text
+}
+
+function buildCmuxSessionStatusWriteIntentForLogicalState(
+	sessionID: string,
+	logicalState: Exclude<CmuxSessionStatusTransition["logicalState"], "animated-busy">,
+): CmuxSessionStatusWriteIntent {
+	if (logicalState === "idle") {
+		return {
+			sessionID,
+			kind: "clear-status",
+		}
+	}
+
+	return {
+		sessionID,
+		kind: "set-status",
+		text: getCmuxSessionStatusText(logicalState),
+	}
+}
+
+function buildCmuxSessionStatusKey(sessionID: string): string {
+	return `${CMUX_SESSION_STATUS_KEY_PREFIX}.${sessionID}`
+}
 
 function toNonEmptyString(value: unknown): string | null {
 	if (typeof value !== "string") return null
@@ -496,9 +559,326 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 	const notificationRuntime: NotificationRuntime = {
 		preferCmux: canUseCmuxNotification(),
 	}
+	const oscTitleContext = parseOscTitleContext()
+	const shouldSuppressCmuxSessionStatusWrites = oscTitleContext?.mayWriteOscTitle === true
 	const recentQuestionNotifications: RecentNotifications = new Map()
 	const recentReadyNotifications: RecentNotifications = new Map()
 	const recentPermissionNotifications: RecentNotifications = new Map()
+	const titleSessionLogicalStates: TitleSessionLogicalStateBySessionID = new Map()
+	const titleBusySessionIDs = new Set<string>()
+	let titleBusySpinnerFrameIndex = 0
+	let titleBusySpinnerTicker: ReturnType<typeof setInterval> | null = null
+	let lastWrittenOscTitle: string | null = null
+	const cmuxSessionLogicalStates: CmuxSessionLogicalStateBySessionID = new Map()
+	const committedCmuxSessionStatusWrites = new Map<string, CmuxSessionStatusWriteIntent>()
+	const pendingCmuxSessionStatusWrites = new Map<string, CmuxSessionStatusWriteIntent>()
+	const animatedBusySessionIDs = new Set<string>()
+	const busyAnimationFrameIndexBySessionID = new Map<string, number>()
+	let busyAnimationTicker: ReturnType<typeof setInterval> | null = null
+	let cmuxStatusUpdatesDisabled = shouldSuppressCmuxSessionStatusWrites
+	let isCmuxStatusDrainActive = false
+	let inFlightCmuxSessionStatusWrite: CmuxSessionStatusWriteIntent | null = null
+
+	const writeOscTitleIfNeeded = (title: string): void => {
+		if (!oscTitleContext?.mayWriteOscTitle) return
+		if (lastWrittenOscTitle === title) return
+
+		lastWrittenOscTitle = title
+		writeOscTitleBestEffort(title)
+	}
+
+	const buildBusySpinnerTitle = (): string => {
+		const frame =
+			CMUX_BUSY_ANIMATION_FRAMES[titleBusySpinnerFrameIndex] ?? CMUX_BUSY_ANIMATION_FRAMES[0]
+		titleBusySpinnerFrameIndex = (titleBusySpinnerFrameIndex + 1) % CMUX_BUSY_ANIMATION_FRAMES.length
+		return `${frame} ${oscTitleContext?.baseTitle ?? ""}`
+	}
+
+	const stopTitleBusySpinnerTicker = (): void => {
+		if (!titleBusySpinnerTicker) return
+
+		clearInterval(titleBusySpinnerTicker)
+		titleBusySpinnerTicker = null
+	}
+
+	const writeNextBusyOscTitleFrame = (): void => {
+		if (titleBusySessionIDs.size === 0) {
+			return
+		}
+
+		writeOscTitleIfNeeded(buildBusySpinnerTitle())
+	}
+
+	const startTitleBusySpinnerTicker = (): void => {
+		if (!oscTitleContext?.mayWriteOscTitle) return
+		if (titleBusySpinnerTicker || titleBusySessionIDs.size === 0) return
+
+		const interval = setInterval(() => {
+			if (titleBusySessionIDs.size === 0) {
+				stopTitleBusySpinnerTicker()
+				return
+			}
+
+			writeNextBusyOscTitleFrame()
+		}, CMUX_BUSY_ANIMATION_INTERVAL_MS)
+
+		;(interval as { unref?: () => void }).unref?.()
+		titleBusySpinnerTicker = interval
+	}
+
+	const startBusyOscTitleForSession = (sessionID: string): void => {
+		const wasBusy = titleBusySessionIDs.has(sessionID)
+		titleBusySessionIDs.add(sessionID)
+
+		if (!wasBusy && titleBusySessionIDs.size === 1) {
+			titleBusySpinnerFrameIndex = 0
+			writeNextBusyOscTitleFrame()
+		}
+
+		startTitleBusySpinnerTicker()
+	}
+
+	const stopBusyOscTitleForSession = (sessionID: string): void => {
+		titleBusySessionIDs.delete(sessionID)
+
+		if (titleBusySessionIDs.size > 0) {
+			return
+		}
+
+		stopTitleBusySpinnerTicker()
+		titleBusySpinnerFrameIndex = 0
+		if (oscTitleContext) {
+			writeOscTitleIfNeeded(oscTitleContext.baseTitle)
+		}
+	}
+
+	const applyOscTitleSessionStatusTransition = (
+		transition: CmuxSessionStatusTransition | null,
+	): void => {
+		if (!oscTitleContext?.mayWriteOscTitle || !transition) return
+
+		const previousLogicalState = titleSessionLogicalStates.get(transition.sessionID)
+		if (previousLogicalState === transition.logicalState) return
+
+		titleSessionLogicalStates.set(transition.sessionID, transition.logicalState)
+
+		if (transition.logicalState === "animated-busy") {
+			startBusyOscTitleForSession(transition.sessionID)
+			return
+		}
+
+		stopBusyOscTitleForSession(transition.sessionID)
+	}
+
+	const pruneCmuxSessionStateAfterTerminalClear = (sessionID: string): boolean => {
+		if (cmuxSessionLogicalStates.get(sessionID) !== "idle") return false
+		if (pendingCmuxSessionStatusWrites.has(sessionID)) return false
+		if (inFlightCmuxSessionStatusWrite?.sessionID === sessionID) return false
+
+		cmuxSessionLogicalStates.delete(sessionID)
+		committedCmuxSessionStatusWrites.delete(sessionID)
+		animatedBusySessionIDs.delete(sessionID)
+		busyAnimationFrameIndexBySessionID.delete(sessionID)
+
+		if (animatedBusySessionIDs.size === 0) {
+			stopBusyAnimationTicker()
+		}
+
+		return true
+	}
+
+	const stopBusyAnimationTicker = (): void => {
+		if (!busyAnimationTicker) return
+
+		clearInterval(busyAnimationTicker)
+		busyAnimationTicker = null
+	}
+
+	const clearBusyAnimationState = (): void => {
+		stopBusyAnimationTicker()
+		animatedBusySessionIDs.clear()
+		busyAnimationFrameIndexBySessionID.clear()
+	}
+
+	const getLatestCmuxSessionStatusWriteForSession = (
+		sessionID: string,
+	): CmuxSessionStatusWriteIntent | undefined => {
+		const pendingWrite = pendingCmuxSessionStatusWrites.get(sessionID)
+		if (pendingWrite) {
+			return pendingWrite
+		}
+
+		if (inFlightCmuxSessionStatusWrite?.sessionID === sessionID) {
+			return inFlightCmuxSessionStatusWrite
+		}
+
+		return committedCmuxSessionStatusWrites.get(sessionID)
+	}
+
+	const dequeueNextCmuxSessionStatusWrite = (): CmuxSessionStatusWriteIntent | null => {
+		const next = pendingCmuxSessionStatusWrites.values().next().value
+		if (!next) return null
+
+		pendingCmuxSessionStatusWrites.delete(next.sessionID)
+		return next
+	}
+
+	const runCmuxSessionStatusWrite = async (
+		writeIntent: CmuxSessionStatusWriteIntent,
+	): Promise<boolean> => {
+		const statusKey = buildCmuxSessionStatusKey(writeIntent.sessionID)
+		if (writeIntent.kind === "clear-status") {
+			return clearCmuxStatus({ key: statusKey })
+		}
+
+		return sendCmuxStatus({
+			key: statusKey,
+			text: writeIntent.text,
+		})
+	}
+
+	const drainCmuxSessionStatusWrites = async (): Promise<void> => {
+		if (isCmuxStatusDrainActive || cmuxStatusUpdatesDisabled) return
+
+		isCmuxStatusDrainActive = true
+
+		try {
+			while (!cmuxStatusUpdatesDisabled) {
+				const nextWriteIntent = dequeueNextCmuxSessionStatusWrite()
+				if (!nextWriteIntent) return
+
+				inFlightCmuxSessionStatusWrite = nextWriteIntent
+				const didUpdateStatus = await runCmuxSessionStatusWrite(nextWriteIntent)
+				inFlightCmuxSessionStatusWrite = null
+
+				if (!didUpdateStatus) {
+					cmuxStatusUpdatesDisabled = true
+					pendingCmuxSessionStatusWrites.clear()
+					clearBusyAnimationState()
+					return
+				}
+
+				if (
+					nextWriteIntent.kind === "clear-status" &&
+					pruneCmuxSessionStateAfterTerminalClear(nextWriteIntent.sessionID)
+				) {
+					continue
+				}
+
+				committedCmuxSessionStatusWrites.set(nextWriteIntent.sessionID, nextWriteIntent)
+			}
+		} finally {
+			inFlightCmuxSessionStatusWrite = null
+			isCmuxStatusDrainActive = false
+
+			if (!cmuxStatusUpdatesDisabled && pendingCmuxSessionStatusWrites.size > 0) {
+				void drainCmuxSessionStatusWrites()
+			}
+		}
+	}
+
+	const enqueueCmuxSessionStatusWrite = (writeIntent: CmuxSessionStatusWriteIntent): void => {
+		if (!notificationRuntime.preferCmux || cmuxStatusUpdatesDisabled) return
+
+		const latestWriteIntent = getLatestCmuxSessionStatusWriteForSession(writeIntent.sessionID)
+		if (latestWriteIntent && isCmuxSessionStatusWriteIntentEqual(latestWriteIntent, writeIntent)) return
+
+		pendingCmuxSessionStatusWrites.set(writeIntent.sessionID, writeIntent)
+		void drainCmuxSessionStatusWrites()
+	}
+
+	const enqueueNextBusyAnimationFrame = (sessionID: string): void => {
+		if (!animatedBusySessionIDs.has(sessionID)) return
+
+		const frameIndex = busyAnimationFrameIndexBySessionID.get(sessionID) ?? 0
+		const frameText = CMUX_BUSY_ANIMATION_FRAMES[frameIndex] ?? CMUX_BUSY_ANIMATION_FRAMES[0]
+
+		busyAnimationFrameIndexBySessionID.set(
+			sessionID,
+			(frameIndex + 1) % CMUX_BUSY_ANIMATION_FRAMES.length,
+		)
+
+		enqueueCmuxSessionStatusWrite({
+			sessionID,
+			kind: "set-status",
+			text: frameText,
+		})
+	}
+
+	const startBusyAnimationTicker = (): void => {
+		if (busyAnimationTicker || cmuxStatusUpdatesDisabled || animatedBusySessionIDs.size === 0) return
+
+		const interval = setInterval(() => {
+			if (cmuxStatusUpdatesDisabled) {
+				clearBusyAnimationState()
+				return
+			}
+
+			if (animatedBusySessionIDs.size === 0) {
+				stopBusyAnimationTicker()
+				return
+			}
+
+			for (const sessionID of animatedBusySessionIDs) {
+				enqueueNextBusyAnimationFrame(sessionID)
+			}
+		}, CMUX_BUSY_ANIMATION_INTERVAL_MS)
+
+		;(interval as { unref?: () => void }).unref?.()
+		busyAnimationTicker = interval
+	}
+
+	const startBusyAnimationForSession = (sessionID: string): void => {
+		const wasAnimating = animatedBusySessionIDs.has(sessionID)
+		animatedBusySessionIDs.add(sessionID)
+
+		if (!wasAnimating) {
+			busyAnimationFrameIndexBySessionID.set(sessionID, 0)
+			enqueueNextBusyAnimationFrame(sessionID)
+		}
+
+		startBusyAnimationTicker()
+	}
+
+	const stopBusyAnimationForSession = (sessionID: string): void => {
+		animatedBusySessionIDs.delete(sessionID)
+		busyAnimationFrameIndexBySessionID.delete(sessionID)
+
+		if (animatedBusySessionIDs.size === 0) {
+			stopBusyAnimationTicker()
+		}
+	}
+
+	const applyCmuxSessionStatusTransition = (
+		transition: CmuxSessionStatusTransition | null,
+	): void => {
+		if (!notificationRuntime.preferCmux || !transition || cmuxStatusUpdatesDisabled) return
+
+		const previousLogicalState = cmuxSessionLogicalStates.get(transition.sessionID)
+		if (previousLogicalState === transition.logicalState) return
+
+		cmuxSessionLogicalStates.set(transition.sessionID, transition.logicalState)
+
+		if (transition.logicalState === "animated-busy") {
+			startBusyAnimationForSession(transition.sessionID)
+			return
+		}
+
+		stopBusyAnimationForSession(transition.sessionID)
+		enqueueCmuxSessionStatusWrite(
+			buildCmuxSessionStatusWriteIntentForLogicalState(
+				transition.sessionID,
+				transition.logicalState,
+			),
+		)
+	}
+
+	const applyRuntimeSessionStatusTransition = (
+		transition: CmuxSessionStatusTransition | null,
+	): void => {
+		applyOscTitleSessionStatusTransition(transition)
+		applyCmuxSessionStatusTransition(transition)
+	}
 
 	const notifyQuestionIfNeeded = async (dedupeKey: string | null): Promise<void> => {
 		if (
@@ -557,27 +937,26 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 	return {
 		"tool.execute.before": async (input: { tool: string; sessionID: string; callID: string }) => {
 			if (input.tool === "question") {
+				applyRuntimeSessionStatusTransition(
+					buildCmuxSessionStatusTransitionForQuestionTool(input.sessionID),
+				)
 				await notifyQuestionIfNeeded(buildQuestionToolDedupeKey(input.sessionID, input.callID))
 			}
 		},
 		event: async ({ event }: { event: Event }): Promise<void> => {
 			const runtimeEvent = event as { type: string; properties: Record<string, unknown> }
+			const runtimeSessionStatusTransition = buildCmuxSessionStatusTransitionForEvent(
+				runtimeEvent.type,
+				runtimeEvent.properties,
+			)
+			applyRuntimeSessionStatusTransition(runtimeSessionStatusTransition)
 
 			switch (runtimeEvent.type) {
-				case "session.status": {
-					const sessionID = runtimeEvent.properties.sessionID
-					const statusType =
-						runtimeEvent.properties.status && typeof runtimeEvent.properties.status === "object"
-							? ((runtimeEvent.properties.status as { type?: string }).type ?? undefined)
-							: undefined
-
-					if (sessionID && statusType === "idle") {
-						await notifySessionReadyIfNeeded(sessionID)
-					}
-					break
-				}
+				case "session.status":
 				case "session.idle": {
-					await notifySessionReadyIfNeeded(runtimeEvent.properties.sessionID)
+					if (runtimeSessionStatusTransition?.logicalState === "idle") {
+						await notifySessionReadyIfNeeded(runtimeSessionStatusTransition.sessionID)
+					}
 					break
 				}
 				case "session.error": {

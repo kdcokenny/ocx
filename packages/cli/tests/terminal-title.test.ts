@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import {
 	formatTerminalName,
 	isInsideTmux,
+	sanitizeOscTerminalTitle,
 	setTerminalName,
 	setTerminalTitle,
 	setTmuxWindowName,
@@ -143,6 +144,30 @@ describe("terminal-title", () => {
 				expect(() => setTerminalTitle(value)).not.toThrow()
 			})
 		}
+	})
+
+	describe("sanitizeOscTerminalTitle", () => {
+		it("removes control characters before OSC writes", () => {
+			const input = "\u0000ocx\u0007 title\u001b"
+
+			expect(sanitizeOscTerminalTitle(input)).toBe("ocx  title")
+		})
+
+		it("removes C1 control characters including ST and OSC introducer", () => {
+			const input = "title\u009cwith\u009dcontrols"
+
+			expect(sanitizeOscTerminalTitle(input)).toBe("title with controls")
+		})
+
+		it("removes adjacent DEL/C1 boundary characters", () => {
+			const input = "a\u007fb\u0080c\u009fd"
+
+			expect(sanitizeOscTerminalTitle(input)).toBe("a b c d")
+		})
+
+		it("returns empty string when sanitization removes all content", () => {
+			expect(sanitizeOscTerminalTitle("\u0007\u001b\u009b\u009c\u009d\u0000")).toBe("")
+		})
 	})
 
 	describe("setTmuxWindowName", () => {

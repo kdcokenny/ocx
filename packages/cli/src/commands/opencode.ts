@@ -24,6 +24,7 @@ import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
 import { getGlobalConfigPath } from "../utils/paths"
 import {
+	canWriteOscTerminalTitle,
 	formatTerminalName,
 	restoreTerminalTitle,
 	saveTerminalTitle,
@@ -519,6 +520,11 @@ export function resolveStableOcxExecutablePath(opts: {
 		: path.resolve(opts.cwd, resolvedFromPath)
 }
 
+export interface OpenCodeTitleContext {
+	mayWriteOscTitle: boolean
+	baseTitle: string
+}
+
 /**
  * Builds environment variables to pass to the opencode process.
  * Returns a NEW object - does not mutate baseEnv.
@@ -541,6 +547,7 @@ export function buildOpenCodeEnv(opts: {
 	opencodeBin?: string
 	configDir?: string
 	configContent?: string
+	titleContext?: OpenCodeTitleContext
 }): Record<string, string | undefined> {
 	// Profile presence gates both OPENCODE_DISABLE_PROJECT_CONFIG and OPENCODE_CONFIG_DIR
 	const hasProfile = Boolean(opts.profileName)
@@ -551,6 +558,7 @@ export function buildOpenCodeEnv(opts: {
 		OCX_CONTEXT: _inheritedOcxContext,
 		OCX_BIN: _inheritedOcxBin,
 		OCX_PROFILE: _inheritedOcxProfile,
+		OCX_TITLE_CONTEXT: _inheritedOcxTitleContext,
 		...baseEnvWithoutDisableProjectConfig
 	} = opts.baseEnv
 
@@ -565,6 +573,7 @@ export function buildOpenCodeEnv(opts: {
 		...(hasProfile && { OCX_CONTEXT: "1" }),
 		...(hasProfile && opts.ocxBin && { OCX_BIN: opts.ocxBin }),
 		...(opts.profileName && { OCX_PROFILE: opts.profileName }),
+		...(opts.titleContext && { OCX_TITLE_CONTEXT: JSON.stringify(opts.titleContext) }),
 	}
 }
 
@@ -696,16 +705,22 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 			return
 		}
 
+		const gitInfo = await getGitInfo(projectDir)
+		if (preSpawnSignalExitCode !== null) {
+			childExitCode = preSpawnSignalExitCode
+			return
+		}
+
+		const baseTitle = formatTerminalName(projectDir, config.profileName ?? "default", gitInfo)
+		const titleContext: OpenCodeTitleContext = {
+			mayWriteOscTitle: shouldRename && canWriteOscTerminalTitle(),
+			baseTitle,
+		}
+
 		// Set terminal name only if enabled
 		if (shouldRename) {
 			saveTerminalTitle()
-			const gitInfo = await getGitInfo(projectDir)
-			if (preSpawnSignalExitCode !== null) {
-				childExitCode = preSpawnSignalExitCode
-				return
-			}
-
-			setTerminalName(formatTerminalName(projectDir, config.profileName ?? "default", gitInfo))
+			setTerminalName(baseTitle)
 		}
 
 		if (preSpawnSignalExitCode !== null) {
@@ -747,6 +762,7 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 					opencodeBin: resolvedOpenCodeLaunchBin,
 					configDir: mergedConfig?.path,
 					configContent,
+					titleContext,
 				}),
 				stdin: "inherit",
 				stdout: "inherit",

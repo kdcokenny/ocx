@@ -306,18 +306,53 @@ describe("buildOpenCodeEnv", () => {
 		expect(result.OCX_PROFILE).toBe("work")
 	})
 
+	it("exports dedicated OCX_TITLE_CONTEXT for profile and non-profile launches", () => {
+		const profileLaunch = buildOpenCodeEnv({
+			baseEnv: {},
+			profileName: "work",
+			titleContext: {
+				mayWriteOscTitle: true,
+				baseTitle: "ocx[work]:repo/main",
+			},
+		})
+		const nonProfileLaunch = buildOpenCodeEnv({
+			baseEnv: {},
+			titleContext: {
+				mayWriteOscTitle: false,
+				baseTitle: "ocx[default]:repo",
+			},
+		})
+
+		expect(profileLaunch.OCX_TITLE_CONTEXT).toBeDefined()
+		expect(nonProfileLaunch.OCX_TITLE_CONTEXT).toBeDefined()
+
+		expect(JSON.parse(profileLaunch.OCX_TITLE_CONTEXT as string)).toEqual({
+			mayWriteOscTitle: true,
+			baseTitle: "ocx[work]:repo/main",
+		})
+		expect(JSON.parse(nonProfileLaunch.OCX_TITLE_CONTEXT as string)).toEqual({
+			mayWriteOscTitle: false,
+			baseTitle: "ocx[default]:repo",
+		})
+	})
+
 	it("removes inherited OCX launch markers when no profile is active", () => {
 		const result = buildOpenCodeEnv({
 			baseEnv: {
 				OCX_CONTEXT: "1",
 				OCX_BIN: "/stale/ocx",
 				OCX_PROFILE: "stale",
+				OCX_TITLE_CONTEXT: JSON.stringify({
+					mayWriteOscTitle: true,
+					baseTitle: "stale",
+				}),
 			},
 		})
 
 		expect(result.OCX_CONTEXT).toBeUndefined()
 		expect(result.OCX_BIN).toBeUndefined()
 		expect(result.OCX_PROFILE).toBeUndefined()
+		expect(result.OCX_TITLE_CONTEXT).toBeUndefined()
 	})
 
 	it("preserves existing env vars that are not overwritten", () => {
@@ -691,6 +726,76 @@ describe("oc command CLI contract", () => {
 			expect(captured.opencodeBin).toBe(expectedOpencodeBin)
 			expect(captured.ocxBin).toBe(join(import.meta.dir, "..", "src", "index.ts"))
 			expect(captured.ocxBin).not.toBe(captured.argv0)
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("exports OCX_TITLE_CONTEXT for non-profile launches", async () => {
+		const testDir = await createTempDir("oc-contract-title-context-plain")
+		try {
+			const capturePath = join(testDir, "capture-title-context.ts")
+			const outputPath = join(testDir, "captured-title-context.json")
+			await Bun.write(
+				capturePath,
+				`const outputPath = process.argv[2];\nif (!outputPath) throw new Error("missing output path");\nconst payload = {\n  titleContext: process.env.OCX_TITLE_CONTEXT ?? null,\n};\nawait Bun.write(outputPath, JSON.stringify(payload));\n`,
+			)
+
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "run", capturePath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const captured = JSON.parse(await Bun.file(outputPath).text()) as {
+				titleContext?: string | null
+			}
+			expect(captured.titleContext).toBeDefined()
+
+			const parsedTitleContext = JSON.parse(captured.titleContext as string) as {
+				mayWriteOscTitle: boolean
+				baseTitle: string
+			}
+			expect(parsedTitleContext.mayWriteOscTitle).toBe(false)
+			expect(parsedTitleContext.baseTitle).toContain("ocx[default]:")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("exports OCX_TITLE_CONTEXT for profile launches", async () => {
+		const testDir = await createTempDir("oc-contract-title-context-profile")
+		try {
+			await createProfile(testDir, "work")
+
+			const capturePath = join(testDir, "capture-title-context.ts")
+			const outputPath = join(testDir, "captured-title-context.json")
+			await Bun.write(
+				capturePath,
+				`const outputPath = process.argv[2];\nif (!outputPath) throw new Error("missing output path");\nconst payload = {\n  titleContext: process.env.OCX_TITLE_CONTEXT ?? null,\n};\nawait Bun.write(outputPath, JSON.stringify(payload));\n`,
+			)
+
+			const result = await runCLIIsolated(
+				["oc", "--no-rename", "--profile", "work", "run", capturePath, outputPath],
+				testDir,
+				{ OPENCODE_BIN: "bun" },
+			)
+
+			expect(result.exitCode).toBe(0)
+
+			const captured = JSON.parse(await Bun.file(outputPath).text()) as {
+				titleContext?: string | null
+			}
+			expect(captured.titleContext).toBeDefined()
+
+			const parsedTitleContext = JSON.parse(captured.titleContext as string) as {
+				mayWriteOscTitle: boolean
+				baseTitle: string
+			}
+			expect(parsedTitleContext.mayWriteOscTitle).toBe(false)
+			expect(parsedTitleContext.baseTitle).toContain("ocx[work]:")
 		} finally {
 			await cleanupTempDir(testDir)
 		}

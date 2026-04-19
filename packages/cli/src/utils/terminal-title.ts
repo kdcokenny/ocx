@@ -14,6 +14,10 @@ import type { GitInfo } from "./git-context"
 
 const MAX_BRANCH_LENGTH = 20
 
+function isOscUnsafeControlCharacter(codePoint: number): boolean {
+	return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f)
+}
+
 // ============================================================================
 // Terminal Title Stack (Save/Restore)
 // ============================================================================
@@ -91,13 +95,49 @@ export function setTmuxWindowName(name: string): void {
  */
 export function setTerminalTitle(title: string): void {
 	// Early exit: not a TTY
-	if (!isTTY) {
+	if (!canWriteOscTerminalTitle()) {
+		return
+	}
+
+	const sanitizedTitle = sanitizeOscTerminalTitle(title)
+	if (!sanitizedTitle) {
 		return
 	}
 
 	// OSC 0: Set window title and icon name
 	// Format: ESC ] 0 ; <title> BEL
-	process.stdout.write(`\x1b]0;${title}\x07`)
+	process.stdout.write(`\x1b]0;${sanitizedTitle}\x07`)
+}
+
+/**
+ * Sanitizes terminal title text before embedding it into OSC payloads.
+ *
+ * Replaces C0/C1 control characters (including BEL/ESC/CSI/ST) with spaces,
+ * then trims.
+ */
+export function sanitizeOscTerminalTitle(title: string): string {
+	let sanitizedTitle = ""
+
+	for (const character of title) {
+		const codePoint = character.codePointAt(0)
+		if (codePoint === undefined) {
+			continue
+		}
+
+		sanitizedTitle += isOscUnsafeControlCharacter(codePoint) ? " " : character
+	}
+
+	return sanitizedTitle.trim()
+}
+
+/**
+ * Determines whether OSC terminal-title writes are currently allowed.
+ *
+ * Centralizes launcher eligibility checks so child-process title context can
+ * inherit the same decision boundary.
+ */
+export function canWriteOscTerminalTitle(): boolean {
+	return isTTY
 }
 
 /**
