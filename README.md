@@ -31,6 +31,8 @@ npm install -g ocx
 
 The install script handles PATH configuration automatically or prints instructions if manual setup is needed.
 
+The npm package runs with Bun at runtime. Make sure `bun` is available on your `PATH` before using `npm install -g ocx`; Node.js alone is not sufficient. If you do not have Bun, use the standalone binaries from the install script or GitHub Releases when available.
+
 ## Quick Start
 
 Work in any repo without modifying it. Your config, their code.

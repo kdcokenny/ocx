@@ -34,7 +34,7 @@
 		"registry"
 	],
 	"engines": {
-		"node": ">=18"
+		"bun": ">=1.2.0"
 	},
 	"scripts": {
 		"build": "bun run scripts/build.ts",
