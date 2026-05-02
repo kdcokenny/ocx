@@ -3,11 +3,10 @@ import { describe, expect, it } from "bun:test"
 import { chmod, mkdtemp, rm } from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
-import {
-	ensureLaunchContextExecutable,
-	ensureLaunchContextProfile,
-	finalizeWorktreeLaunch,
-} from "../files/plugins/worktree"
+import { worktreeInternals } from "../files/plugins/worktree"
+
+const { ensureLaunchContextExecutable, ensureLaunchContextProfile, finalizeWorktreeLaunch } =
+	worktreeInternals
 
 describe("worktree launch preflight", () => {
 	it("normalizes PATH-based OCX launchers to stable paths", async () => {

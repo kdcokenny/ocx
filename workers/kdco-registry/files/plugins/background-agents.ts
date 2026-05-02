@@ -396,7 +396,7 @@ function parsePersistedStatus(raw: string | undefined): DelegationStatus {
 	return "complete"
 }
 
-export class DelegationManager {
+class DelegationManager {
 	private delegations: Map<string, DelegationRecord> = new Map()
 	private delegationsBySession: Map<string, string> = new Map()
 	private terminalWaiters: Map<string, { promise: Promise<void>; resolve: () => void }> = new Map()
@@ -1674,7 +1674,7 @@ interface DelegationForContext {
  * Includes running delegations with notification reminder (only when running exist),
  * and recent completed delegations with full descriptions.
  */
-export function formatDelegationContext(
+function formatDelegationContext(
 	running: DelegationForContext[],
 	unreadCompleted: DelegationForContext[],
 ): string {
@@ -1754,7 +1754,7 @@ interface SystemTransformInput {
 	sessionID?: string
 }
 
-export const BackgroundAgentsPlugin: Plugin = async (ctx) => {
+const BackgroundAgentsPlugin: Plugin = async (ctx) => {
 	const { client, directory } = ctx
 
 	// Create logger early for all components
@@ -1893,5 +1893,10 @@ export const BackgroundAgentsPlugin: Plugin = async (ctx) => {
 		},
 	}
 }
+
+export const backgroundAgentsInternals = {
+	DelegationManager,
+	formatDelegationContext,
+} as const
 
 export default BackgroundAgentsPlugin

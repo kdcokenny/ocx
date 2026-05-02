@@ -177,7 +177,7 @@ interface LaunchExecutableValidationOptions {
 	pathExists?: (absolutePath: string) => Promise<boolean>
 }
 
-export function isPathLikeCommand(command: string): boolean {
+function isPathLikeCommand(command: string): boolean {
 	return command.includes("/") || command.includes("\\")
 }
 
@@ -217,7 +217,7 @@ async function pathPointsToLaunchableBinary(absolutePath: string): Promise<boole
 	}
 }
 
-export async function ensureLaunchContextExecutable(
+async function ensureLaunchContextExecutable(
 	launchContext: ActiveLaunchContext,
 	baseDirectory: string,
 	options: LaunchExecutableValidationOptions = {},
@@ -253,7 +253,7 @@ export async function ensureLaunchContextExecutable(
 	}
 }
 
-export async function validateOcxProfileAvailability(
+async function validateOcxProfileAvailability(
 	ocxBin: string,
 	profile: string,
 ): Promise<Result<void, string>> {
@@ -279,7 +279,7 @@ export async function validateOcxProfileAvailability(
 	}
 }
 
-export async function ensureLaunchContextProfile(
+async function ensureLaunchContextProfile(
 	launchContext: ActiveLaunchContext,
 	validateProfileAvailability: ValidateProfileAvailability = validateOcxProfileAvailability,
 ): Promise<void> {
@@ -370,7 +370,7 @@ interface FinalizeWorktreeLaunchOptions {
 	deleteForkedSessionFn?: (sessionId: string) => Promise<void>
 }
 
-export async function finalizeWorktreeLaunch(
+async function finalizeWorktreeLaunch(
 	options: FinalizeWorktreeLaunchOptions,
 ): Promise<TerminalResult> {
 	const openTerminalFn = options.openTerminalFn ?? openTerminal
@@ -884,7 +884,7 @@ async function loadWorktreeConfig(directory: string, log: Logger): Promise<Workt
 // PLUGIN ENTRY
 // =============================================================================
 
-export const WorktreePlugin: Plugin = async (ctx) => {
+const WorktreePlugin: Plugin = async (ctx) => {
 	const { directory, client } = ctx
 
 	const log = {
@@ -1102,5 +1102,13 @@ export const WorktreePlugin: Plugin = async (ctx) => {
 		},
 	}
 }
+
+export const worktreeInternals = {
+	isPathLikeCommand,
+	ensureLaunchContextExecutable,
+	validateOcxProfileAvailability,
+	ensureLaunchContextProfile,
+	finalizeWorktreeLaunch,
+} as const
 
 export default WorktreePlugin
