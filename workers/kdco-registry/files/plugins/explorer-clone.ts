@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import type { Stats } from "node:fs"
-import { lstat, mkdir, realpath, rm } from "node:fs/promises"
+import { lstat, mkdir, realpath, rm, writeFile } from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { promisify } from "node:util"
@@ -8,9 +8,42 @@ import { type Plugin, tool } from "@opencode-ai/plugin"
 
 const execFileAsync = promisify(execFile)
 
-const TEMP_ROOT_NAME = "kdco-flow"
+const TEMP_ROOT_PREFIX = "kdco-flow"
 const SAFE_GITHUB_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
 const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/
+const PRIVATE_MODE_MASK = 0o077
+const PRIVATE_DIRECTORY_MODE = 0o700
+const PRIVATE_FILE_MODE = 0o600
+const GIT_MAX_BUFFER_BYTES = 1024 * 1024 * 10
+const GIT_TIMEOUT_MS = 120_000
+const GIT_CONFIG_OVERRIDES = [
+	"-c",
+	"credential.helper=",
+	"-c",
+	"credential.interactive=false",
+	"-c",
+	"core.askPass=",
+	"-c",
+	"http.extraHeader=",
+	"-c",
+	"http.https://github.com/.extraHeader=",
+	"-c",
+	"url.ssh://git@github.com/.insteadOf=",
+	"-c",
+	"url.git@github.com:.insteadOf=",
+	"-c",
+	"url.https://github.com/.insteadOf=",
+	"-c",
+	"url.https://github.com/.pushInsteadOf=",
+	"-c",
+	"protocol.file.allow=always",
+	"-c",
+	"protocol.https.allow=always",
+	"-c",
+	"protocol.ssh.allow=never",
+	"-c",
+	"protocol.git.allow=never",
+] as const
 
 interface ParsedRepository {
 	readonly owner: string
@@ -29,6 +62,23 @@ interface ResolvedCloneTarget extends ParsedRepository {
 interface SafePathCheck {
 	readonly absolutePath: string
 	readonly kind: "explorer temp root" | "owner directory" | "clone directory"
+}
+
+interface PrivatePathCheck {
+	readonly absolutePath: string
+	readonly kind: string
+	readonly uid?: number
+}
+
+interface GitExecutionContext {
+	readonly command: "git"
+	readonly args: string[]
+	readonly options: {
+		readonly cwd?: string
+		readonly env: Record<string, string>
+		readonly maxBuffer: number
+		readonly timeout: number
+	}
 }
 
 function rejectInvalidGitHubName(kind: "owner" | "repo", value: string): void {
@@ -118,6 +168,20 @@ function isNotFoundError(error: unknown): boolean {
 	return error instanceof Error && "code" in error && error.code === "ENOENT"
 }
 
+function getCurrentUid(): number | undefined {
+	return typeof process.getuid === "function" ? process.getuid() : undefined
+}
+
+function getCurrentUserSegment(uid: number | undefined): string {
+	if (uid !== undefined) return String(uid)
+
+	const candidate = os.userInfo().username || process.env.USER || process.env.USERNAME || "unknown"
+	const safeCandidate = candidate.replace(/[^A-Za-z0-9._-]/g, "-")
+	if (safeCandidate) return safeCandidate
+
+	throw new Error("Unable to derive a safe user-specific explorer temp root name.")
+}
+
 async function lstatIfExists(absolutePath: string): Promise<Stats | undefined> {
 	try {
 		return await lstat(absolutePath)
@@ -126,6 +190,68 @@ async function lstatIfExists(absolutePath: string): Promise<Stats | undefined> {
 
 		throw error
 	}
+}
+
+function assertOwnedByCurrentUser(stats: Stats, { kind, uid }: PrivatePathCheck): void {
+	if (uid === undefined) return
+
+	if (stats.uid !== uid) {
+		throw new Error(`${kind} must be owned by the current user.`)
+	}
+}
+
+function assertPrivateMode(stats: Stats, kind: string): void {
+	if ((stats.mode & PRIVATE_MODE_MASK) !== 0) {
+		throw new Error(`${kind} must not be readable, writable, or executable by group or other users.`)
+	}
+}
+
+async function assertPrivateDirectory(check: PrivatePathCheck): Promise<void> {
+	const stats = await lstat(check.absolutePath)
+
+	if (stats.isSymbolicLink()) {
+		throw new Error(`${check.kind} cannot be a symbolic link.`)
+	}
+
+	if (!stats.isDirectory()) {
+		throw new Error(`${check.kind} must be a directory.`)
+	}
+
+	const realDirectoryPath = await realpath(check.absolutePath)
+	if (realDirectoryPath !== check.absolutePath) {
+		throw new Error(`${check.kind} must realpath to its exact scoped path.`)
+	}
+
+	assertOwnedByCurrentUser(stats, check)
+	assertPrivateMode(stats, check.kind)
+}
+
+async function ensurePrivateDirectory(absolutePath: string, kind: string, uid = getCurrentUid()): Promise<void> {
+	const existingPath = await lstatIfExists(absolutePath)
+	if (!existingPath) {
+		await mkdir(absolutePath, { mode: PRIVATE_DIRECTORY_MODE, recursive: false })
+	}
+
+	await assertPrivateDirectory({ absolutePath, kind, uid })
+}
+
+async function ensurePrivateFile(absolutePath: string, kind: string, uid = getCurrentUid()): Promise<void> {
+	const existingPath = await lstatIfExists(absolutePath)
+	if (!existingPath) {
+		await writeFile(absolutePath, "", { mode: PRIVATE_FILE_MODE })
+	}
+
+	const stats = await lstat(absolutePath)
+	if (stats.isSymbolicLink()) {
+		throw new Error(`${kind} cannot be a symbolic link.`)
+	}
+
+	if (!stats.isFile()) {
+		throw new Error(`${kind} must be a file.`)
+	}
+
+	assertOwnedByCurrentUser(stats, { absolutePath, kind, uid })
+	assertPrivateMode(stats, kind)
 }
 
 async function assertExistingRealDirectory({ absolutePath, kind }: SafePathCheck): Promise<void> {
@@ -166,11 +292,22 @@ async function assertOptionalRealDirectory({ absolutePath, kind }: SafePathCheck
 async function ensureSafeTempRoot(requestedTempRoot: string): Promise<string> {
 	const existingTempRoot = await lstatIfExists(requestedTempRoot)
 	if (!existingTempRoot) {
-		await mkdir(requestedTempRoot, { recursive: false })
+		await mkdir(requestedTempRoot, { mode: PRIVATE_DIRECTORY_MODE, recursive: false })
 	}
 
+	await assertPrivateDirectory({
+		absolutePath: requestedTempRoot,
+		kind: "explorer temp root",
+		uid: getCurrentUid(),
+	})
 	await assertExistingRealDirectory({ absolutePath: requestedTempRoot, kind: "explorer temp root" })
 	return requestedTempRoot
+}
+
+async function resolveExplorerTempRoot(baseTempDir = os.tmpdir()): Promise<string> {
+	const realTempDir = await realpath(baseTempDir)
+	const userSegment = getCurrentUserSegment(getCurrentUid())
+	return path.join(realTempDir, `${TEMP_ROOT_PREFIX}-${userSegment}`)
 }
 
 function ensureExactCloneDepth(tempRoot: string, clonePath: string): void {
@@ -191,7 +328,7 @@ function ensureExactCloneDepth(tempRoot: string, clonePath: string): void {
 
 async function resolveExplorerCloneTarget(owner: string, repo: string): Promise<ResolvedCloneTarget> {
 	const parsedRepository = parseExplorerRepository(owner, repo)
-	const requestedTempRoot = path.join(await realpath(os.tmpdir()), TEMP_ROOT_NAME)
+	const requestedTempRoot = await resolveExplorerTempRoot()
 	const tempRoot = await ensureSafeTempRoot(requestedTempRoot)
 	const ownerPath = path.join(tempRoot, parsedRepository.owner)
 	const clonePath = path.join(tempRoot, parsedRepository.owner, parsedRepository.repo)
@@ -228,12 +365,74 @@ async function pathExists(absolutePath: string): Promise<boolean> {
 	return (await lstatIfExists(absolutePath)) !== undefined
 }
 
-async function runGit(args: readonly string[], cwd?: string): Promise<void> {
-	await execFileAsync("git", [...args], {
-		cwd,
-		maxBuffer: 1024 * 1024 * 10,
-		timeout: 120_000,
-	})
+async function prepareIsolatedGitEnvironment(tempRoot: string): Promise<{
+	home: string
+	xdgConfigHome: string
+	globalConfig: string
+}> {
+	const isolationRoot = path.join(tempRoot, ".git-isolation")
+	const home = path.join(isolationRoot, "home")
+	const xdgConfigHome = path.join(isolationRoot, "xdg-config")
+	const globalConfig = path.join(isolationRoot, "gitconfig")
+
+	await ensurePrivateDirectory(isolationRoot, "isolated git root")
+	await ensurePrivateDirectory(home, "isolated git HOME")
+	await ensurePrivateDirectory(xdgConfigHome, "isolated git XDG_CONFIG_HOME")
+	await ensurePrivateFile(globalConfig, "isolated git global config")
+
+	return { home, xdgConfigHome, globalConfig }
+}
+
+function buildIsolatedGitEnv(
+	isolation: { home: string; xdgConfigHome: string; globalConfig: string },
+	baseEnv: Record<string, string | undefined> = process.env,
+): Record<string, string> {
+	const env: Record<string, string> = {
+		HOME: isolation.home,
+		XDG_CONFIG_HOME: isolation.xdgConfigHome,
+		GIT_CONFIG_GLOBAL: isolation.globalConfig,
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_TERMINAL_PROMPT: "0",
+		GIT_ASKPASS: "",
+		SSH_ASKPASS: "",
+		GCM_INTERACTIVE: "Never",
+		GIT_ALLOW_PROTOCOL: "https:file",
+	}
+
+	for (const key of ["PATH", "SystemRoot", "WINDIR", "TMPDIR", "TMP", "TEMP"] as const) {
+		const value = baseEnv[key]
+		if (value) env[key] = value
+	}
+
+	return env
+}
+
+function buildSafeGitArgs(args: readonly string[]): string[] {
+	return [...GIT_CONFIG_OVERRIDES, ...args]
+}
+
+async function prepareGitExecutionContext(
+	tempRoot: string,
+	args: readonly string[],
+	cwd?: string,
+	baseEnv?: Record<string, string | undefined>,
+): Promise<GitExecutionContext> {
+	const isolation = await prepareIsolatedGitEnvironment(tempRoot)
+	return {
+		command: "git",
+		args: buildSafeGitArgs(args),
+		options: {
+			cwd,
+			env: buildIsolatedGitEnv(isolation, baseEnv),
+			maxBuffer: GIT_MAX_BUFFER_BYTES,
+			timeout: GIT_TIMEOUT_MS,
+		},
+	}
+}
+
+async function runGit(args: readonly string[], tempRoot: string, cwd?: string): Promise<void> {
+	const executionContext = await prepareGitExecutionContext(tempRoot, args, cwd)
+	await execFileAsync(executionContext.command, executionContext.args, executionContext.options)
 }
 
 async function prepareFreshCloneDirectory(target: ResolvedCloneTarget): Promise<void> {
@@ -264,14 +463,14 @@ async function cloneRepository(request: ParsedCloneRequest, target: ResolvedClon
 	await prepareFreshCloneDirectory(target)
 
 	const githubUrl = `https://github.com/${request.owner}/${request.repo}.git`
-	await runGit(["clone", "--", githubUrl, target.clonePath])
+	await runGit(["clone", "--", githubUrl, target.clonePath], target.tempRoot)
 
 	await assertExistingRealDirectory({ absolutePath: target.clonePath, kind: "clone directory" })
 
 	if (!request.ref) return
 
-	await runGit(["fetch", "--depth", "1", "origin", request.ref], target.clonePath)
-	await runGit(["checkout", "--detach", "FETCH_HEAD"], target.clonePath)
+	await runGit(["fetch", "--depth", "1", "origin", request.ref], target.tempRoot, target.clonePath)
+	await runGit(["checkout", "--detach", "FETCH_HEAD"], target.tempRoot, target.clonePath)
 }
 
 const ExplorerClonePlugin: Plugin = async () => {
@@ -332,4 +531,15 @@ const ExplorerClonePlugin: Plugin = async () => {
 	}
 }
 
-export default ExplorerClonePlugin
+const ExplorerClonePluginWithInternals = Object.assign(ExplorerClonePlugin, {
+	testInternals: {
+		buildIsolatedGitEnv,
+		buildSafeGitArgs,
+		ensureSafeTempRoot,
+		prepareGitExecutionContext,
+		prepareIsolatedGitEnvironment,
+		resolveExplorerTempRoot,
+	},
+} as const)
+
+export default ExplorerClonePluginWithInternals

@@ -7,6 +7,10 @@ type RegistryComponent = {
 	type: string
 	files?: string[]
 	dependencies?: string[]
+	opencode?: {
+		mcp?: Record<string, unknown>
+		agent?: Record<string, { permission?: Record<string, unknown> }>
+	}
 }
 
 type Registry = {
@@ -60,5 +64,19 @@ describe("kdco/flow registry source coverage", () => {
 			expect(agent.type).toBe("agent")
 			expect(agent.files).toEqual([`agents/${agentName}.md`])
 		}
+	})
+
+	it("keeps gh_grep disabled for flow explorer defaults", async () => {
+		const registry = await readRegistry()
+		const explorer = getRegistryComponent(registry, "explorer")
+		const ghGrepMcp = explorer.opencode?.mcp?.gh_grep
+		const explorerPermissions = explorer.opencode?.agent?.explorer?.permission ?? {}
+
+		expect(ghGrepMcp).toEqual({
+			type: "remote",
+			url: "https://mcp.grep.app",
+			enabled: false,
+		})
+		expect(explorerPermissions["gh_grep_*"]).not.toBe("allow")
 	})
 })

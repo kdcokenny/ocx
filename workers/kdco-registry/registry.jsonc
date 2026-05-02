@@ -306,7 +306,11 @@
 				"mcp": {
 					"context7": "https://mcp.context7.com/mcp",
 					"exa": "https://mcp.exa.ai/mcp",
-					"gh_grep": "https://mcp.grep.app",
+					"gh_grep": {
+						"type": "remote",
+						"url": "https://mcp.grep.app",
+						"enabled": false
+					},
 					"github": {
 						"type": "remote",
 						"url": "https://api.githubcopilot.com/mcp/",
@@ -324,7 +328,7 @@
 						"permission": {
 							"context7_*": "allow",
 							"exa_*": "allow",
-							"gh_grep_*": "allow",
+							"gh_grep_*": "deny",
 							"kagi_*": "deny",
 							"webfetch": "allow",
 							"explorer_clone": "allow",
