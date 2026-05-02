@@ -66,17 +66,13 @@ describe("kdco/flow registry source coverage", () => {
 		}
 	})
 
-	it("keeps gh_grep disabled for flow explorer defaults", async () => {
+	it("keeps gh_grep enabled for flow explorer defaults", async () => {
 		const registry = await readRegistry()
 		const explorer = getRegistryComponent(registry, "explorer")
 		const ghGrepMcp = explorer.opencode?.mcp?.gh_grep
 		const explorerPermissions = explorer.opencode?.agent?.explorer?.permission ?? {}
 
-		expect(ghGrepMcp).toEqual({
-			type: "remote",
-			url: "https://mcp.grep.app",
-			enabled: false,
-		})
-		expect(explorerPermissions["gh_grep_*"]).not.toBe("allow")
+		expect(ghGrepMcp).toBe("https://mcp.grep.app")
+		expect(explorerPermissions["gh_grep_*"]).toBe("allow")
 	})
 })
