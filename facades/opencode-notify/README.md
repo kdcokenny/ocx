@@ -132,16 +132,26 @@ Ghostty, Kitty, iTerm2, WezTerm, Alacritty, Hyper, Terminal.app, Windows Termina
 
 ## Manual Installation
 
-If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` and preserve the multi-file layout:
+If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` and preserve the exact multi-file layout shown below:
 
 - `.opencode/plugins/notify.ts`
 - `.opencode/plugins/notify/backend.ts`
 - `.opencode/plugins/notify/cmux.ts`
+- `.opencode/plugins/notify/status.ts`
+- `.opencode/plugins/notify/title.ts`
+- `.opencode/plugins/worktree/terminal.ts`
+- `.opencode/plugins/kdco-primitives/index.ts`
+- `.opencode/plugins/kdco-primitives/get-project-id.ts`
+- `.opencode/plugins/kdco-primitives/log-warn.ts`
+- `.opencode/plugins/kdco-primitives/mutex.ts`
+- `.opencode/plugins/kdco-primitives/shell.ts`
+- `.opencode/plugins/kdco-primitives/temp.ts`
+- `.opencode/plugins/kdco-primitives/terminal-detect.ts`
 - `.opencode/plugins/kdco-primitives/types.ts`
 - `.opencode/plugins/kdco-primitives/with-timeout.ts`
 
 **Caveats:**
-- Manually install dependencies (`node-notifier`, `detect-terminal`)
+- Manually install dependencies (`node-notifier`, `detect-terminal`, `zod`)
 - Install [cmux](https://www.cmux.dev/) if you want the additional [cmux](https://www.cmux.dev/)-native notification path
 - Updates require manual re-copying
 
