@@ -512,7 +512,7 @@ Review triggers:
 </code-review-protocol>
 </system-reminder>`
 
-export const WorkspacePlugin: Plugin = async (ctx) => {
+const WorkspacePlugin: Plugin = async (ctx) => {
 	const { directory } = ctx
 
 	// Use git root commit hash for cross-worktree consistency

@@ -81,6 +81,13 @@
 			"dependencies": ["kdco-primitives"],
 			"npmDevDependencies": ["jsonc-parser@3.3.1", "zod@4.3.5"]
 		},
+		{
+			"name": "explorer-clone",
+			"type": "plugin",
+			"description": "Minimal scoped clone and cleanup tools for kdco/flow explorer repository inspection",
+			"files": ["plugins/explorer-clone.ts"],
+			"dependencies": []
+		},
 
 		// ============================================================================
 		// SKILLS
@@ -263,6 +270,163 @@
 			}
 		},
 		{
+			"name": "conductor",
+			"type": "agent",
+			"description": "Read-only kdco/flow orchestrator for autonomous gated delivery",
+			"files": ["agents/conductor.md"],
+			"dependencies": ["background-agents", "plan-protocol"],
+			"opencode": {
+				"agent": {
+					"conductor": {
+						"permission": {
+							"read": "allow",
+							"glob": "allow",
+							"grep": "allow",
+							"edit": "deny",
+							"write": "deny",
+							"bash": { "*": "deny" },
+							"task": "allow",
+							"delegate": "allow",
+							"delegation_read": "allow",
+							"delegation_list": "allow",
+							"plan_read": "allow",
+							"plan_save": "allow"
+						}
+					}
+				}
+			}
+		},
+		{
+			"name": "explorer",
+			"type": "agent",
+			"description": "Read-only kdco/flow explorer for local, external research, and GitHub MCP discovery",
+			"files": ["agents/explorer.md"],
+			"dependencies": ["background-agents", "explorer-clone"],
+			"opencode": {
+				"mcp": {
+					"context7": "https://mcp.context7.com/mcp",
+					"exa": "https://mcp.exa.ai/mcp",
+					"gh_grep": "https://mcp.grep.app",
+					"github": {
+						"type": "remote",
+						"url": "https://api.githubcopilot.com/mcp/",
+						"headers": {
+							"Authorization": "Bearer {env:GITHUB_PERSONAL_ACCESS_TOKEN}",
+							"X-MCP-Readonly": "true",
+							"X-MCP-Tools": "get_me,get_repository_tree,get_file_contents,search_code,search_repositories,get_commit,list_branches,list_commits,list_tags,search_issues,search_pull_requests,issue_read,pull_request_read"
+						},
+						"oauth": false,
+						"enabled": true
+					}
+				},
+				"agent": {
+					"explorer": {
+						"permission": {
+							"context7_*": "allow",
+							"exa_*": "allow",
+							"gh_grep_*": "allow",
+							"kagi_*": "deny",
+							"webfetch": "allow",
+							"explorer_clone": "allow",
+							"explorer_clone_cleanup": "allow",
+							"github_get_me": "allow",
+							"github_get_repository_tree": "allow",
+							"github_get_file_contents": "allow",
+							"github_search_code": "allow",
+							"github_search_repositories": "allow",
+							"github_get_commit": "allow",
+							"github_list_branches": "allow",
+							"github_list_commits": "allow",
+							"github_list_tags": "allow",
+							"github_search_issues": "allow",
+							"github_search_pull_requests": "allow",
+							"github_issue_read": "allow",
+							"github_pull_request_read": "allow",
+							"read": "allow",
+							"glob": "allow",
+							"grep": "allow",
+							"list": "allow",
+							"edit": "deny",
+							"write": "deny",
+							"task": "deny",
+							"question": "deny",
+							"bash": { "*": "deny" }
+						}
+					}
+				},
+				"permission": {
+					"context7_*": "deny",
+					"exa_*": "deny",
+					"gh_grep_*": "deny",
+					"kagi_*": "deny",
+					"github_*": "deny",
+					"explorer_clone*": "deny"
+				}
+			}
+		},
+		{
+			"name": "plan-reviewer",
+			"type": "agent",
+			"description": "Read-only kdco/flow gatekeeper for implementation plans and high-level logic",
+			"files": ["agents/plan-reviewer.md"],
+			"dependencies": ["plan-review", "code-philosophy"],
+			"opencode": {
+				"agent": {
+					"plan-reviewer": {
+						"temperature": 0.1,
+						"permission": {
+							"read": "allow",
+							"glob": "allow",
+							"grep": "allow",
+							"edit": "deny",
+							"write": "deny",
+							"bash": {
+								"*": "deny",
+								"git diff*": "allow",
+								"git log*": "allow",
+								"git show*": "allow",
+								"rg *": "allow"
+							},
+							"plan_read": "allow",
+							"delegation_read": "allow",
+							"delegation_list": "allow"
+						}
+					}
+				}
+			}
+		},
+		{
+			"name": "qa-reviewer",
+			"type": "agent",
+			"description": "Read-only kdco/flow QA gate for installability, boundaries, gates, and autonomy evidence",
+			"files": ["agents/qa-reviewer.md"],
+			"dependencies": ["code-review", "code-philosophy"],
+			"opencode": {
+				"agent": {
+					"qa-reviewer": {
+						"temperature": 0.1,
+						"permission": {
+							"read": "allow",
+							"glob": "allow",
+							"grep": "allow",
+							"edit": "deny",
+							"write": "deny",
+							"bash": {
+								"*": "deny",
+								"git diff*": "allow",
+								"git log*": "allow",
+								"git show*": "allow",
+								"rg *": "allow"
+							},
+							"plan_read": "allow",
+							"delegation_read": "allow",
+							"delegation_list": "allow"
+						}
+					}
+				}
+			}
+		},
+		{
 			"name": "reviewer",
 			"type": "agent",
 			"description": "Code review specialist that analyzes code for issues and improvements",
@@ -312,6 +476,50 @@
 		// BUNDLES
 		// Pre-configured collections of components for common use cases
 		// ============================================================================
+		{
+			"name": "flow",
+			"type": "bundle",
+			"description": "KDCO conductor-owned monolithic flow harness with five agents, gated planning, gated QA, and pr/commit/report terminal goals",
+			"files": [],
+			"dependencies": [
+				"plan-protocol",
+				"explorer-clone",
+				"conductor",
+				"explorer",
+				"coder",
+				"plan-reviewer",
+				"qa-reviewer",
+				"review",
+				"notify",
+				"worktree",
+				"philosophy"
+			],
+			"opencode": {
+				"plugin": ["@tarquinen/opencode-dcp@3.1.3", "@franlol/opencode-md-table-formatter@0.0.6"],
+				"agent": {
+					"plan": { "disable": true },
+					"build": { "disable": true },
+					"general": { "disable": true },
+					"explore": { "disable": true },
+					"conductor": {
+						"permission": {
+							"edit": "deny",
+							"write": "deny",
+							"bash": { "*": "deny" },
+							"task": "allow",
+							"delegate": "allow",
+							"worktree_*": "allow"
+						}
+					}
+				},
+				"permission": {
+					"webfetch": "deny",
+					"worktree_*": "deny",
+					"github_*": "deny",
+					"explorer_clone*": "deny"
+				}
+			}
+		},
 		{
 			"name": "workspace",
 			"type": "bundle",

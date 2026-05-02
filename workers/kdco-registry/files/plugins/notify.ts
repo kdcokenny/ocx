@@ -548,7 +548,7 @@ async function handleQuestionAsked(
 // PLUGIN EXPORT
 // ==========================================
 
-export const NotifyPlugin: Plugin = async (ctx) => {
+const NotifyPlugin: Plugin = async (ctx) => {
 	const { client } = ctx
 
 	// Load config once at startup

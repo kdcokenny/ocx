@@ -1103,12 +1103,14 @@ const WorktreePlugin: Plugin = async (ctx) => {
 	}
 }
 
-export const worktreeInternals = {
+const WorktreePluginWithInternals = Object.assign(WorktreePlugin, {
+	testInternals: {
 	isPathLikeCommand,
 	ensureLaunchContextExecutable,
 	validateOcxProfileAvailability,
 	ensureLaunchContextProfile,
 	finalizeWorktreeLaunch,
-} as const
+	},
+} as const)
 
-export default WorktreePlugin
+export default WorktreePluginWithInternals

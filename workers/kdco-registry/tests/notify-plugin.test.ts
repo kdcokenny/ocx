@@ -17,10 +17,15 @@ const notificationPayloads: Array<Record<string, unknown>> = []
 const notifyMock = mock((payload: Record<string, unknown>) => {
 	notificationPayloads.push(payload)
 })
+const readActualFile = fsPromises.readFile
 
 mock.module("node:fs/promises", () => ({
 	...fsPromises,
-	readFile: async () => {
+	readFile: async (filePath: Parameters<typeof fsPromises.readFile>[0], options?: Parameters<typeof fsPromises.readFile>[1]) => {
+		if (filePath !== `${process.env.HOME}/.config/opencode/kdco-notify.json`) {
+			return readActualFile(filePath, options)
+		}
+
 		if (mockedConfig === undefined) {
 			throw Object.assign(new Error("ENOENT"), { code: "ENOENT" })
 		}
@@ -39,10 +44,10 @@ mock.module("node-notifier", () => ({
 	},
 }))
 
-let NotifyPlugin: typeof import("../files/plugins/notify").NotifyPlugin
+let NotifyPlugin: typeof import("../files/plugins/notify").default
 
 beforeAll(async () => {
-	;({ NotifyPlugin } = await import("../files/plugins/notify"))
+	;({ default: NotifyPlugin } = await import("../files/plugins/notify"))
 })
 
 beforeEach(() => {

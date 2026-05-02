@@ -1894,9 +1894,11 @@ const BackgroundAgentsPlugin: Plugin = async (ctx) => {
 	}
 }
 
-export const backgroundAgentsInternals = {
+const BackgroundAgentsPluginWithInternals = Object.assign(BackgroundAgentsPlugin, {
+	testInternals: {
 	DelegationManager,
 	formatDelegationContext,
-} as const
+	},
+} as const)
 
-export default BackgroundAgentsPlugin
+export default BackgroundAgentsPluginWithInternals

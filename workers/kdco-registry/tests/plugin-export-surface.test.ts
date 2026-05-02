@@ -1,34 +1,25 @@
 import { describe, expect, it } from "bun:test"
 import * as backgroundAgentsModule from "../files/plugins/background-agents"
+import * as explorerCloneModule from "../files/plugins/explorer-clone"
+import * as notifyModule from "../files/plugins/notify"
+import * as workspacePluginModule from "../files/plugins/workspace-plugin"
 import * as worktreeModule from "../files/plugins/worktree"
 
-function expectNamedExportsToBeNonCallable(
+function expectDefaultOnlyExportSurface(
 	moduleName: string,
 	moduleNamespace: Record<string, unknown>,
 ): void {
-	const namedExports = Object.entries(moduleNamespace).filter(([exportName]) => exportName !== "default")
-
-	expect(namedExports.length, `${moduleName} should expose named internals for tests`).toBeGreaterThan(0)
-
-	for (const [exportName, exportValue] of namedExports) {
-		expect(
-			typeof exportValue,
-			`${moduleName}.${exportName} must not be callable by the OpenCode plugin loader`,
-		).not.toBe("function")
-	}
+	expect(Object.keys(moduleNamespace).sort(), `${moduleName} must expose only default`).toEqual([
+		"default",
+	])
 }
 
 describe("plugin entry export surface", () => {
-	it("keeps background-agents named exports non-callable", () => {
-		expect(Object.keys(backgroundAgentsModule).sort()).toEqual([
-			"backgroundAgentsInternals",
-			"default",
-		])
-		expectNamedExportsToBeNonCallable("background-agents", backgroundAgentsModule)
-	})
-
-	it("keeps worktree named exports non-callable", () => {
-		expect(Object.keys(worktreeModule).sort()).toEqual(["default", "worktreeInternals"])
-		expectNamedExportsToBeNonCallable("worktree", worktreeModule)
+	it("keeps packaged plugin entry modules default-only", () => {
+		expectDefaultOnlyExportSurface("background-agents", backgroundAgentsModule)
+		expectDefaultOnlyExportSurface("explorer-clone", explorerCloneModule)
+		expectDefaultOnlyExportSurface("worktree", worktreeModule)
+		expectDefaultOnlyExportSurface("notify", notifyModule)
+		expectDefaultOnlyExportSurface("workspace-plugin", workspacePluginModule)
 	})
 })
