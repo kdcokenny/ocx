@@ -87,14 +87,9 @@ describe("explorer-clone hardening", () => {
 
 		expect(context.args).toEqual(expect.arrayContaining(["credential.helper=", "credential.interactive=false", "core.askPass="]))
 		expect(context.args).toEqual(expect.arrayContaining(["protocol.ssh.allow=never", "protocol.git.allow=never"]))
+		expect(context.args).toEqual(expect.arrayContaining(["protocol.file.allow=always", "protocol.https.allow=always"]))
 		expect(context.args).toEqual(expect.arrayContaining(["http.extraHeader=", "http.https://github.com/.extraHeader="]))
-		expect(context.args).toEqual(
-			expect.arrayContaining([
-				"url.ssh://git@github.com/.insteadOf=",
-				"url.git@github.com:.insteadOf=",
-				"url.https://github.com/.insteadOf=",
-			]),
-		)
+		expect(context.args.some((arg) => /^url\..*\.(?:insteadOf|pushInsteadOf)=$/.test(arg))).toBe(false)
 	})
 
 	it("keeps git safety overrides ahead of requested git arguments", () => {
