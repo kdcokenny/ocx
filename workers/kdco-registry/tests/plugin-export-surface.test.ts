@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test"
 import * as backgroundAgentsModule from "../files/plugins/background-agents"
-import * as explorerCloneModule from "../files/plugins/explorer-clone"
 import * as notifyModule from "../files/plugins/notify"
 import * as workspacePluginModule from "../files/plugins/workspace-plugin"
 import * as worktreeModule from "../files/plugins/worktree"
@@ -17,7 +16,6 @@ function expectDefaultOnlyExportSurface(
 describe("plugin entry export surface", () => {
 	it("keeps packaged plugin entry modules default-only", () => {
 		expectDefaultOnlyExportSurface("background-agents", backgroundAgentsModule)
-		expectDefaultOnlyExportSurface("explorer-clone", explorerCloneModule)
 		expectDefaultOnlyExportSurface("worktree", worktreeModule)
 		expectDefaultOnlyExportSurface("notify", notifyModule)
 		expectDefaultOnlyExportSurface("workspace-plugin", workspacePluginModule)

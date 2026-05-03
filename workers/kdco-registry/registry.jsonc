@@ -81,13 +81,6 @@
 			"dependencies": ["kdco-primitives"],
 			"npmDevDependencies": ["jsonc-parser@3.3.1", "zod@4.3.5"]
 		},
-		{
-			"name": "explorer-clone",
-			"type": "plugin",
-			"description": "Minimal scoped clone and cleanup tools for kdco/flow explorer repository inspection",
-			"files": ["plugins/explorer-clone.ts"],
-			"dependencies": []
-		},
 
 		// ============================================================================
 		// SKILLS
