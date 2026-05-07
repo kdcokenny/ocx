@@ -11,7 +11,7 @@ You delegate a task and switch to another window. Now you're checking back every
 This plugin solves that:
 
 - **Stay focused** - Work in other apps. A notification arrives when the AI needs you.
-- **Native OS notifications first** - Uses macOS Notification Center, Windows Toast, or Linux notify-send via `node-notifier`.
+- **Native OS notifications first** - Uses macOS Notification Center via `alerter`, plus Windows Toast and Linux notify-send via `node-notifier`.
 - **Smart defaults** - Won't spam you. Only notifies for meaningful events, with parent-session filtering and quiet-hours support.
 - **Additional [cmux](https://www.cmux.dev/)-native path** - When running in [cmux](https://www.cmux.dev/), can route through `cmux notify` and still falls back safely to desktop notifications.
 
@@ -52,9 +52,11 @@ Question notifications intentionally bypass macOS focus suppression so direct pr
 
 By default, notifications go through the native OS desktop notification path:
 
-- **macOS:** Notification Center (`terminal-notifier` backend)
+- **macOS:** Notification Center via [`vjeantet/alerter`](https://github.com/vjeantet/alerter) (`alerter` must be on `PATH`, macOS 13+)
 - **Windows:** Toast notifications (`SnoreToast` backend)
 - **Linux:** `notify-send`
+
+macOS desktop fallback requires installing `alerter` separately. Supported install paths include Homebrew (`brew install vjeantet/tap/alerter`), MacPorts, or downloading the release zip from GitHub Releases and placing the binary on `PATH`.
 
 ### Additional [cmux](https://www.cmux.dev/)-native path
 
@@ -64,7 +66,7 @@ When running inside [cmux](https://www.cmux.dev/) (with `CMUX_WORKSPACE_ID` set)
 cmux notify --title "..." --subtitle "..." --body "..."
 ```
 
-If [cmux](https://www.cmux.dev/) is unavailable or invocation fails, notifications automatically fall back to the existing `node-notifier` desktop behavior.
+If [cmux](https://www.cmux.dev/) is unavailable or invocation fails, notifications automatically fall back to the desktop path: `alerter` on macOS, and the existing `node-notifier`-backed path on Windows/Linux.
 
 ## Platform Support
 
@@ -152,6 +154,7 @@ If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` an
 
 **Caveats:**
 - Manually install dependencies (`node-notifier`, `detect-terminal`, `zod`)
+- On macOS 13+, install [`vjeantet/alerter`](https://github.com/vjeantet/alerter) and ensure `alerter` is on `PATH` (Homebrew: `brew install vjeantet/tap/alerter`; MacPorts and GitHub Releases/manual zip are also supported)
 - Install [cmux](https://www.cmux.dev/) if you want the additional [cmux](https://www.cmux.dev/)-native notification path
 - Updates require manual re-copying
 

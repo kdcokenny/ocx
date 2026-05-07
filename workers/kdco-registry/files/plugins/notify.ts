@@ -11,10 +11,10 @@
  * - Click notification to focus terminal
  * - Parent session only by default (no spam from sub-tasks)
  *
- * Uses cmux CLI first (if available), then node-notifier fallback:
+ * Uses cmux CLI first (if available), then desktop notification fallback:
  * - cmux: `cmux notify --title ... --subtitle ... --body ...`
  * - cmux status: `cmux set-status <key> <value>` / `cmux clear-status <key>`
- * - macOS: terminal-notifier (native NSUserNotificationCenter)
+ * - macOS: alerter (native Notification Center, requires alerter on PATH)
  * - Windows: SnoreToast (native toast notifications)
  * - Linux: notify-send (native desktop notifications)
  */
@@ -29,7 +29,7 @@ import detectTerminal from "detect-terminal"
 // @ts-expect-error - installed at runtime by OCX
 import notifier from "node-notifier"
 import type { OpencodeClient } from "./kdco-primitives/types"
-import { sendNotificationWithFallback } from "./notify/backend"
+import { sendDesktopNotificationByPlatform, sendNotificationWithFallback } from "./notify/backend"
 import {
 	canUseCmuxNotification,
 	clearCmuxStatus,
@@ -384,7 +384,7 @@ function buildPermissionEventDedupeKey(properties: unknown): string | null {
 	return `permission:request:${normalizedRequestID}`
 }
 
-function sendNodeNotification(options: NotificationOptions): void {
+async function sendDesktopNotification(options: NotificationOptions): Promise<void> {
 	const { title, message, sound, terminalInfo } = options
 
 	// Base notification options
@@ -394,12 +394,15 @@ function sendNodeNotification(options: NotificationOptions): void {
 		sound,
 	}
 
-	// macOS-specific: click notification to focus terminal
-	if (process.platform === "darwin" && terminalInfo.bundleId) {
-		notifyOptions.activate = terminalInfo.bundleId
-	}
-
-	notifier.notify(notifyOptions)
+	await sendDesktopNotificationByPlatform({
+		platform: process.platform,
+		title,
+		message,
+		subtitle: options.subtitle,
+		sound,
+		senderBundleId: terminalInfo.bundleId,
+		sendNodeNotifierNotification: () => notifier.notify(notifyOptions),
+	})
 }
 
 async function sendNotification(
@@ -414,7 +417,7 @@ async function sendNotification(
 				subtitle: options.subtitle,
 				body: options.cmuxBody ?? options.message,
 			}),
-		sendNodeNotify: () => sendNodeNotification(options),
+		sendDesktopNotification: () => sendDesktopNotification(options),
 	})
 }
 
