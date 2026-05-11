@@ -141,8 +141,8 @@ If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` an
 - `.opencode/plugins/notify/cmux.ts`
 - `.opencode/plugins/notify/status.ts`
 - `.opencode/plugins/notify/title.ts`
-- `.opencode/plugins/worktree/terminal.ts`
 - `.opencode/plugins/kdco-primitives/index.ts`
+- `.opencode/plugins/kdco-primitives/cmux.ts`
 - `.opencode/plugins/kdco-primitives/get-project-id.ts`
 - `.opencode/plugins/kdco-primitives/log-warn.ts`
 - `.opencode/plugins/kdco-primitives/mutex.ts`
@@ -153,7 +153,7 @@ If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` an
 - `.opencode/plugins/kdco-primitives/with-timeout.ts`
 
 **Caveats:**
-- Manually install dependencies (`node-notifier`, `detect-terminal`, `zod`)
+- Manually install dependencies (`node-notifier`, `detect-terminal`)
 - On macOS 13+, install [`vjeantet/alerter`](https://github.com/vjeantet/alerter) and ensure `alerter` is on `PATH` (Homebrew: `brew install vjeantet/tap/alerter`; MacPorts and GitHub Releases/manual zip are also supported)
 - Install [cmux](https://www.cmux.dev/) if you want the additional [cmux](https://www.cmux.dev/)-native notification path
 - Updates require manual re-copying

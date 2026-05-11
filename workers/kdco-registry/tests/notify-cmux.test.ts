@@ -1,4 +1,10 @@
 import { describe, expect, it } from "bun:test"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { pathToFileURL } from "node:url"
+import { parse as parseJsonc } from "jsonc-parser"
+import { detectCmuxContext } from "../files/plugins/kdco-primitives/cmux"
 import {
 	buildCmuxClearStatusArgs,
 	buildCmuxNotifyArgs,
@@ -9,7 +15,58 @@ import {
 	sendCmuxStatus,
 } from "../files/plugins/notify/cmux"
 
+const registryPath = path.join(import.meta.dir, "..", "registry.jsonc")
+const registryFilesRoot = path.join(import.meta.dir, "..", "files")
+
 describe("notify cmux integration", () => {
+	it("detects cmux context from the shared primitive", () => {
+		const context = detectCmuxContext({
+			CMUX_WORKSPACE_ID: " workspace-123 ",
+			CMUX_SURFACE_ID: " ",
+			CMUX_SOCKET_PATH: " /tmp/cmux.sock ",
+			CMUX_SOCKET_MODE: " allowall ",
+		})
+
+		expect(context).toEqual({
+			workspaceID: "workspace-123",
+			surfaceID: undefined,
+			socketPath: "/tmp/cmux.sock",
+			socketMode: "allowall",
+		})
+	})
+
+	it("imports from a notify plus kdco-primitives install footprint without worktree terminal", async () => {
+		const registry = parseJsonc(fs.readFileSync(registryPath, "utf8")) as {
+			components: Array<{ name: string; files: string[] }>
+		}
+		const componentFiles = ["notify", "kdco-primitives"].flatMap((componentName) => {
+			const component = registry.components.find((entry) => entry.name === componentName)
+			if (!component) {
+				throw new Error(`Missing registry component: ${componentName}`)
+			}
+			return component.files
+		})
+
+		const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "notify-cmux-footprint-"))
+		try {
+			for (const file of componentFiles) {
+				const sourcePath = path.join(registryFilesRoot, file)
+				const targetPath = path.join(tempRoot, file)
+				fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+				fs.copyFileSync(sourcePath, targetPath)
+			}
+
+			expect(fs.existsSync(path.join(tempRoot, "plugins/worktree/terminal.ts"))).toBe(false)
+
+			const moduleUrl = pathToFileURL(path.join(tempRoot, "plugins/notify/cmux.ts")).href
+			const module = await import(`${moduleUrl}?test=${Date.now()}`)
+
+			expect(module.canUseCmuxNotification({ CMUX_WORKSPACE_ID: "workspace-123" }, () => "cmux")).toBe(true)
+		} finally {
+			fs.rmSync(tempRoot, { recursive: true, force: true })
+		}
+	})
+
 	it("returns false when no cmux context is available", () => {
 		const env = { PATH: "/usr/bin" }
 		const canUse = canUseCmuxNotification(env, () => "/usr/local/bin/cmux")

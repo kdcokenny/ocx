@@ -27,6 +27,7 @@
 				"plugins/kdco-primitives/mutex.ts",
 				"plugins/kdco-primitives/shell.ts",
 				"plugins/kdco-primitives/temp.ts",
+				"plugins/kdco-primitives/cmux.ts",
 				"plugins/kdco-primitives/terminal-detect.ts",
 				"plugins/kdco-primitives/index.ts"
 			],

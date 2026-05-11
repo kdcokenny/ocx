@@ -12,8 +12,10 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { z } from "zod"
-import type { OpencodeClient } from "../kdco-primitives"
+import type { CmuxContext, CmuxEnvironment, OpencodeClient, ResolveExecutable } from "../kdco-primitives"
 import {
+	canUseCmuxWorkflow,
+	detectCmuxContext,
 	escapeAppleScript,
 	escapeBash,
 	escapeBatch,
@@ -23,6 +25,14 @@ import {
 	Mutex,
 	TimeoutError,
 	withTimeout,
+} from "../kdco-primitives"
+
+export {
+	canUseCmuxWorkflow,
+	detectCmuxContext,
+	type CmuxContext,
+	type CmuxEnvironment,
+	type ResolveExecutable,
 } from "../kdco-primitives"
 
 // =============================================================================
@@ -160,8 +170,6 @@ export function buildBatchCommandFromArgv(argv?: string[]): string | undefined {
 	return normalizedArgv.map((arg) => `"${escapeBatch(arg).replace(/"/g, '""')}"`).join(" ")
 }
 
-type ResolveExecutable = (command: string) => string | null | undefined
-type CmuxEnvironment = Record<string, string | undefined>
 type CmuxCommandResult = {
 	exitCode: number
 	stderr: string
@@ -189,14 +197,6 @@ const STABILIZATION_DELAY_MS = 150
 const wslEnvSchema = z.object({
 	WSL_DISTRO_NAME: z.string().optional(),
 	WSLENV: z.string().optional(),
-})
-
-/** Validates cmux environment detection */
-const cmuxEnvSchema = z.object({
-	CMUX_WORKSPACE_ID: z.string().optional(),
-	CMUX_SURFACE_ID: z.string().optional(),
-	CMUX_SOCKET_PATH: z.string().optional(),
-	CMUX_SOCKET_MODE: z.string().optional(),
 })
 
 /** Validates Linux terminal environment detection */
@@ -256,47 +256,6 @@ function isInsideWSL(): boolean {
 	} catch {
 		return false
 	}
-}
-
-export interface CmuxContext {
-	workspaceID?: string
-	surfaceID?: string
-	socketPath?: string
-	socketMode?: string
-}
-
-function normalizeCmuxValue(value?: string): string | undefined {
-	const trimmed = value?.trim()
-	return trimmed ? trimmed : undefined
-}
-
-export function detectCmuxContext(env: CmuxEnvironment = process.env): CmuxContext {
-	const parsed = cmuxEnvSchema.parse(env)
-
-	return {
-		workspaceID: normalizeCmuxValue(parsed.CMUX_WORKSPACE_ID),
-		surfaceID: normalizeCmuxValue(parsed.CMUX_SURFACE_ID),
-		socketPath: normalizeCmuxValue(parsed.CMUX_SOCKET_PATH),
-		socketMode: normalizeCmuxValue(parsed.CMUX_SOCKET_MODE),
-	}
-}
-
-export function canUseCmuxWorkflow(
-	env: CmuxEnvironment = process.env,
-	resolveExecutable: ResolveExecutable = (command) => Bun.which(command),
-	cmuxExecutable: string = "cmux",
-): boolean {
-	if (!resolveExecutable(cmuxExecutable)) {
-		return false
-	}
-
-	const context = detectCmuxContext(env)
-	if (context.workspaceID) {
-		return true
-	}
-
-	const socketModeAllowsExternalControl = context.socketMode?.toLowerCase() === "allowall"
-	return Boolean(context.socketPath && socketModeAllowsExternalControl)
 }
 
 type PlatformTerminalType = Exclude<TerminalType, "tmux" | "cmux">

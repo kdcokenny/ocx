@@ -1,5 +1,5 @@
 import { TimeoutError, withTimeout } from "../kdco-primitives/with-timeout"
-import { canUseCmuxWorkflow } from "../worktree/terminal"
+import { canUseCmuxWorkflow } from "../kdco-primitives/cmux"
 
 interface CmuxNotificationPayload {
 	title: string

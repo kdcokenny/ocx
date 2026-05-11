@@ -19,6 +19,13 @@ export { assertShellSafe, escapeAppleScript, escapeBash, escapeBatch } from "./s
 // Temp directory
 export { getTempDir } from "./temp"
 // Terminal detection
+export {
+	canUseCmuxWorkflow,
+	detectCmuxContext,
+	type CmuxContext,
+	type CmuxEnvironment,
+	type ResolveExecutable,
+} from "./cmux"
 export { isInsideTmux } from "./terminal-detect"
 // Types
 export type { OpencodeClient } from "./types"
