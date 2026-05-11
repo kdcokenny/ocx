@@ -21,7 +21,16 @@ import { findLocalConfigDir, OCX_CONFIG_FILE } from "../profile/paths"
 import { ConfigError } from "../utils/errors"
 import { validatePath } from "../utils/path-security"
 
-export const OPENCODE_OVERLAY_SOURCE_SCOPES = ["agent", "agents", "skill", "skills"] as const
+export const OPENCODE_OVERLAY_SOURCE_SCOPES = [
+	"agent",
+	"agents",
+	"command",
+	"commands",
+	"skill",
+	"skills",
+	"tool",
+	"tools",
+] as const
 export const OPENCODE_MERGED_DIR_PREFIX = "ocx-oc-merged-"
 export const OVERLAY_TRANSACTION_MANIFEST_VERSION = 1
 

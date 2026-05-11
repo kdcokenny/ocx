@@ -922,6 +922,42 @@ describe("ocx oc profile overlay integration", () => {
 		}
 	})
 
+	it("merges project command and tool scopes over profile config", async () => {
+		const testDir = await createTempDir("oc-overlay-commands-tools")
+		try {
+			await createProfile(testDir, "work")
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(join(localConfigDir, "command"), { recursive: true })
+			await mkdir(join(localConfigDir, "commands"), { recursive: true })
+			await mkdir(join(localConfigDir, "tool"), { recursive: true })
+			await mkdir(join(localConfigDir, "tools"), { recursive: true })
+			await Bun.write(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await Bun.write(join(localConfigDir, "command", "singular-command.md"), "singular command")
+			await Bun.write(join(localConfigDir, "commands", "plural-command.md"), "plural command")
+			await Bun.write(join(localConfigDir, "tool", "singular-tool.ts"), "singular tool")
+			await Bun.write(join(localConfigDir, "tools", "plural-tool.ts"), "plural tool")
+
+			const { result, payloadPath } = await runOcCapture({ testDir, profileName: "work" })
+			expect(result.exitCode).toBe(0)
+
+			const payload = await readCapturePayload(payloadPath)
+			expect(payload.files).toContain("command/singular-command.md")
+			expect(payload.files).toContain("commands/plural-command.md")
+			expect(payload.files).toContain("tool/singular-tool.ts")
+			expect(payload.files).toContain("tools/plural-tool.ts")
+			expect(payload.fileContents["command/singular-command.md"]).toBe("singular command")
+			expect(payload.fileContents["commands/plural-command.md"]).toBe("plural command")
+			expect(payload.fileContents["tool/singular-tool.ts"]).toBe("singular tool")
+			expect(payload.fileContents["tools/plural-tool.ts"]).toBe("plural tool")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
 	it("uses project .opencode/ocx.jsonc include/exclude policy with include-wins overlap", async () => {
 		const testDir = await createTempDir("oc-overlay-policy")
 		try {
