@@ -65,10 +65,6 @@ Profiles control what OpenCode sees through `exclude`/`include` patterns. Each p
 | `ocx oc -p <name>` | Launch OpenCode with a profile |
 | `ocx profile list --global` | List your profiles |
 | `ocx config edit --global` | Edit your global config |
-| `ocx migrate` | Dry-run preview of v1.4.6 → v2 migration (shows what would change, no writes) |
-| `ocx migrate --apply` | Apply migration to receipt format |
-| `ocx migrate --global` | Dry-run preview of global root + all profiles migration |
-| `ocx migrate --global --apply` | Apply migration across global root and profiles |
 
 **[Full CLI Reference →](https://ocx.kdco.dev/docs/cli/commands)**
 
@@ -90,23 +86,6 @@ ocx add kdco/workspace
 ```
 
 See [Components & Registries](https://ocx.kdco.dev/docs/registries/create) for more.
-
-### Upgrading from v1.4.6
-
-If you have an existing v1.4.6 project, migrate to the receipt format (`.ocx/receipt.jsonc`):
-
-```bash
-ocx migrate          # Dry-run: shows what would be migrated (no files written)
-ocx migrate --apply  # Apply migration
-ocx verify           # Confirm integrity post-migration
-```
-
-For global config migration (migrates global root and all profiles):
-
-```bash
-ocx migrate --global          # Preview migration across global root + all profiles
-ocx migrate --global --apply  # Apply migration to global root and every profile
-```
 
 ### Creating Registries
 
