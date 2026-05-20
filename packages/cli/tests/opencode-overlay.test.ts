@@ -35,6 +35,8 @@ interface PromptCapturePayload {
 	promptContent: string | null
 }
 
+const ALLOW_ALL_PROFILE_VISIBILITY_POLICY = { include: [], exclude: [] }
+
 async function createProfile(testDir: string, name: string): Promise<string> {
 	const profileDir = join(testDir, "opencode", "profiles", name)
 	await mkdir(profileDir, { recursive: true })
@@ -43,6 +45,16 @@ async function createProfile(testDir: string, name: string): Promise<string> {
 		JSON.stringify({ registries: {}, profileMarker: "profile" }, null, 2),
 	)
 	return profileDir
+}
+
+async function writeProfileVisibilityPolicy(
+	profileDir: string,
+	policy: { include: string[]; exclude: string[] },
+): Promise<void> {
+	await Bun.write(
+		join(profileDir, "ocx.jsonc"),
+		JSON.stringify({ registries: {}, profileMarker: "profile", ...policy }, null, 2),
+	)
 }
 
 async function createCaptureScript(testDir: string): Promise<string> {
@@ -529,6 +541,7 @@ describe("opencode overlay planner", () => {
 				prepareMergedConfigDirForProfile({
 					projectDir: testDir,
 					profileDir,
+					profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
 					hardeningMode: "native-fd-required",
 				}),
 			).rejects.toThrow(/Native fd helper required for overlay merge/i)
@@ -552,6 +565,7 @@ describe("opencode overlay planner", () => {
 			prepared = await prepareMergedConfigDirForProfile({
 				projectDir: testDir,
 				profileDir,
+				profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
 				hardeningMode: "native-fd-required",
 			})
 
@@ -582,6 +596,7 @@ describe("opencode overlay planner", () => {
 			const prepared = await prepareMergedConfigDirForProfile({
 				projectDir: testDir,
 				profileDir,
+				profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
 				seams: {
 					nativeHelper: {
 						name: "test-native-helper",
@@ -644,6 +659,7 @@ describe("opencode overlay planner", () => {
 				prepareMergedConfigDirForProfile({
 					projectDir: testDir,
 					profileDir,
+					profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
 					seams: {
 						collection: {
 							beforeScopeInspect: async () => {
@@ -689,6 +705,7 @@ describe("opencode overlay planner", () => {
 				prepareMergedConfigDirForProfile({
 					projectDir: testDir,
 					profileDir,
+					profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
 					seams: {
 						collection: {
 							beforeDirectoryRead: async (context: {
@@ -736,6 +753,7 @@ describe("opencode overlay planner", () => {
 				prepareMergedConfigDirForProfile({
 					projectDir: testDir,
 					profileDir,
+					profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
 					seams: {
 						copy: {
 							beforeSourceVerification: async (operation: {
@@ -876,10 +894,83 @@ describe("opencode overlay planner", () => {
 			await cleanupTempDir(testDir)
 		}
 	})
+
+	it("applies active profile exclusions before project overlay policy defaults", async () => {
+		const testDir = await createTempDir("oc-overlay-profile-exclude")
+		let prepared: Awaited<ReturnType<typeof prepareMergedConfigDirForProfile>> | null = null
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			await mkdir(join(profileDir, "agents"), { recursive: true })
+			await mkdir(join(profileDir, "skills"), { recursive: true })
+			await writeFile(join(profileDir, "agents", "shared.md"), "profile-agent")
+			await writeFile(join(profileDir, "skills", "profile-skill.md"), "profile-skill")
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(join(localConfigDir, "agents"), { recursive: true })
+			await mkdir(join(localConfigDir, "skills"), { recursive: true })
+			await writeFile(join(localConfigDir, "agents", "evil.md"), "project-agent")
+			await writeFile(join(localConfigDir, "skills", "evil-skill.md"), "project-skill")
+			await writeFile(join(localConfigDir, "agents", "shared.md"), "project-agent")
+
+			prepared = await prepareMergedConfigDirForProfile({
+				projectDir: testDir,
+				profileDir,
+				profileVisibilityPolicy: {
+					include: [],
+					exclude: ["**/.opencode/**"],
+				},
+			})
+
+			await expect(readFile(join(prepared.path, "agents", "evil.md"), "utf8")).rejects.toThrow()
+			await expect(
+				readFile(join(prepared.path, "skills", "evil-skill.md"), "utf8"),
+			).rejects.toThrow()
+			expect(await readFile(join(prepared.path, "agents", "shared.md"), "utf8")).toBe(
+				"profile-agent",
+			)
+		} finally {
+			if (prepared) {
+				await prepared.cleanup()
+			}
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("lets profile include rules opt project overlay files back in", async () => {
+		const testDir = await createTempDir("oc-overlay-profile-include")
+		let prepared: Awaited<ReturnType<typeof prepareMergedConfigDirForProfile>> | null = null
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(join(localConfigDir, "agents"), { recursive: true })
+			await mkdir(join(localConfigDir, "skills"), { recursive: true })
+			await writeFile(join(localConfigDir, "agents", "keep.md"), "keep")
+			await writeFile(join(localConfigDir, "agents", "drop.md"), "drop")
+			await writeFile(join(localConfigDir, "skills", "drop.md"), "drop")
+
+			prepared = await prepareMergedConfigDirForProfile({
+				projectDir: testDir,
+				profileDir,
+				profileVisibilityPolicy: {
+					include: ["**/.opencode/agents/keep.md"],
+					exclude: ["**/.opencode/**"],
+				},
+			})
+
+			expect(await readFile(join(prepared.path, "agents", "keep.md"), "utf8")).toBe("keep")
+			await expect(readFile(join(prepared.path, "agents", "drop.md"), "utf8")).rejects.toThrow()
+			await expect(readFile(join(prepared.path, "skills", "drop.md"), "utf8")).rejects.toThrow()
+		} finally {
+			if (prepared) {
+				await prepared.cleanup()
+			}
+			await cleanupTempDir(testDir)
+		}
+	})
 })
 
 describe("ocx oc profile overlay integration", () => {
-	it("merges project agents/skills over profile with no leakage beyond overlay scope", async () => {
+	it("does not merge project agents/skills when the active profile excludes .opencode", async () => {
 		const testDir = await createTempDir("oc-overlay-visibility")
 		try {
 			const profileDir = await createProfile(testDir, "work")
@@ -912,8 +1003,8 @@ describe("ocx oc profile overlay integration", () => {
 			expect(payload.configDir).not.toBe(profileDir)
 			expect(payload.files).toContain("agents/profile-agent.md")
 			expect(payload.files).toContain("skills/profile-skill.md")
-			expect(payload.files).toContain("agents/project-agent.md")
-			expect(payload.files).toContain("skills/project-skill.md")
+			expect(payload.files).not.toContain("agents/project-agent.md")
+			expect(payload.files).not.toContain("skills/project-skill.md")
 			expect(payload.files).not.toContain("notes/should-not-leak.md")
 			expect(payload.fileContents["ocx.jsonc"] ?? "").toContain("profileMarker")
 			expect(payload.fileContents["ocx.jsonc"] ?? "").not.toContain("projectMarker")
@@ -922,7 +1013,7 @@ describe("ocx oc profile overlay integration", () => {
 		}
 	})
 
-	it("merges project command and tool scopes over profile config", async () => {
+	it("does not merge project command and tool scopes when the active profile excludes .opencode", async () => {
 		const testDir = await createTempDir("oc-overlay-commands-tools")
 		try {
 			await createProfile(testDir, "work")
@@ -945,13 +1036,47 @@ describe("ocx oc profile overlay integration", () => {
 			expect(result.exitCode).toBe(0)
 
 			const payload = await readCapturePayload(payloadPath)
+			expect(payload.files).not.toContain("command/singular-command.md")
+			expect(payload.files).not.toContain("commands/plural-command.md")
+			expect(payload.files).not.toContain("tool/singular-tool.ts")
+			expect(payload.files).not.toContain("tools/plural-tool.ts")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("merges project command and tool scopes when the active profile explicitly includes them", async () => {
+		const testDir = await createTempDir("oc-overlay-commands-tools-included")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			await writeProfileVisibilityPolicy(profileDir, {
+				include: ["**/.opencode/command/**", "**/.opencode/tools/**"],
+				exclude: ["**/.opencode/**"],
+			})
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(join(localConfigDir, "command"), { recursive: true })
+			await mkdir(join(localConfigDir, "commands"), { recursive: true })
+			await mkdir(join(localConfigDir, "tool"), { recursive: true })
+			await mkdir(join(localConfigDir, "tools"), { recursive: true })
+			await Bun.write(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await Bun.write(join(localConfigDir, "command", "singular-command.md"), "singular command")
+			await Bun.write(join(localConfigDir, "commands", "plural-command.md"), "plural command")
+			await Bun.write(join(localConfigDir, "tool", "singular-tool.ts"), "singular tool")
+			await Bun.write(join(localConfigDir, "tools", "plural-tool.ts"), "plural tool")
+
+			const { result, payloadPath } = await runOcCapture({ testDir, profileName: "work" })
+			expect(result.exitCode).toBe(0)
+
+			const payload = await readCapturePayload(payloadPath)
 			expect(payload.files).toContain("command/singular-command.md")
-			expect(payload.files).toContain("commands/plural-command.md")
-			expect(payload.files).toContain("tool/singular-tool.ts")
+			expect(payload.files).not.toContain("commands/plural-command.md")
+			expect(payload.files).not.toContain("tool/singular-tool.ts")
 			expect(payload.files).toContain("tools/plural-tool.ts")
 			expect(payload.fileContents["command/singular-command.md"]).toBe("singular command")
-			expect(payload.fileContents["commands/plural-command.md"]).toBe("plural command")
-			expect(payload.fileContents["tool/singular-tool.ts"]).toBe("singular tool")
 			expect(payload.fileContents["tools/plural-tool.ts"]).toBe("plural tool")
 		} finally {
 			await cleanupTempDir(testDir)
@@ -961,7 +1086,11 @@ describe("ocx oc profile overlay integration", () => {
 	it("uses project .opencode/ocx.jsonc include/exclude policy with include-wins overlap", async () => {
 		const testDir = await createTempDir("oc-overlay-policy")
 		try {
-			await createProfile(testDir, "work")
+			const profileDir = await createProfile(testDir, "work")
+			await writeProfileVisibilityPolicy(profileDir, {
+				include: ["**/.opencode/**"],
+				exclude: ["**/.opencode/**"],
+			})
 
 			const localConfigDir = join(testDir, ".opencode")
 			await mkdir(join(localConfigDir, "agents"), { recursive: true })
@@ -998,6 +1127,10 @@ describe("ocx oc profile overlay integration", () => {
 		const testDir = await createTempDir("oc-overlay-collision")
 		try {
 			const profileDir = await createProfile(testDir, "work")
+			await writeProfileVisibilityPolicy(profileDir, {
+				include: ["**/.opencode/agents/shared.md"],
+				exclude: ["**/.opencode/**"],
+			})
 			await mkdir(join(profileDir, "agents"), { recursive: true })
 			await Bun.write(join(profileDir, "agents", "shared.md"), "from-profile")
 
@@ -1014,6 +1147,31 @@ describe("ocx oc profile overlay integration", () => {
 
 			const payload = await readCapturePayload(payloadPath)
 			expect(payload.fileContents["agents/shared.md"]).toBe("from-project")
+		} finally {
+			await cleanupTempDir(testDir)
+		}
+	})
+
+	it("keeps profile file on collisions when .opencode is excluded", async () => {
+		const testDir = await createTempDir("oc-overlay-collision-profile-wins")
+		try {
+			const profileDir = await createProfile(testDir, "work")
+			await mkdir(join(profileDir, "agents"), { recursive: true })
+			await Bun.write(join(profileDir, "agents", "shared.md"), "from-profile")
+
+			const localConfigDir = join(testDir, ".opencode")
+			await mkdir(join(localConfigDir, "agents"), { recursive: true })
+			await Bun.write(
+				join(localConfigDir, "ocx.jsonc"),
+				JSON.stringify({ profile: "work" }, null, 2),
+			)
+			await Bun.write(join(localConfigDir, "agents", "shared.md"), "from-project")
+
+			const { result, payloadPath } = await runOcCapture({ testDir, profileName: "work" })
+			expect(result.exitCode).toBe(0)
+
+			const payload = await readCapturePayload(payloadPath)
+			expect(payload.fileContents["agents/shared.md"]).toBe("from-profile")
 		} finally {
 			await cleanupTempDir(testDir)
 		}
@@ -1284,7 +1442,11 @@ describe("ocx oc profile overlay integration", () => {
 	it("cleans merged temp dir when copy fails before spawn", async () => {
 		const testDir = await createTempDir("oc-overlay-copy-cleanup")
 		try {
-			await createProfile(testDir, "work")
+			const profileDir = await createProfile(testDir, "work")
+			await writeProfileVisibilityPolicy(profileDir, {
+				include: ["**/.opencode/agents/unreadable.md"],
+				exclude: ["**/.opencode/**"],
+			})
 
 			const tmpRoot = join(testDir, "tmp")
 			await mkdir(tmpRoot, { recursive: true })
@@ -1321,6 +1483,10 @@ describe("ocx oc profile overlay integration", () => {
 		const testDir = await createTempDir("oc-overlay-destination-symlink-cleanup")
 		try {
 			const profileDir = await createProfile(testDir, "work")
+			await writeProfileVisibilityPolicy(profileDir, {
+				include: ["**/.opencode/agents/agent.md"],
+				exclude: ["**/.opencode/**"],
+			})
 
 			const outsideDir = join(testDir, "outside")
 			await mkdir(outsideDir, { recursive: true })

@@ -440,6 +440,15 @@ export function planOverlayCopyOperations(
 		}))
 }
 
+function filterCandidatesByProfileVisibilityPolicy(
+	candidates: readonly OverlayCandidate[],
+	profileVisibilityPolicy: ProjectOverlayPolicy,
+): OverlayCandidate[] {
+	return candidates.filter((candidate) =>
+		shouldIncludeOverlayPath(`.opencode/${candidate.overlayRelativePath}`, profileVisibilityPolicy),
+	)
+}
+
 async function rejectSymlinkEntry(
 	projectConfigRealPath: string,
 	absolutePath: string,
@@ -984,6 +993,7 @@ export interface OverlayPrepareSeams {
 interface PrepareMergedConfigDirOptions {
 	projectDir: string
 	profileDir: string
+	profileVisibilityPolicy: ProjectOverlayPolicy
 	hardeningMode?: OverlayHardeningMode
 	seams?: OverlayPrepareSeams
 }
@@ -1055,9 +1065,13 @@ export async function prepareMergedConfigDirForProfile(
 		if (localConfigDir) {
 			const projectOverlayConfigDir = await resolveProjectOverlayConfigDir(localConfigDir)
 			const policy = await loadProjectOverlayPolicy(projectOverlayConfigDir)
-			const candidates = await collectOverlayCandidates(
+			const rawCandidates = await collectOverlayCandidates(
 				projectOverlayConfigDir,
 				options.seams?.collection,
+			)
+			const candidates = filterCandidatesByProfileVisibilityPolicy(
+				rawCandidates,
+				options.profileVisibilityPolicy,
 			)
 			const copyPlan = planOverlayCopyOperations(candidates, policy)
 			const manifest = buildOverlayTransactionManifest(projectOverlayConfigDir, copyPlan)

@@ -751,9 +751,20 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 		}
 
 		if (config.profileName) {
+			if (!profile) {
+				throw createOpencodeOcError(
+					"validate",
+					`Resolved profile ${config.profileName} is missing during profile launch`,
+				)
+			}
+
 			mergedConfig = await prepareMergedConfigDirForProfile({
 				projectDir,
 				profileDir: getProfileDir(config.profileName),
+				profileVisibilityPolicy: {
+					include: profile.ocx.include,
+					exclude: profile.ocx.exclude,
+				},
 			})
 		}
 
