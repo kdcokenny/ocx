@@ -4,7 +4,8 @@
  * Ported from memospot/Prisma OSS test patterns.
  */
 import { describe, expect, it } from "bun:test"
-import { hashContent, parseSha256Sums } from "../../src/self-update/verify"
+import { parseSha256Sums } from "../../src/self-update/verify"
+import { hashContent } from "../../src/utils/receipt"
 
 // Valid 64-character SHA256 hashes for testing
 const HASH_A = "abc123def456789012345678901234567890123456789012345678901234abcd"

@@ -7,15 +7,12 @@
 import { resolve } from "node:path"
 import type { Command } from "commander"
 import kleur from "kleur"
-import { runCompleteValidation } from "../lib/validation-runner"
-import type { LoadRegistryErrorKind } from "../lib/validators"
 import {
-	EXIT_CODES,
-	NotFoundError,
-	OCXError,
-	ValidationFailedError,
-	type ValidationFailureDetails,
-} from "../utils/errors"
+	createLoadValidationError,
+	createValidationFailureError,
+} from "../lib/validation-errors-factory"
+import { runCompleteValidation } from "../lib/validation-runner"
+import { EXIT_CODES, OCXError } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
 import { outputJson } from "../utils/json-output"
 import { logger } from "../utils/logger"
@@ -26,43 +23,6 @@ interface ValidateOptions {
 	json: boolean
 	quiet: boolean
 	duplicateTargets: boolean
-}
-
-function createLoadValidationError(message: string, errorKind?: LoadRegistryErrorKind): Error {
-	if (errorKind === "not_found") {
-		return new NotFoundError(message)
-	}
-
-	if (errorKind === "parse_error") {
-		return new OCXError(message, "CONFIG_ERROR", EXIT_CODES.CONFIG)
-	}
-
-	return new OCXError(message, "CONFIG_ERROR", EXIT_CODES.CONFIG)
-}
-
-function createValidationFailureError(
-	errors: string[],
-	failureType: "schema" | "rules",
-): ValidationFailedError {
-	const summary = summarizeValidationErrors(errors, {
-		schemaErrors: failureType === "schema" ? errors.length : 0,
-	})
-
-	const details: ValidationFailureDetails = {
-		valid: false,
-		errors,
-		summary: {
-			valid: false,
-			totalErrors: summary.totalErrors,
-			schemaErrors: summary.schemaErrors,
-			sourceFileErrors: summary.sourceFileErrors,
-			circularDependencyErrors: summary.circularDependencyErrors,
-			duplicateTargetErrors: summary.duplicateTargetErrors,
-			otherErrors: summary.otherErrors,
-		},
-	}
-
-	return new ValidationFailedError(details)
 }
 
 function outputValidationErrors(errors: string[]): void {

@@ -6,9 +6,10 @@
  */
 
 import { join, posix } from "node:path"
-import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
+import { type ParseError, parse as parseJsonc } from "jsonc-parser"
 import type { Registry } from "../schemas/registry"
 import { classifyRegistrySchemaIssue, normalizeFile, registrySchema } from "../schemas/registry"
+import { formatJsoncParseError } from "../utils/jsonc"
 
 export interface ValidationResult<T = unknown> {
 	valid: boolean
@@ -24,22 +25,6 @@ export interface LoadRegistryResult {
 	data?: unknown
 	error?: string
 	errorKind?: LoadRegistryErrorKind
-}
-
-/**
- * Format JSONC parse errors into a readable error message.
- */
-function formatJsoncParseError(parseErrors: ParseError[]): string {
-	if (parseErrors.length === 0) {
-		return "Unknown parse error"
-	}
-
-	const firstError = parseErrors[0]
-	if (!firstError) {
-		return "Unknown parse error"
-	}
-
-	return `${printParseErrorCode(firstError.error)} at offset ${firstError.offset}`
 }
 
 /**

@@ -28,7 +28,7 @@ import { existsSync, readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, relative } from "node:path"
 import { Glob } from "bun"
-import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
+import { type ParseError, parse as parseJsonc } from "jsonc-parser"
 import { ProfileManager } from "../profile/manager"
 import {
 	findLocalConfigDir,
@@ -45,6 +45,7 @@ import type { NormalizedOpencodeConfig } from "../schemas/registry"
 import { ConfigError, ProfileNotFoundError, ProfilesNotInitializedError } from "../utils/errors"
 import { resolveGitRootSync } from "../utils/git-root"
 import { resolveRegistryInstructionPaths } from "../utils/instruction-paths"
+import { formatJsoncParseError } from "../utils/jsonc"
 import { getGlobalConfigPath } from "../utils/paths"
 
 // =============================================================================
@@ -102,19 +103,6 @@ function requireNonEmptyExplicitProfile(profileName: string, sourceDescription: 
 	}
 
 	return profileName
-}
-
-function formatJsoncParseError(parseErrors: ParseError[]): string {
-	if (parseErrors.length === 0) {
-		return "Unknown parse error"
-	}
-
-	const firstError = parseErrors[0]
-	if (!firstError) {
-		return "Unknown parse error"
-	}
-
-	return `${printParseErrorCode(firstError.error)} at offset ${firstError.offset}`
 }
 
 function parseLocalOcxConfig(configPath: string): OcxConfig {

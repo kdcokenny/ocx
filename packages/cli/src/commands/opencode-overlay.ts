@@ -15,10 +15,11 @@ import {
 import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative } from "node:path"
 import { Glob } from "bun"
-import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
+import { type ParseError, parse as parseJsonc } from "jsonc-parser"
 import { array, object, string } from "zod"
 import { findLocalConfigDir, OCX_CONFIG_FILE } from "../profile/paths"
 import { ConfigError } from "../utils/errors"
+import { formatJsoncParseError } from "../utils/jsonc"
 import { validatePath } from "../utils/path-security"
 
 export const OPENCODE_OVERLAY_SOURCE_SCOPES = [
@@ -84,19 +85,6 @@ function formatUnknownError(error: unknown): string {
 	}
 
 	return String(error)
-}
-
-function formatJsoncParseError(parseErrors: ParseError[]): string {
-	if (parseErrors.length === 0) {
-		return "Unknown parse error"
-	}
-
-	const firstError = parseErrors[0]
-	if (!firstError) {
-		return "Unknown parse error"
-	}
-
-	return `${printParseErrorCode(firstError.error)} at offset ${firstError.offset}`
 }
 
 function toPosixPath(pathValue: string): string {

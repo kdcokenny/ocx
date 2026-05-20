@@ -4,13 +4,13 @@
  * Follows the 5 Laws of Elegant Defense:
  * - Early Exit: Guard clauses in parseSha256Sums for empty/invalid lines
  * - Parse Don't Validate: Checksums parsed into Map at boundary
- * - Atomic Predictability: Pure hash functions with no side effects
+ * - Atomic Predictability: Pure functions, hashContent imported from utils/receipt
  * - Fail Fast: IntegrityError thrown immediately on mismatch
  * - Intentional Naming: parseSha256Sums, hashContent, verifyChecksum
  */
 
-import { createHash } from "node:crypto"
 import { IntegrityError, SelfUpdateError } from "../utils/errors"
+import { hashContent } from "../utils/receipt"
 
 const GITHUB_REPO = "kdcokenny/ocx"
 
@@ -35,20 +35,6 @@ export function parseSha256Sums(content: string): Map<string, string> {
 		}
 	}
 	return checksums
-}
-
-// =============================================================================
-// HASHING
-// =============================================================================
-
-/**
- * Hash content using SHA256.
- *
- * @param content - Buffer or string to hash
- * @returns Lowercase hex-encoded SHA256 hash
- */
-export function hashContent(content: Buffer | string): string {
-	return createHash("sha256").update(content).digest("hex")
 }
 
 // =============================================================================

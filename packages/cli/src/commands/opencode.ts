@@ -9,7 +9,7 @@
 
 import * as path from "node:path"
 import type { Command } from "commander"
-import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
+import { type ParseError, parse as parseJsonc } from "jsonc-parser"
 import { ConfigResolver } from "../config/resolver"
 import {
 	findLocalConfigDir,
@@ -21,6 +21,7 @@ import { dedupePluginsByCanonicalName, extractCanonicalPluginName } from "../reg
 import { ConfigError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError } from "../utils/handle-error"
+import { formatJsoncParseError } from "../utils/jsonc"
 import { logger } from "../utils/logger"
 import { getGlobalConfigPath } from "../utils/paths"
 import { addVerboseOption } from "../utils/shared-options"
@@ -31,6 +32,7 @@ import {
 	saveTerminalTitle,
 	setTerminalName,
 } from "../utils/terminal-title"
+import { isPlainObject } from "../utils/type-guards"
 import {
 	createOpencodeOcError,
 	type PreparedMergedConfigDir,
@@ -55,23 +57,6 @@ const OPENCODE_SIGNAL_EXIT_CODES: Record<OpenCodeShutdownSignal, number> = {
 
 type OpencodeLeafOrigin = "profile" | "local"
 type OpencodePathSegment = string | number
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function formatJsoncParseError(parseErrors: ParseError[]): string {
-	if (parseErrors.length === 0) {
-		return "Unknown parse error"
-	}
-
-	const firstError = parseErrors[0]
-	if (!firstError) {
-		return "Unknown parse error"
-	}
-
-	return `${printParseErrorCode(firstError.error)} at offset ${firstError.offset}`
-}
 
 function pathSegmentsToKey(segments: OpencodePathSegment[]): string {
 	if (segments.length === 0) {
