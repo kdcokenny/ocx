@@ -1,5 +1,8 @@
-import { TimeoutError, withTimeout } from "../kdco-primitives/with-timeout"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
 import { canUseCmuxWorkflow } from "../kdco-primitives/cmux"
+import { TimeoutError, withTimeout } from "../kdco-primitives/with-timeout"
 
 interface CmuxNotificationPayload {
 	title: string
@@ -40,12 +43,79 @@ type CmuxExecutionOptions = {
 	cmuxCommand?: string
 }
 
+type CmuxCommandTrustOptions = {
+	currentWorkingDirectory?: string
+	tempDirectory?: string
+}
+
 export function canUseCmuxNotification(
 	env: EnvironmentVariables = process.env,
 	resolveExecutable: ResolveExecutable = resolveWithBunWhich,
 	cmuxCommand: string = "cmux",
 ): boolean {
-	return canUseCmuxWorkflow(env, resolveExecutable, cmuxCommand)
+	return Boolean(resolveCmuxNotificationCommand(env, resolveExecutable, cmuxCommand))
+}
+
+function realpathBestEffort(filePath: string): string {
+	try {
+		return fs.realpathSync(filePath)
+	} catch {
+		return path.resolve(filePath)
+	}
+}
+
+function isPathAtOrInside(parentPath: string, candidatePath: string): boolean {
+	const relative = path.relative(parentPath, candidatePath)
+	return (
+		relative === "" ||
+		(Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative))
+	)
+}
+
+function isTrustedCmuxCommandPath(
+	candidatePath: string,
+	options: CmuxCommandTrustOptions = {},
+): boolean {
+	if (!path.isAbsolute(candidatePath)) return false
+
+	const cwd = path.resolve(options.currentWorkingDirectory ?? process.cwd())
+	const realCwd = realpathBestEffort(cwd)
+	const tempDirectory = path.resolve(options.tempDirectory ?? os.tmpdir())
+	const realTempDirectory = realpathBestEffort(tempDirectory)
+	const apparentCandidate = path.resolve(candidatePath)
+	const realCandidate = realpathBestEffort(candidatePath)
+	const commonTempDirectories = ["/tmp", "/private/tmp", "/var/tmp"]
+	const untrustedRoots = [
+		cwd,
+		realCwd,
+		tempDirectory,
+		realTempDirectory,
+		...commonTempDirectories.flatMap((directory) => [
+			path.resolve(directory),
+			realpathBestEffort(directory),
+		]),
+	]
+
+	return !untrustedRoots.some((root) =>
+		[apparentCandidate, realCandidate].some((candidate) => isPathAtOrInside(root, candidate)),
+	)
+}
+
+export function resolveCmuxNotificationCommand(
+	env: EnvironmentVariables = process.env,
+	resolveExecutable: ResolveExecutable = resolveWithBunWhich,
+	cmuxCommand: string = "cmux",
+	options: CmuxCommandTrustOptions = {},
+): string | undefined {
+	const resolvedCommand = resolveExecutable(cmuxCommand)?.trim()
+	if (!resolvedCommand) return undefined
+	if (!isTrustedCmuxCommandPath(resolvedCommand, options)) return undefined
+
+	if (!canUseCmuxWorkflow(env, () => resolvedCommand, resolvedCommand)) {
+		return undefined
+	}
+
+	return realpathBestEffort(resolvedCommand)
 }
 
 export function buildCmuxNotifyArgs(payload: CmuxNotificationPayload): string[] {
@@ -69,10 +139,14 @@ export function buildCmuxClearStatusArgs(payload: CmuxClearStatusPayload): strin
 	return ["clear-status", payload.key]
 }
 
-async function executeCmuxCommand(commandArgs: string[], options?: CmuxExecutionOptions): Promise<boolean> {
+async function executeCmuxCommand(
+	commandArgs: string[],
+	options?: CmuxExecutionOptions,
+): Promise<boolean> {
 	const timeoutMs = options?.timeoutMs ?? CMUX_NOTIFY_TIMEOUT_MS
 	const spawnProcess = options?.spawnProcess ?? spawnCmuxWithBun
-	const cmuxCommand = options?.cmuxCommand ?? "cmux"
+	const cmuxCommand = options?.cmuxCommand
+	if (!cmuxCommand) return false
 
 	try {
 		const proc = spawnProcess([cmuxCommand, ...commandArgs])

@@ -40,7 +40,10 @@ function pushAlerterNotificationPayload(command: string[]): void {
 
 mock.module("node:fs/promises", () => ({
 	...fsPromises,
-	readFile: async (filePath: Parameters<typeof fsPromises.readFile>[0], options?: Parameters<typeof fsPromises.readFile>[1]) => {
+	readFile: async (
+		filePath: Parameters<typeof fsPromises.readFile>[0],
+		options?: Parameters<typeof fsPromises.readFile>[1],
+	) => {
 		if (filePath !== `${process.env.HOME}/.config/opencode/kdco-notify.json`) {
 			return readActualFile(filePath, options)
 		}
@@ -79,7 +82,11 @@ beforeEach(() => {
 	)
 	spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 		const command = args[0]
-		if (Array.isArray(command) && typeof command[0] === "string" && command[0].includes("alerter")) {
+		if (
+			Array.isArray(command) &&
+			typeof command[0] === "string" &&
+			command[0].includes("alerter")
+		) {
 			pushAlerterNotificationPayload(command.map(String))
 			return {
 				exited: Promise.resolve(0),
@@ -125,7 +132,11 @@ function mockFocusedTerminal(): void {
 
 	spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 		const command = args[0]
-		if (Array.isArray(command) && typeof command[0] === "string" && command[0].includes("alerter")) {
+		if (
+			Array.isArray(command) &&
+			typeof command[0] === "string" &&
+			command[0].includes("alerter")
+		) {
 			pushAlerterNotificationPayload(command.map(String))
 			return {
 				exited: Promise.resolve(0),
@@ -194,6 +205,7 @@ async function emitQuestionToolBefore(
 function decodeOscTitleWrite(chunk: unknown): string | null {
 	if (typeof chunk !== "string") return null
 
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: OSC title sequences are encoded as ESC and BEL.
 	const match = /^\u001b\]0;(.*)\u0007$/.exec(chunk)
 	if (!match) return null
 
@@ -526,15 +538,13 @@ describe("notify plugin event compatibility and dedupe", () => {
 			command === "cmux" ? "/usr/local/bin/cmux" : null,
 		)
 
-		spyOn(globalThis, "setInterval").mockImplementation(
-			((() => {
-				return {
-					unref: () => {
-						// no-op
-					},
-				} as ReturnType<typeof setInterval>
-			}) as unknown) as typeof setInterval,
-		)
+		spyOn(globalThis, "setInterval").mockImplementation((() => {
+			return {
+				unref: () => {
+					// no-op
+				},
+			} as ReturnType<typeof setInterval>
+		}) as unknown as typeof setInterval)
 		spyOn(globalThis, "clearInterval").mockImplementation((() => {
 			// no-op
 		}) as typeof clearInterval)
@@ -542,7 +552,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 		const cmuxCommands: string[][] = []
 		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 			const command = args[0]
-			if (Array.isArray(command) && command[0] === "cmux") {
+			if (Array.isArray(command) && command[0] === "/usr/local/bin/cmux") {
 				cmuxCommands.push(command.map(String))
 				return {
 					exited: Promise.resolve(0),
@@ -621,15 +631,13 @@ describe("notify plugin event compatibility and dedupe", () => {
 			command === "cmux" ? "/usr/local/bin/cmux" : null,
 		)
 
-		spyOn(globalThis, "setInterval").mockImplementation(
-			((() => {
-				return {
-					unref: () => {
-						// no-op
-					},
-				} as ReturnType<typeof setInterval>
-			}) as unknown) as typeof setInterval,
-		)
+		spyOn(globalThis, "setInterval").mockImplementation((() => {
+			return {
+				unref: () => {
+					// no-op
+				},
+			} as ReturnType<typeof setInterval>
+		}) as unknown as typeof setInterval)
 		spyOn(globalThis, "clearInterval").mockImplementation((() => {
 			// no-op
 		}) as typeof clearInterval)
@@ -637,7 +645,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 		const cmuxCommands: string[][] = []
 		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 			const command = args[0]
-			if (Array.isArray(command) && command[0] === "cmux") {
+			if (Array.isArray(command) && command[0] === "/usr/local/bin/cmux") {
 				cmuxCommands.push(command.map(String))
 				return {
 					exited: Promise.resolve(0),
@@ -691,10 +699,63 @@ describe("notify plugin event compatibility and dedupe", () => {
 		)
 
 		expect(statusCommands).toEqual([
-			["cmux", "set-status", "opencode.session.session-a", "⠋"],
-			["cmux", "clear-status", "opencode.session.session-a"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "⠋"],
+			["/usr/local/bin/cmux", "clear-status", "opencode.session.session-a"],
 		])
 		expect(writtenTitles).toHaveLength(0)
+	})
+
+	it("falls back to desktop notifications when cmux resolves inside the project", async () => {
+		process.env.CMUX_WORKSPACE_ID = "workspace-123"
+		const projectCmux = `${process.cwd()}/node_modules/.bin/cmux`
+
+		spyOn(Bun, "which").mockImplementation((command: string) => {
+			if (command === "cmux") return projectCmux
+			if (command === "alerter") return "/usr/local/bin/alerter"
+			return null
+		})
+
+		const cmuxCommands: string[][] = []
+		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
+			const command = args[0]
+			if (Array.isArray(command) && (command[0] === projectCmux || command[0] === "cmux")) {
+				cmuxCommands.push(command.map(String))
+				return {
+					exited: Promise.resolve(0),
+				} as ReturnType<typeof Bun.spawn>
+			}
+
+			if (
+				Array.isArray(command) &&
+				typeof command[0] === "string" &&
+				command[0].includes("alerter")
+			) {
+				pushAlerterNotificationPayload(command.map(String))
+			}
+
+			return {
+				stdout: new Blob([""]).stream(),
+				stderr: new Blob([""]).stream(),
+				exited: Promise.resolve(0),
+			} as ReturnType<typeof Bun.spawn>
+		})
+
+		const { hooks } = await createPlugin({
+			"session-a": { title: "Session A" },
+		})
+
+		await emitEvent(hooks, {
+			type: "question.asked",
+			properties: {
+				id: "question-1",
+				sessionID: "session-a",
+				questions: [],
+			},
+		})
+		await Bun.sleep(0)
+
+		expect(cmuxCommands).toEqual([])
+		expect(notificationPayloads.some((payload) => payload.title === "Question for you")).toBe(true)
 	})
 
 	it("keeps OSC spinner active while any tracked session remains busy", async () => {
@@ -705,22 +766,20 @@ describe("notify plugin event compatibility and dedupe", () => {
 
 		let tickerCallback: (() => void) | null = null
 		let tickerIntervalMs: number | null = null
-		spyOn(globalThis, "setInterval").mockImplementation(
-			((callback: unknown, ms?: number) => {
-				if (typeof callback !== "function") {
-					throw new Error("Expected title ticker callback to be a function")
-				}
+		spyOn(globalThis, "setInterval").mockImplementation(((callback: unknown, ms?: number) => {
+			if (typeof callback !== "function") {
+				throw new Error("Expected title ticker callback to be a function")
+			}
 
-				tickerCallback = callback as () => void
-				tickerIntervalMs = ms ?? null
+			tickerCallback = callback as () => void
+			tickerIntervalMs = ms ?? null
 
-				return {
-					unref: () => {
-						// no-op
-					},
-				} as ReturnType<typeof setInterval>
-			}) as typeof setInterval,
-		)
+			return {
+				unref: () => {
+					// no-op
+				},
+			} as ReturnType<typeof setInterval>
+		}) as typeof setInterval)
 		spyOn(globalThis, "clearInterval").mockImplementation((() => {
 			// no-op
 		}) as typeof clearInterval)
@@ -798,15 +857,13 @@ describe("notify plugin event compatibility and dedupe", () => {
 			baseTitle: "ocx[default]:repo/main",
 		})
 
-		spyOn(globalThis, "setInterval").mockImplementation(
-			((() => {
-				return {
-					unref: () => {
-						// no-op
-					},
-				} as ReturnType<typeof setInterval>
-			}) as unknown) as typeof setInterval,
-		)
+		spyOn(globalThis, "setInterval").mockImplementation((() => {
+			return {
+				unref: () => {
+					// no-op
+				},
+			} as ReturnType<typeof setInterval>
+		}) as unknown as typeof setInterval)
 		spyOn(globalThis, "clearInterval").mockImplementation((() => {
 			// no-op
 		}) as typeof clearInterval)
@@ -894,15 +951,13 @@ describe("notify plugin event compatibility and dedupe", () => {
 			baseTitle: "ocx[default]:repo/main",
 		})
 
-		spyOn(globalThis, "setInterval").mockImplementation(
-			((() => {
-				return {
-					unref: () => {
-						// no-op
-					},
-				} as ReturnType<typeof setInterval>
-			}) as unknown) as typeof setInterval,
-		)
+		spyOn(globalThis, "setInterval").mockImplementation((() => {
+			return {
+				unref: () => {
+					// no-op
+				},
+			} as ReturnType<typeof setInterval>
+		}) as unknown as typeof setInterval)
 		spyOn(globalThis, "clearInterval").mockImplementation((() => {
 			// no-op
 		}) as typeof clearInterval)
@@ -946,7 +1001,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 		const cmuxCommands: string[][] = []
 		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 			const command = args[0]
-			if (Array.isArray(command) && command[0] === "cmux") {
+			if (Array.isArray(command) && command[0] === "/usr/local/bin/cmux") {
 				cmuxCommands.push(command.map(String))
 				return {
 					exited: Promise.resolve(0),
@@ -1010,10 +1065,10 @@ describe("notify plugin event compatibility and dedupe", () => {
 		)
 
 		expect(statusCommands).toEqual([
-			["cmux", "set-status", "opencode.session.session-a", "⠋"],
-			["cmux", "set-status", "opencode.session.session-a", "Needs input"],
-			["cmux", "set-status", "opencode.session.session-a", "Error"],
-			["cmux", "clear-status", "opencode.session.session-a"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "⠋"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "Needs input"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "Error"],
+			["/usr/local/bin/cmux", "clear-status", "opencode.session.session-a"],
 		])
 	})
 
@@ -1026,22 +1081,20 @@ describe("notify plugin event compatibility and dedupe", () => {
 
 		let tickerCallback: (() => void) | null = null
 		let tickerIntervalMs: number | null = null
-		spyOn(globalThis, "setInterval").mockImplementation(
-			((callback: unknown, ms?: number) => {
-				if (typeof callback !== "function") {
-					throw new Error("Expected notify busy ticker callback to be a function")
-				}
+		spyOn(globalThis, "setInterval").mockImplementation(((callback: unknown, ms?: number) => {
+			if (typeof callback !== "function") {
+				throw new Error("Expected notify busy ticker callback to be a function")
+			}
 
-				tickerCallback = callback as () => void
-				tickerIntervalMs = ms ?? null
+			tickerCallback = callback as () => void
+			tickerIntervalMs = ms ?? null
 
-				return {
-					unref: () => {
-						// no-op
-					},
-				} as ReturnType<typeof setInterval>
-			}) as typeof setInterval,
-		)
+			return {
+				unref: () => {
+					// no-op
+				},
+			} as ReturnType<typeof setInterval>
+		}) as typeof setInterval)
 		spyOn(globalThis, "clearInterval").mockImplementation((() => {
 			// no-op
 		}) as typeof clearInterval)
@@ -1049,7 +1102,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 		const cmuxCommands: string[][] = []
 		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 			const command = args[0]
-			if (Array.isArray(command) && command[0] === "cmux") {
+			if (Array.isArray(command) && command[0] === "/usr/local/bin/cmux") {
 				cmuxCommands.push(command.map(String))
 				return {
 					exited: Promise.resolve(0),
@@ -1111,7 +1164,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 
 		expect(setStatusTexts.slice(0, 4)).toEqual(CMUX_BUSY_SPINNER_FRAMES.slice(0, 4))
 		expect(statusCommands[statusCommands.length - 1]).toEqual([
-			"cmux",
+			"/usr/local/bin/cmux",
 			"clear-status",
 			"opencode.session.session-a",
 		])
@@ -1130,7 +1183,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 
 		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 			const command = args[0]
-			if (Array.isArray(command) && command[0] === "cmux") {
+			if (Array.isArray(command) && command[0] === "/usr/local/bin/cmux") {
 				cmuxCommands.push(command.map(String))
 
 				if (command[1] === "set-status" && shouldDelayFirstStatus) {
@@ -1188,7 +1241,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 			(command) => command[1] === "set-status" || command[1] === "clear-status",
 		)
 		expect(statusCommandsWhileFirstWriteIsPending).toEqual([
-			["cmux", "set-status", "opencode.session.session-a", "⠋"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "⠋"],
 		])
 
 		if (!resolveFirstStatusExit) {
@@ -1203,8 +1256,8 @@ describe("notify plugin event compatibility and dedupe", () => {
 			(command) => command[1] === "set-status" || command[1] === "clear-status",
 		)
 		expect(finalStatusCommands).toEqual([
-			["cmux", "set-status", "opencode.session.session-a", "⠋"],
-			["cmux", "set-status", "opencode.session.session-a", "Error"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "⠋"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "Error"],
 		])
 	})
 
@@ -1221,7 +1274,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 
 		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 			const command = args[0]
-			if (Array.isArray(command) && command[0] === "cmux") {
+			if (Array.isArray(command) && command[0] === "/usr/local/bin/cmux") {
 				cmuxCommands.push(command.map(String))
 
 				if (command[1] === "set-status" && shouldDelayFirstStatus) {
@@ -1296,7 +1349,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 		)
 
 		expect(statusCommandsWhileFirstIsPending).toEqual([
-			["cmux", "set-status", "opencode.session.session-a", "⠋"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "⠋"],
 		])
 
 		if (!resolveFirstStatusExit) {
@@ -1312,8 +1365,8 @@ describe("notify plugin event compatibility and dedupe", () => {
 		)
 
 		expect(finalStatusCommands).toEqual([
-			["cmux", "set-status", "opencode.session.session-a", "⠋"],
-			["cmux", "clear-status", "opencode.session.session-a"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.session-a", "⠋"],
+			["/usr/local/bin/cmux", "clear-status", "opencode.session.session-a"],
 		])
 	})
 
@@ -1330,7 +1383,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 
 		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 			const command = args[0]
-			if (Array.isArray(command) && command[0] === "cmux") {
+			if (Array.isArray(command) && command[0] === "/usr/local/bin/cmux") {
 				cmuxCommands.push(command.map(String))
 
 				if (command[1] === "set-status" && shouldDelayFirstStatus) {
@@ -1441,7 +1494,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 
 		spyOn(Bun, "spawn").mockImplementation((...args: unknown[]) => {
 			const command = args[0]
-			if (Array.isArray(command) && command[0] === "cmux") {
+			if (Array.isArray(command) && command[0] === "/usr/local/bin/cmux") {
 				cmuxCommands.push(command.map(String))
 
 				if (command[1] === "set-status") {

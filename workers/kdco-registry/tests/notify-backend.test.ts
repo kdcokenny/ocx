@@ -78,6 +78,7 @@ describe("notify backend fallback behavior", () => {
 						body: "Task failed",
 					},
 					{
+						cmuxCommand: "/usr/local/bin/cmux",
 						spawnProcess: () => ({
 							exited: Promise.resolve(1),
 						}),
@@ -101,6 +102,7 @@ describe("notify backend fallback behavior", () => {
 						body: "Task complete",
 					},
 					{
+						cmuxCommand: "/usr/local/bin/cmux",
 						timeoutMs: 10,
 						spawnProcess: () => ({
 							exited: new Promise<number>(() => {
@@ -196,7 +198,7 @@ describe("macOS alerter desktop notifications", () => {
 	})
 
 	it("spawns the resolved alerter binary without shell interpolation", async () => {
-		const spawnProcess = mock((argv: string[]) => ({
+		const spawnProcess = mock((_argv: string[]) => ({
 			exited: Promise.resolve(0),
 		}))
 		const warn = mock(() => {})
@@ -231,7 +233,7 @@ describe("macOS alerter desktop notifications", () => {
 	})
 
 	it("warns and reports false when alerter is missing", async () => {
-		const spawnProcess = mock((argv: string[]) => ({
+		const spawnProcess = mock((_argv: string[]) => ({
 			exited: Promise.resolve(0),
 		}))
 		const warn = mock(() => {})
@@ -269,7 +271,9 @@ describe("macOS alerter desktop notifications", () => {
 		)
 
 		expect(sent).toBe(false)
-		expect(warn).toHaveBeenCalledWith("notify: macOS desktop notification skipped; alerter exited with code 2.")
+		expect(warn).toHaveBeenCalledWith(
+			"notify: macOS desktop notification skipped; alerter exited with code 2.",
+		)
 	})
 
 	it("warns and reports false when spawning alerter throws", async () => {
@@ -290,6 +294,8 @@ describe("macOS alerter desktop notifications", () => {
 		)
 
 		expect(sent).toBe(false)
-		expect(warn).toHaveBeenCalledWith("notify: macOS desktop notification skipped; alerter failed (spawn failed).")
+		expect(warn).toHaveBeenCalledWith(
+			"notify: macOS desktop notification skipped; alerter failed (spawn failed).",
+		)
 	})
 })

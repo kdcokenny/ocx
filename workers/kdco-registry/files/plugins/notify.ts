@@ -31,16 +31,16 @@ import notifier from "node-notifier"
 import type { OpencodeClient } from "./kdco-primitives/types"
 import { sendDesktopNotificationByPlatform, sendNotificationWithFallback } from "./notify/backend"
 import {
-	canUseCmuxNotification,
 	clearCmuxStatus,
+	resolveCmuxNotificationCommand,
 	sendCmuxNotification,
 	sendCmuxStatus,
 } from "./notify/cmux"
 import {
 	buildCmuxSessionStatusTransitionForEvent,
 	buildCmuxSessionStatusTransitionForQuestionTool,
-	getCmuxSessionStatusText,
 	type CmuxSessionStatusTransition,
+	getCmuxSessionStatusText,
 } from "./notify/status"
 import { parseOscTitleContext, writeOscTitleBestEffort } from "./notify/title"
 
@@ -245,6 +245,7 @@ interface NotificationOptions {
 
 interface NotificationRuntime {
 	preferCmux: boolean
+	cmuxCommand?: string
 }
 
 const QUESTION_DEDUPE_WINDOW_MS = 1500
@@ -256,21 +257,18 @@ const CMUX_BUSY_ANIMATION_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "�
 
 type RecentNotifications = Map<string, number>
 type SessionLogicalState = CmuxSessionStatusTransition["logicalState"]
-type CmuxSessionLogicalStateBySessionID = Map<
-	string,
-	SessionLogicalState
->
+type CmuxSessionLogicalStateBySessionID = Map<string, SessionLogicalState>
 type TitleSessionLogicalStateBySessionID = Map<string, SessionLogicalState>
 type CmuxSessionStatusWriteIntent =
 	| {
-		readonly sessionID: string
-		readonly kind: "set-status"
-		readonly text: string
-	}
+			readonly sessionID: string
+			readonly kind: "set-status"
+			readonly text: string
+	  }
 	| {
-		readonly sessionID: string
-		readonly kind: "clear-status"
-	}
+			readonly sessionID: string
+			readonly kind: "clear-status"
+	  }
 
 function isCmuxSessionStatusWriteIntentEqual(
 	left: CmuxSessionStatusWriteIntent,
@@ -412,11 +410,14 @@ async function sendNotification(
 	await sendNotificationWithFallback({
 		preferCmux: runtime.preferCmux,
 		tryCmuxNotify: () =>
-			sendCmuxNotification({
-				title: options.title,
-				subtitle: options.subtitle,
-				body: options.cmuxBody ?? options.message,
-			}),
+			sendCmuxNotification(
+				{
+					title: options.title,
+					subtitle: options.subtitle,
+					body: options.cmuxBody ?? options.message,
+				},
+				{ cmuxCommand: runtime.cmuxCommand },
+			),
 		sendDesktopNotification: () => sendDesktopNotification(options),
 	})
 }
@@ -559,8 +560,10 @@ const NotifyPlugin: Plugin = async (ctx) => {
 
 	// Detect terminal once at startup (cached for performance)
 	const terminalInfo = await detectTerminalInfo(config)
+	const cmuxCommand = resolveCmuxNotificationCommand()
 	const notificationRuntime: NotificationRuntime = {
-		preferCmux: canUseCmuxNotification(),
+		preferCmux: Boolean(cmuxCommand),
+		cmuxCommand,
 	}
 	const oscTitleContext = parseOscTitleContext()
 	const shouldSuppressCmuxSessionStatusWrites = oscTitleContext?.mayWriteOscTitle === true
@@ -593,7 +596,8 @@ const NotifyPlugin: Plugin = async (ctx) => {
 	const buildBusySpinnerTitle = (): string => {
 		const frame =
 			CMUX_BUSY_ANIMATION_FRAMES[titleBusySpinnerFrameIndex] ?? CMUX_BUSY_ANIMATION_FRAMES[0]
-		titleBusySpinnerFrameIndex = (titleBusySpinnerFrameIndex + 1) % CMUX_BUSY_ANIMATION_FRAMES.length
+		titleBusySpinnerFrameIndex =
+			(titleBusySpinnerFrameIndex + 1) % CMUX_BUSY_ANIMATION_FRAMES.length
 		return `${frame} ${oscTitleContext?.baseTitle ?? ""}`
 	}
 
@@ -731,13 +735,16 @@ const NotifyPlugin: Plugin = async (ctx) => {
 	): Promise<boolean> => {
 		const statusKey = buildCmuxSessionStatusKey(writeIntent.sessionID)
 		if (writeIntent.kind === "clear-status") {
-			return clearCmuxStatus({ key: statusKey })
+			return clearCmuxStatus({ key: statusKey }, { cmuxCommand: notificationRuntime.cmuxCommand })
 		}
 
-		return sendCmuxStatus({
-			key: statusKey,
-			text: writeIntent.text,
-		})
+		return sendCmuxStatus(
+			{
+				key: statusKey,
+				text: writeIntent.text,
+			},
+			{ cmuxCommand: notificationRuntime.cmuxCommand },
+		)
 	}
 
 	const drainCmuxSessionStatusWrites = async (): Promise<void> => {
@@ -784,7 +791,8 @@ const NotifyPlugin: Plugin = async (ctx) => {
 		if (!notificationRuntime.preferCmux || cmuxStatusUpdatesDisabled) return
 
 		const latestWriteIntent = getLatestCmuxSessionStatusWriteForSession(writeIntent.sessionID)
-		if (latestWriteIntent && isCmuxSessionStatusWriteIntentEqual(latestWriteIntent, writeIntent)) return
+		if (latestWriteIntent && isCmuxSessionStatusWriteIntentEqual(latestWriteIntent, writeIntent))
+			return
 
 		pendingCmuxSessionStatusWrites.set(writeIntent.sessionID, writeIntent)
 		void drainCmuxSessionStatusWrites()
@@ -809,7 +817,8 @@ const NotifyPlugin: Plugin = async (ctx) => {
 	}
 
 	const startBusyAnimationTicker = (): void => {
-		if (busyAnimationTicker || cmuxStatusUpdatesDisabled || animatedBusySessionIDs.size === 0) return
+		if (busyAnimationTicker || cmuxStatusUpdatesDisabled || animatedBusySessionIDs.size === 0)
+			return
 
 		const interval = setInterval(() => {
 			if (cmuxStatusUpdatesDisabled) {

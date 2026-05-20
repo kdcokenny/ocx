@@ -11,6 +11,7 @@ import {
 	buildCmuxStatusArgs,
 	canUseCmuxNotification,
 	clearCmuxStatus,
+	resolveCmuxNotificationCommand,
 	sendCmuxNotification,
 	sendCmuxStatus,
 } from "../files/plugins/notify/cmux"
@@ -61,7 +62,12 @@ describe("notify cmux integration", () => {
 			const moduleUrl = pathToFileURL(path.join(tempRoot, "plugins/notify/cmux.ts")).href
 			const module = await import(`${moduleUrl}?test=${Date.now()}`)
 
-			expect(module.canUseCmuxNotification({ CMUX_WORKSPACE_ID: "workspace-123" }, () => "cmux")).toBe(true)
+			expect(
+				module.canUseCmuxNotification(
+					{ CMUX_WORKSPACE_ID: "workspace-123" },
+					() => "/usr/local/bin/cmux",
+				),
+			).toBe(true)
 		} finally {
 			fs.rmSync(tempRoot, { recursive: true, force: true })
 		}
@@ -77,6 +83,13 @@ describe("notify cmux integration", () => {
 	it("returns false when cmux executable is unavailable", () => {
 		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
 		const canUse = canUseCmuxNotification(env, () => undefined)
+
+		expect(canUse).toBe(false)
+	})
+
+	it("returns false when cmux resolves to a bare command", () => {
+		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
+		const canUse = canUseCmuxNotification(env, () => "cmux")
 
 		expect(canUse).toBe(false)
 	})
@@ -106,6 +119,55 @@ describe("notify cmux integration", () => {
 		const canUse = canUseCmuxNotification(env, () => "/usr/local/bin/cmux")
 
 		expect(canUse).toBe(false)
+	})
+
+	it("resolves a trusted absolute cmux command", () => {
+		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
+		const resolved = resolveCmuxNotificationCommand(env, () => "/usr/local/bin/cmux")
+
+		expect(resolved).toBe("/usr/local/bin/cmux")
+	})
+
+	it("rejects cmux commands resolved from the current project", () => {
+		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
+		const currentWorkingDirectory = "/tmp/project"
+		const resolved = resolveCmuxNotificationCommand(
+			env,
+			() => "/tmp/project/node_modules/.bin/cmux",
+			"cmux",
+			{ currentWorkingDirectory, tempDirectory: "/var/tmp" },
+		)
+
+		expect(resolved).toBeUndefined()
+	})
+
+	it("does not confuse sibling project paths with the current project", () => {
+		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
+		const resolved = resolveCmuxNotificationCommand(
+			env,
+			() => "/opt/project-other/bin/cmux",
+			"cmux",
+			{ currentWorkingDirectory: "/opt/project", tempDirectory: "/var/tmp" },
+		)
+
+		expect(resolved).toBe("/opt/project-other/bin/cmux")
+	})
+
+	it("rejects cmux commands resolved from the temp directory", () => {
+		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
+		const resolved = resolveCmuxNotificationCommand(env, () => "/tmp/untrusted-bin/cmux", "cmux", {
+			currentWorkingDirectory: "/workspace/project",
+			tempDirectory: "/tmp",
+		})
+
+		expect(resolved).toBeUndefined()
+	})
+
+	it("rejects cmux commands resolved from common temp directories by default", () => {
+		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
+		const resolved = resolveCmuxNotificationCommand(env, () => "/tmp/untrusted-bin/cmux")
+
+		expect(resolved).toBeUndefined()
 	})
 
 	it("builds cmux notify args with subtitle", () => {
@@ -167,6 +229,7 @@ describe("notify cmux integration", () => {
 				body: "Task complete",
 			},
 			{
+				cmuxCommand: "/usr/local/bin/cmux",
 				spawnProcess: (command) => {
 					commands.push(command)
 					return {
@@ -177,7 +240,31 @@ describe("notify cmux integration", () => {
 		)
 
 		expect(sent).toBe(true)
-		expect(commands).toEqual([["cmux", "notify", "--title", "Ready", "--body", "Task complete"]])
+		expect(commands).toEqual([
+			["/usr/local/bin/cmux", "notify", "--title", "Ready", "--body", "Task complete"],
+		])
+	})
+
+	it("returns false without spawning when no cmux command is provided", async () => {
+		const commands: string[][] = []
+
+		const sent = await sendCmuxNotification(
+			{
+				title: "Ready",
+				body: "Task complete",
+			},
+			{
+				spawnProcess: (command) => {
+					commands.push(command)
+					return {
+						exited: Promise.resolve(0),
+					}
+				},
+			},
+		)
+
+		expect(sent).toBe(false)
+		expect(commands).toEqual([])
 	})
 
 	it("returns false when cmux exits non-zero", async () => {
@@ -187,6 +274,7 @@ describe("notify cmux integration", () => {
 				body: "Task complete",
 			},
 			{
+				cmuxCommand: "/usr/local/bin/cmux",
 				spawnProcess: () => ({
 					exited: Promise.resolve(2),
 				}),
@@ -205,6 +293,7 @@ describe("notify cmux integration", () => {
 				body: "Task complete",
 			},
 			{
+				cmuxCommand: "/usr/local/bin/cmux",
 				timeoutMs: 10,
 				spawnProcess: () => ({
 					exited: new Promise<number>(() => {
@@ -230,6 +319,7 @@ describe("notify cmux integration", () => {
 				text: "Busy",
 			},
 			{
+				cmuxCommand: "/usr/local/bin/cmux",
 				spawnProcess: (command) => {
 					commands.push(command)
 					return {
@@ -241,7 +331,7 @@ describe("notify cmux integration", () => {
 
 		expect(sent).toBe(true)
 		expect(commands).toEqual([
-			["cmux", "set-status", "opencode.session.abc", "Busy"],
+			["/usr/local/bin/cmux", "set-status", "opencode.session.abc", "Busy"],
 		])
 	})
 
@@ -253,6 +343,7 @@ describe("notify cmux integration", () => {
 				key: "opencode.session.abc",
 			},
 			{
+				cmuxCommand: "/usr/local/bin/cmux",
 				spawnProcess: (command) => {
 					commands.push(command)
 					return {
@@ -263,9 +354,7 @@ describe("notify cmux integration", () => {
 		)
 
 		expect(sent).toBe(true)
-		expect(commands).toEqual([
-			["cmux", "clear-status", "opencode.session.abc"],
-		])
+		expect(commands).toEqual([["/usr/local/bin/cmux", "clear-status", "opencode.session.abc"]])
 	})
 
 	it("sendCmuxStatus returns false on timeout and kills process", async () => {
@@ -277,6 +366,7 @@ describe("notify cmux integration", () => {
 				text: "Needs input",
 			},
 			{
+				cmuxCommand: "/usr/local/bin/cmux",
 				timeoutMs: 10,
 				spawnProcess: () => ({
 					exited: new Promise<number>(() => {
