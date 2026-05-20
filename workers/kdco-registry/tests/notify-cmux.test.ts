@@ -128,6 +128,16 @@ describe("notify cmux integration", () => {
 		expect(resolved).toBe("/usr/local/bin/cmux")
 	})
 
+	it("does not reject every absolute cmux command when the current project is filesystem root", () => {
+		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
+		const resolved = resolveCmuxNotificationCommand(env, () => "/usr/local/bin/cmux", "cmux", {
+			currentWorkingDirectory: "/",
+			tempDirectory: "/var/tmp",
+		})
+
+		expect(resolved).toBe("/usr/local/bin/cmux")
+	})
+
 	it("rejects cmux commands resolved from the current project", () => {
 		const env = { CMUX_WORKSPACE_ID: "workspace-123" }
 		const currentWorkingDirectory = "/tmp/project"

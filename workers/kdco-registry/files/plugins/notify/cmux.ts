@@ -95,8 +95,12 @@ function isTrustedCmuxCommandPath(
 			realpathBestEffort(directory),
 		]),
 	]
+	const filteredUntrustedRoots = untrustedRoots.filter((root) => {
+		const resolvedRoot = path.resolve(root)
+		return resolvedRoot !== path.parse(resolvedRoot).root
+	})
 
-	return !untrustedRoots.some((root) =>
+	return !filteredUntrustedRoots.some((root) =>
 		[apparentCandidate, realCandidate].some((candidate) => isPathAtOrInside(root, candidate)),
 	)
 }
