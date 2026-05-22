@@ -1,0 +1,111 @@
+{
+	"$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
+	"model_fallback": true,
+	"agent_order": ["sisyphus", "hephaestus", "prometheus", "atlas"],
+	"agents": {
+		"sisyphus": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"hephaestus": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle"]
+		},
+		"prometheus": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"oracle": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"librarian": {
+			"model": "opencode/nemotron-3-super-free",
+			"fallback_models": ["opencode/big-pickle"]
+		},
+		"explore": {
+			"model": "opencode/nemotron-3-super-free",
+			"fallback_models": ["opencode/big-pickle"]
+		},
+		"multimodal-looker": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"metis": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"momus": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"atlas": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"sisyphus-junior": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		}
+	},
+	"categories": {
+		"visual-engineering": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"ultrabrain": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle"]
+		},
+		"deep": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle"]
+		},
+		"artistry": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/nemotron-3-super-free"]
+		},
+		"quick": {
+			"model": "opencode/nemotron-3-super-free",
+			"fallback_models": ["opencode/big-pickle"]
+		},
+		"unspecified-low": {
+			"model": "opencode/nemotron-3-super-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/deepseek-v4-flash-free"]
+		},
+		"unspecified-high": {
+			"model": "opencode/deepseek-v4-flash-free",
+			"fallback_models": ["opencode/big-pickle"]
+		},
+		"writing": {
+			"model": "opencode/nemotron-3-super-free",
+			"fallback_models": ["opencode/big-pickle", "opencode/deepseek-v4-flash-free"]
+		}
+	},
+	"background_task": {
+		"providerConcurrency": {
+			"opencode": 10
+		},
+		"modelConcurrency": {
+			"opencode/deepseek-v4-flash-free": 10,
+			"opencode/nemotron-3-super-free": 20,
+			"opencode/big-pickle": 10
+		}
+	},
+	"git_master": {
+		"commit_footer": true,
+		"include_co_authored_by": true,
+		"git_env_prefix": "GIT_MASTER=1"
+	},
+	"experimental": {
+		"aggressive_truncation": true
+	},
+	"tmux": {
+		"enabled": false,
+		"layout": "main-vertical",
+		"main_pane_size": 60,
+		"main_pane_min_width": 120,
+		"agent_pane_min_width": 40,
+		"isolation": "inline"
+	}
+}

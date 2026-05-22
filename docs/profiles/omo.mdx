@@ -1,11 +1,11 @@
 ---
-title: "Oh-My-OpenCode Profile (omo)"
-description: "Starter profile using oh-my-opencode with free OpenCode Zen models"
+title: "Oh-My-OpenAgent Profile (omo)"
+description: "Starter profile using oh-my-openagent with OpenCode Zen models"
 ---
 
 ## Overview
 
-The `omo` profile uses [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) with free [OpenCode Zen](https://opencode.ai/docs/zen/) models for a lightweight multi-agent setup.
+The `omo` profile uses [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) with [OpenCode Zen](https://opencode.ai/docs/zen/) models for a lightweight multi-agent setup.
 
 ## Installation
 
@@ -14,17 +14,20 @@ ocx profile add omo --source kit/omo --from https://ocx-kit.kdco.dev --global
 ocx oc -p omo
 ```
 
-## Models
+## Models And Agents
 
-- **Big Pickle** — Orchestrator (Sisyphus), Executor (Atlas)
-- **GPT-5 Nano** — Research, exploration, documentation, planning
+- **DeepSeek V4 Flash Free** — primary model for OMO agents and deep categories
+- **Nemotron 3 Super Free** — small model, quick tasks, writing, and search helpers
+- **Big Pickle** — fallback model for orchestration and compatibility
+
+The profile includes the current upstream OMO agents: Sisyphus, Hephaestus, Prometheus, Oracle, Librarian, Explore, Multimodal-Looker, Metis, Momus, Atlas, and Sisyphus-Junior.
 
 ## Customization
 
 Edit the config to change models:
 
 ```bash
-$EDITOR ~/.config/opencode/profiles/omo/oh-my-opencode.json
+$EDITOR ~/.config/opencode/profiles/omo/oh-my-openagent.jsonc
 ```
 
 See available models:
@@ -35,6 +38,6 @@ opencode models
 
 ## See Also
 
-- [Oh-My-OpenCode Guide](/guides/oh-my-opencode) — Full installation walkthrough.
-- [oh-my-opencode documentation](https://github.com/code-yeongyu/oh-my-opencode/blob/dev/docs/configurations.md) — Upstream configuration reference.
+- [Oh-My-OpenAgent Guide](/guides/oh-my-opencode) — Full installation walkthrough.
+- [oh-my-openagent documentation](https://github.com/code-yeongyu/oh-my-openagent/blob/dev/docs/reference/configuration.md) — Upstream configuration reference.
 - [Profiles Overview](/profiles/overview) — Profile concepts and configuration.

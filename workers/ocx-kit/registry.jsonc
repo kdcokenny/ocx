@@ -8,10 +8,11 @@
 		{
 			"name": "omo",
 			"type": "profile",
-			"description": "Oh-My-OpenCode starter profile with free models",
+			"description": "Oh-My-OpenAgent starter profile with OpenCode Zen models",
 			"files": [
 				{ "path": "profiles/omo/ocx.jsonc", "target": "ocx.jsonc" },
-				{ "path": "profiles/omo/opencode.jsonc", "target": "opencode.jsonc" }
+				{ "path": "profiles/omo/opencode.jsonc", "target": "opencode.jsonc" },
+				{ "path": "profiles/omo/oh-my-openagent.jsonc", "target": "oh-my-openagent.jsonc" }
 			],
 			"dependencies": []
 		},

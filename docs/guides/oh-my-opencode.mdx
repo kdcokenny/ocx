@@ -1,11 +1,11 @@
 ---
-title: "Oh-My-OpenCode Setup"
-description: "Set up oh-my-opencode with OCX profiles for a portable AI coding environment"
+title: "Oh-My-OpenAgent Setup"
+description: "Set up oh-my-openagent with OCX profiles for a portable AI coding environment"
 ---
 
 ## Overview
 
-Set up [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode) with OCX profiles for a fully portable AI coding environment using free OpenCode Zen models.
+Set up [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) with OCX profiles for a fully portable AI coding environment using OpenCode Zen models.
 
 **Prerequisites**: [OCX installed](/getting-started/installation) and [global profiles initialized](/profiles/overview)
 
@@ -26,7 +26,7 @@ ocx profile add omo --source kit/omo --global
 ocx oc -p omo
 ```
 
-The profile comes pre-configured with free [OpenCode Zen](https://opencode.ai/docs/zen/) models.
+The profile comes pre-configured with [OpenCode Zen](https://opencode.ai/docs/zen/) models.
 
 ## What's Included
 
@@ -34,28 +34,30 @@ The `omo` profile includes:
 
 | File | Purpose |
 |------|---------|
-| `opencode.jsonc` | Default models + oh-my-opencode plugin |
-| `oh-my-opencode.json` | Agent configurations with free models |
+| `opencode.jsonc` | Default models + oh-my-openagent plugin |
+| `oh-my-openagent.jsonc` | Agent and category configurations with OpenCode Zen models |
 | `ocx.jsonc` | Profile isolation settings |
-| `AGENTS.md` | Quick reference |
 
 **Pre-configured models:**
-- **Big Pickle** — Orchestrator (Sisyphus), Executor (Atlas)
-- **GPT-5 Nano** — Research, exploration, documentation, planning
+- **DeepSeek V4 Flash Free** — primary model for OMO agents and deep categories
+- **Nemotron 3 Super Free** — small model, quick tasks, writing, and search helpers
+- **Big Pickle** — fallback model for orchestration and compatibility
+
+The profile includes all current upstream OMO agents: Sisyphus, Hephaestus, Prometheus, Oracle, Librarian, Explore, Multimodal-Looker, Metis, Momus, Atlas, and Sisyphus-Junior.
 
 ## Customize Models
 
-Edit your profile's oh-my-opencode config:
+Edit your profile's oh-my-openagent config:
 
 ```bash
 # View available models
 opencode models
 
 # Edit the config
-$EDITOR ~/.config/opencode/profiles/omo/oh-my-opencode.json
+$EDITOR ~/.config/opencode/profiles/omo/oh-my-openagent.jsonc
 ```
 
-See the [oh-my-opencode configuration docs](https://github.com/code-yeongyu/oh-my-opencode/blob/dev/docs/configurations.md) for all options.
+See the [oh-my-openagent configuration docs](https://github.com/code-yeongyu/oh-my-openagent/blob/dev/docs/reference/configuration.md) for all options.
 
 ## Tips
 
@@ -81,4 +83,4 @@ ocx profile add work --clone omo --global
 
 ## See Also
 
-- [oh-my-opencode documentation](https://github.com/code-yeongyu/oh-my-opencode/blob/dev/docs/configurations.md) — Manual setup and advanced configuration.
+- [oh-my-openagent documentation](https://github.com/code-yeongyu/oh-my-openagent/blob/dev/docs/reference/configuration.md) — Manual setup and advanced configuration.

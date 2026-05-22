@@ -15,7 +15,7 @@ Your OpenCode config, anywhere.
 
 ![OCX Profiles Demo](./assets/profiles-demo.gif)
 
-*Demo uses [oh-my-opencode](https://ocx.kdco.dev/docs/guides/oh-my-opencode). See [more guides](https://ocx.kdco.dev/docs/guides/index).*
+*Demo uses [oh-my-openagent](https://ocx.kdco.dev/docs/guides/oh-my-opencode). See [more guides](https://ocx.kdco.dev/docs/guides/index).*
 
 ## Installation
 
