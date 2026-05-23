@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import * as fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { ConfigResolver } from "../../src/config/resolver"
+import { ConfigResolver, filterByPatterns } from "../../src/config/resolver"
 import { readOpencodeJsonConfig } from "../../src/updaters/update-opencode-config"
 import { tmpdir } from "../fixture"
 
@@ -179,6 +179,36 @@ describe("instruction discovery", () => {
 		// Should NOT find CLAUDE.md (excluded, not in include)
 		const hasClaude = config.instructions.some((p) => p.endsWith("CLAUDE.md"))
 		expect(hasClaude).toBe(false)
+	})
+
+	it("matches forward-slash exclude patterns against Windows-style discovered paths", () => {
+		const filtered = filterByPatterns(
+			["workspace\\project\\CLAUDE.md", "workspace\\project\\notes.md"],
+			["**/CLAUDE.md"],
+			[],
+		)
+
+		expect(filtered).toEqual(["workspace\\project\\notes.md"])
+	})
+
+	it("preserves include override for Windows-style discovered paths", () => {
+		const filtered = filterByPatterns(
+			["workspace\\project\\CLAUDE.md"],
+			["**/*.md"],
+			["**/CLAUDE.md"],
+		)
+
+		expect(filtered).toEqual(["workspace\\project\\CLAUDE.md"])
+	})
+
+	it("matches default .opencode excludes against Windows-style discovered paths", () => {
+		const filtered = filterByPatterns(
+			["workspace\\project\\.opencode\\ocx.jsonc", "workspace\\project\\README.md"],
+			["**/.opencode/**"],
+			[],
+		)
+
+		expect(filtered).toEqual(["workspace\\project\\README.md"])
 	})
 
 	it("discovers CONTEXT.md as instruction file", async () => {

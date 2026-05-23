@@ -232,21 +232,32 @@ function normalizePattern(pattern: string): string {
 }
 
 /**
+ * Normalize discovered paths for glob matching across platforms.
+ * node:path.relative() returns backslashes on Windows, while Bun glob patterns
+ * are written with forward slashes.
+ */
+function normalizePathForGlobMatch(path: string): string {
+	return path.replaceAll("\\", "/")
+}
+
+/**
  * Filter files using TypeScript/Vite style include/exclude.
  * Include overrides exclude, order is preserved.
  */
-function filterByPatterns(files: string[], exclude: string[], include: string[]): string[] {
+export function filterByPatterns(files: string[], exclude: string[], include: string[]): string[] {
 	return files.filter((file) => {
+		const normalizedFile = normalizePathForGlobMatch(file)
+
 		// Check include first - include overrides exclude
 		for (const pattern of include) {
 			const glob = new Glob(normalizePattern(pattern))
-			if (glob.match(file)) return true
+			if (glob.match(normalizedFile)) return true
 		}
 
 		// Check exclude
 		for (const pattern of exclude) {
 			const glob = new Glob(normalizePattern(pattern))
-			if (glob.match(file)) return false
+			if (glob.match(normalizedFile)) return false
 		}
 
 		// Not matched by include or exclude - keep it
@@ -608,6 +619,7 @@ export class ConfigResolver {
 
 		// Get relative path of local config dir from root
 		const relativePath = relative(root, this.localConfigDir)
+		const normalizedRelativePath = normalizePathForGlobMatch(relativePath)
 
 		// Check if .opencode directory matches exclude patterns
 		const exclude = this.profile.ocx.exclude ?? []
@@ -617,7 +629,7 @@ export class ConfigResolver {
 		for (const pattern of include) {
 			const glob = new Glob(normalizePattern(pattern))
 			// Match the directory path with trailing content
-			if (glob.match(`${relativePath}/`) || glob.match(relativePath)) {
+			if (glob.match(`${normalizedRelativePath}/`) || glob.match(normalizedRelativePath)) {
 				return true
 			}
 		}
@@ -626,7 +638,7 @@ export class ConfigResolver {
 		for (const pattern of exclude) {
 			const glob = new Glob(normalizePattern(pattern))
 			// Check if pattern matches .opencode directory
-			if (glob.match(`${relativePath}/`) || glob.match(`${relativePath}/**`)) {
+			if (glob.match(`${normalizedRelativePath}/`) || glob.match(`${normalizedRelativePath}/**`)) {
 				return false
 			}
 		}
