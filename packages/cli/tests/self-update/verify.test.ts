@@ -3,8 +3,8 @@
  *
  * Ported from memospot/Prisma OSS test patterns.
  */
-import { describe, expect, it } from "bun:test"
-import { parseSha256Sums } from "../../src/self-update/verify"
+import { describe, expect, it, spyOn } from "bun:test"
+import { fetchChecksums, parseSha256Sums } from "../../src/self-update/verify"
 import { hashContent } from "../../src/utils/receipt"
 
 // Valid 64-character SHA256 hashes for testing
@@ -43,6 +43,20 @@ describe("parseSha256Sums", () => {
 		const content = `${HASH_UPPER}  file.txt\n`
 		const map = parseSha256Sums(content)
 		expect(map.get("file.txt")).toBe(HASH_UPPER.toLowerCase())
+	})
+})
+
+describe("fetchChecksums", () => {
+	it("rejects malformed versions before fetching checksum URLs", async () => {
+		const malicious = "2.0.0/../../../../../evil/repo/releases/download/v1.0.0"
+		const fetchSpy = spyOn(global, "fetch")
+
+		try {
+			await expect(fetchChecksums(malicious)).rejects.toThrow("Invalid version format")
+			expect(fetchSpy).not.toHaveBeenCalled()
+		} finally {
+			fetchSpy.mockRestore()
+		}
 	})
 })
 

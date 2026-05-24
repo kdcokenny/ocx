@@ -12,6 +12,7 @@
 
 import { chmodSync, existsSync, renameSync, unlinkSync } from "node:fs"
 import { SelfUpdateError } from "../utils/errors"
+import { isValidSemver } from "../utils/semver"
 import { createSpinner } from "../utils/spinner"
 import { getExecutablePath } from "./detect-method"
 
@@ -72,6 +73,10 @@ export function getDownloadBaseUrl(): string {
  * @throws SelfUpdateError if platform is unsupported
  */
 export function getDownloadUrl(version: string): string {
+	if (!isValidSemver(version)) {
+		throw new SelfUpdateError(`Invalid version format: ${version}`)
+	}
+
 	const platform = `${process.arch}-${process.platform}`
 	const target = PLATFORM_MAP[platform]
 

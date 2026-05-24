@@ -1,11 +1,12 @@
 import { afterAll, afterEach, describe, expect, it, mock, spyOn } from "bun:test"
 import { createHash } from "node:crypto"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { Command } from "commander"
 import { cleanupTempDir, createTempDir } from "../helpers"
 
 const SELF_UPDATE_COMMAND_MODULE_PATH = require.resolve("../../src/commands/self/update.js")
+const SELF_UPDATE_RUNNER_MODULE_PATH = require.resolve("../../src/commands/self/update-runner.js")
 const SELF_UPDATE_CHECK_MODULE_PATH = require.resolve("../../src/self-update/check.js")
 const SELF_UPDATE_DETECT_METHOD_MODULE_PATH = require.resolve(
 	"../../src/self-update/detect-method.js",
@@ -16,6 +17,7 @@ const SPINNER_MODULE_PATH = require.resolve("../../src/utils/spinner.js")
 
 const SELF_UPDATE_MOCKED_MODULE_PATHS = [
 	SELF_UPDATE_COMMAND_MODULE_PATH,
+	SELF_UPDATE_RUNNER_MODULE_PATH,
 	SELF_UPDATE_CHECK_MODULE_PATH,
 	SELF_UPDATE_DETECT_METHOD_MODULE_PATH,
 	SELF_UPDATE_VERIFY_MODULE_PATH,
@@ -33,6 +35,12 @@ async function importSelfUpdateCommandModule() {
 	clearSelfUpdateModuleCache()
 	const uniqueId = Bun.randomUUIDv7()
 	return import(`../../src/commands/self/update.js?test=${uniqueId}`)
+}
+
+async function importSelfUpdateRunnerModule() {
+	clearSelfUpdateModuleCache()
+	const uniqueId = Bun.randomUUIDv7()
+	return import(`../../src/commands/self/update-runner.js?test=${uniqueId}`)
 }
 
 // =============================================================================
@@ -374,5 +382,45 @@ describe("self update --json curl strict output", () => {
 		expect(payload.success).toBe(true)
 		expect(payload.data?.method).toBe("curl")
 		expect(payload.data?.updated).toBe(true)
+	})
+
+	it("rejects malformed curl target versions before fetching or replacing the executable", async () => {
+		testDir = await createTempDir("self-update-curl-malformed-version")
+		const executablePath = join(testDir, "bin", "ocx")
+
+		await mkdir(dirname(executablePath), { recursive: true })
+		await writeFile(executablePath, "old-binary")
+
+		mock.module("../../src/self-update/check.js", () => ({
+			EXPLICIT_UPDATE_TIMEOUT_MS: 10_000,
+			checkForUpdate: mock(async () => ({
+				ok: true,
+				current: "1.0.0",
+				latest: "2.0.0/../../../../../evil/repo/releases/download/v1.0.0",
+				updateAvailable: true,
+			})),
+		}))
+
+		const realDetectMethod = require("../../src/self-update/detect-method.js?malformed")
+		mock.module("../../src/self-update/detect-method.js", () => ({
+			...realDetectMethod,
+			getExecutablePath: () => executablePath,
+		}))
+
+		mock.module("../../src/self-update/notify.js", () => ({
+			notifyUpdated: mock(() => {}),
+			notifyUpToDate: mock(() => {}),
+		}))
+
+		const fetchSpy = spyOn(global, "fetch").mockImplementation(
+			mock(async () => new Response("", { status: 500 })) as unknown as typeof fetch,
+		)
+
+		const { runSelfUpdateCommand } = await importSelfUpdateRunnerModule()
+
+		await expect(runSelfUpdateCommand({ method: "curl" })).rejects.toThrow("Invalid version format")
+
+		expect(fetchSpy).not.toHaveBeenCalled()
+		expect(await readFile(executablePath, "utf-8")).toBe("old-binary")
 	})
 })

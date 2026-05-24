@@ -201,6 +201,21 @@ describe("checkForUpdate with mocked registry", () => {
 			expect(result.reason).toBe("invalid-response")
 		}
 	})
+
+	it("rejects malformed latest version with path traversal content", async () => {
+		mockFetchPackageVersion.mockResolvedValue({
+			name: "ocx",
+			version: "2.0.0/../../../../../evil/repo/releases/download/v1.0.0",
+		} as NpmPackageVersion)
+
+		const { checkForUpdate } = await importCheckModule()
+		const result = await checkForUpdate({ version: "1.0.0" })
+
+		expect(result.ok).toBe(false)
+		if (!result.ok) {
+			expect(result.reason).toBe("invalid-response")
+		}
+	})
 })
 
 // =============================================================================

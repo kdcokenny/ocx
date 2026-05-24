@@ -11,6 +11,13 @@ export interface ParsedVersion {
 	patch: number
 }
 
+const SEMVER_PATTERN =
+	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
+
+export function isValidSemver(v: string): boolean {
+	return SEMVER_PATTERN.test(v)
+}
+
 /**
  * Parse a semver string into components.
  * Returns null if invalid. Ignores prerelease suffixes for comparison.
@@ -19,11 +26,15 @@ export interface ParsedVersion {
  * @returns Parsed version or null if invalid
  */
 export function parseVersion(v: string): ParsedVersion | null {
-	const [main = ""] = v.split("-") // Ignore prerelease for comparison
+	if (!isValidSemver(v)) {
+		return null
+	}
+
+	const [main = ""] = v.split(/[+-]/) // Ignore prerelease/build metadata for comparison
 	const parts = main.split(".")
-	const major = parseInt(parts[0] ?? "", 10)
-	const minor = parseInt(parts[1] ?? "", 10)
-	const patch = parseInt(parts[2] ?? "", 10)
+	const major = Number(parts[0])
+	const minor = Number(parts[1])
+	const patch = Number(parts[2])
 
 	// Early exit: invalid version components
 	if (Number.isNaN(major) || Number.isNaN(minor) || Number.isNaN(patch)) {
@@ -36,6 +47,8 @@ export function parseVersion(v: string): ParsedVersion | null {
 /**
  * Compare two semver versions.
  * Returns null if either version is invalid (cannot compare).
+ * Compares major/minor/patch only; prerelease and build metadata are validated
+ * by parseVersion, then ignored for this compatibility check.
  *
  * @param a - First version string (e.g., "1.2.3")
  * @param b - Second version string (e.g., "1.0.0")

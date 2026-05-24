@@ -18,10 +18,9 @@ import { notifyUpdated, notifyUpToDate } from "../../self-update/notify"
 import { fetchChecksums, verifyChecksum } from "../../self-update/verify"
 import { SelfUpdateError } from "../../utils/errors"
 import { outputJson } from "../../utils/json-output"
+import { isValidSemver } from "../../utils/semver"
 import { createSpinner } from "../../utils/spinner"
 import type { UpdateOptions } from "./update"
-
-const SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[\w.]+)?$/
 
 const UPDATE_ERROR_MESSAGES: Record<CheckFailure["reason"], string> = {
 	"dev-version":
@@ -100,6 +99,10 @@ async function updateViaCurl(
 	targetVersion: string,
 	jsonOutput: boolean,
 ): Promise<void> {
+	if (!isValidSemver(targetVersion)) {
+		throw new SelfUpdateError(`Invalid version format: ${targetVersion}`)
+	}
+
 	const url = getDownloadUrl(targetVersion)
 	const filename = url.split("/").pop()
 	if (!filename) {
@@ -141,7 +144,7 @@ async function updateViaPackageManager(
 	targetVersion: string,
 	jsonOutput: boolean,
 ): Promise<void> {
-	if (!SEMVER_PATTERN.test(targetVersion)) {
+	if (!isValidSemver(targetVersion)) {
 		throw new SelfUpdateError(`Invalid version format: ${targetVersion}`)
 	}
 

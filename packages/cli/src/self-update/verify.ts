@@ -11,6 +11,7 @@
 
 import { IntegrityError, SelfUpdateError } from "../utils/errors"
 import { hashContent } from "../utils/receipt"
+import { isValidSemver } from "../utils/semver"
 
 const GITHUB_REPO = "kdcokenny/ocx"
 
@@ -49,6 +50,10 @@ export function parseSha256Sums(content: string): Map<string, string> {
  * @throws SelfUpdateError if checksums cannot be fetched
  */
 export async function fetchChecksums(version: string): Promise<Map<string, string>> {
+	if (!isValidSemver(version)) {
+		throw new SelfUpdateError(`Invalid version format: ${version}`)
+	}
+
 	const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/SHA256SUMS.txt`
 	const response = await fetch(url)
 	if (!response.ok) {
