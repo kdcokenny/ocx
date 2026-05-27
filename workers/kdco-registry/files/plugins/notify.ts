@@ -68,6 +68,7 @@ interface TerminalInfo {
 	name: string | null
 	bundleId: string | null
 	processName: string | null
+	nativeTabTitle: string | null
 }
 
 const DEFAULT_CONFIG: NotifyConfig = {
@@ -159,12 +160,39 @@ async function getFrontmostApp(): Promise<string | null> {
 	)
 }
 
+function isVSCodeTerminal(terminalName: string): boolean {
+	const normalized = terminalName.toLowerCase()
+	return normalized === "vscode" || normalized === "vscode-insiders"
+}
+
+function toAppleScriptString(value: string): string {
+	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+}
+
+async function getVSCodeNativeTabTitle(processName: string): Promise<string | null> {
+	const escapedProcessName = toAppleScriptString(processName)
+	return runOsascript(`
+		tell application "System Events"
+			tell process "${escapedProcessName}"
+				set activeWindow to first window whose value of attribute "AXMain" is true
+				tell tab group 1 of activeWindow
+					repeat with rb in radio buttons
+						if (value of attribute "AXValue" of rb) is true then
+							return value of attribute "AXTitle" of rb
+						end if
+					end repeat
+				end tell
+			end tell
+		end tell
+	`)
+}
+
 async function detectTerminalInfo(config: NotifyConfig): Promise<TerminalInfo> {
 	// Use config override if provided
 	const terminalName = config.terminal || detectTerminal() || null
 
 	if (!terminalName) {
-		return { name: null, bundleId: null, processName: null }
+		return { name: null, bundleId: null, processName: null, nativeTabTitle: null }
 	}
 
 	// Get process name for focus detection
@@ -172,11 +200,15 @@ async function detectTerminalInfo(config: NotifyConfig): Promise<TerminalInfo> {
 
 	// Dynamically get bundle ID from macOS (no hardcoding!)
 	const bundleId = await getBundleId(processName)
+	const nativeTabTitle = isVSCodeTerminal(terminalName)
+		? await getVSCodeNativeTabTitle(processName)
+		: null
 
 	return {
 		name: terminalName,
 		bundleId,
 		processName,
+		nativeTabTitle,
 	}
 }
 
@@ -399,6 +431,8 @@ async function sendDesktopNotification(options: NotificationOptions): Promise<vo
 		subtitle: options.subtitle,
 		sound,
 		senderBundleId: terminalInfo.bundleId,
+		processName: terminalInfo.processName,
+		nativeTabTitle: terminalInfo.nativeTabTitle,
 		sendNodeNotifierNotification: () => notifier.notify(notifyOptions),
 	})
 }
