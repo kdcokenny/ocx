@@ -775,7 +775,7 @@ class DelegationManager {
 		parentAgent: string,
 		notification: string,
 		noReply: boolean,
-	): Promise<"sent" | "queued"> {
+	): Promise<"sent" | "queued" | "timed-out"> {
 		const session = this.client.session
 		let timeout: ReturnType<typeof setTimeout> | undefined
 
@@ -786,27 +786,29 @@ class DelegationManager {
 				)}`,
 			)
 
-			await Promise.race([
-				session.promptAsync({
-					path: { id: parentSessionID },
-					body: {
-						noReply,
-						agent: parentAgent,
-						parts: [{ type: "text", text: notification }],
-					},
-				}),
-				new Promise<never>((_, reject) => {
-					timeout = setTimeout(
-						() =>
-							reject(
-								new Error(`Parent notification timeout after ${PARENT_NOTIFICATION_TIMEOUT_MS}ms`),
-							),
-						PARENT_NOTIFICATION_TIMEOUT_MS,
-					)
+			const result = await Promise.race<"sent" | "timed-out">([
+				session
+					.promptAsync({
+						path: { id: parentSessionID },
+						body: {
+							noReply,
+							agent: parentAgent,
+							parts: [{ type: "text", text: notification }],
+						},
+					})
+					.then(() => "sent" as const),
+				new Promise<"timed-out">((resolve) => {
+					timeout = setTimeout(() => resolve("timed-out"), PARENT_NOTIFICATION_TIMEOUT_MS)
 				}),
 			])
 
-			return "sent"
+			if (result === "timed-out") {
+				await this.debugLog(
+					`parent notification timed out for ${parentSessionID} after ${PARENT_NOTIFICATION_TIMEOUT_MS}ms`,
+				)
+			}
+
+			return result
 		} catch (error) {
 			this.queuePendingNotification(parentSessionID, notification)
 			await this.debugLog(
