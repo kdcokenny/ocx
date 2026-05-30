@@ -236,6 +236,7 @@ const DEFAULT_MAX_RUN_TIME_MS = 15 * 60 * 1000 // 15 minutes
 const TERMINAL_WAIT_GRACE_MS = 10_000
 const READ_POLL_INTERVAL_MS = 250
 const ALL_COMPLETE_QUIET_PERIOD_MS = 50
+const PARENT_NOTIFICATION_TIMEOUT_MS = 5_000
 
 interface DelegateInput {
 	parentSessionID: string
@@ -412,6 +413,7 @@ class DelegationManager {
 	private metadataGenerator: typeof generateMetadata
 	private pendingByParent: Map<string, Set<string>> = new Map()
 	private parentNotificationState: Map<string, ParentNotificationState> = new Map()
+	private pendingNotifications: Map<string, string[]> = new Map()
 
 	constructor(
 		client: OpencodeClient,
@@ -742,28 +744,12 @@ class DelegationManager {
 		if (!this.areCycleTerminalNotificationsComplete(parentSessionID, cycleToken)) return
 		if (state.allCompleteNotifiedCycleToken === cycleToken) return
 
-		try {
-			await this.client.session.prompt({
-				path: { id: parentSessionID },
-				body: {
-					noReply: false,
-					agent: parentAgent,
-					parts: [
-						{
-							type: "text",
-							text: this.buildAllCompleteNotification(parentSessionID, cycle, cycleToken),
-						},
-					],
-				},
-			})
-		} catch (error) {
-			await this.debugLog(
-				`all-complete notification failed for ${parentSessionID} cycle=${cycleToken}: ${
-					error instanceof Error ? error.message : "Unknown error"
-				}`,
-			)
-			return
-		}
+		const deliveryStatus = await this.sendParentNotification(
+			parentSessionID,
+			parentAgent,
+			this.buildAllCompleteNotification(parentSessionID, cycle, cycleToken),
+			false,
+		)
 
 		if (state.allCompleteCycleToken !== cycleToken) return
 		if (!this.areCycleTerminalNotificationsComplete(parentSessionID, cycleToken)) return
@@ -772,6 +758,87 @@ class DelegationManager {
 		state.allCompleteNotificationCount += 1
 		state.allCompleteNotifiedCycle = cycle
 		state.allCompleteNotifiedCycleToken = cycleToken
+
+		await this.debugLog(
+			`all-complete notification ${deliveryStatus} for ${parentSessionID} cycle=${cycleToken}`,
+		)
+	}
+
+	private queuePendingNotification(parentSessionID: string, notification: string): void {
+		const pending = this.pendingNotifications.get(parentSessionID) ?? []
+		pending.push(notification)
+		this.pendingNotifications.set(parentSessionID, pending)
+	}
+
+	private async sendParentNotification(
+		parentSessionID: string,
+		parentAgent: string,
+		notification: string,
+		noReply: boolean,
+	): Promise<"sent" | "queued"> {
+		const session = this.client.session
+		let timeout: ReturnType<typeof setTimeout> | undefined
+
+		try {
+			await this.debugLog(
+				`parent notification sending for ${parentSessionID} noReply=${noReply} async=${Boolean(
+					session.promptAsync,
+				)}`,
+			)
+
+			await Promise.race([
+				session.promptAsync({
+					path: { id: parentSessionID },
+					body: {
+						noReply,
+						agent: parentAgent,
+						parts: [{ type: "text", text: notification }],
+					},
+				}),
+				new Promise<never>((_, reject) => {
+					timeout = setTimeout(
+						() =>
+							reject(
+								new Error(`Parent notification timeout after ${PARENT_NOTIFICATION_TIMEOUT_MS}ms`),
+							),
+						PARENT_NOTIFICATION_TIMEOUT_MS,
+					)
+				}),
+			])
+
+			return "sent"
+		} catch (error) {
+			this.queuePendingNotification(parentSessionID, notification)
+			await this.debugLog(
+				`parent notification queued for ${parentSessionID}: ${
+					error instanceof Error ? error.message : "Unknown error"
+				}`,
+			)
+			return "queued"
+		} finally {
+			if (timeout) clearTimeout(timeout)
+		}
+	}
+
+	injectPendingNotificationsIntoChatMessage(
+		output: { parts?: Array<{ type: string; text?: string }> },
+		sessionID: string,
+	): void {
+		const pending = this.pendingNotifications.get(sessionID)
+		if (!pending || pending.length === 0) return
+
+		this.pendingNotifications.delete(sessionID)
+		const notificationText = pending.join("\n\n")
+		const parts = output.parts ?? []
+		const firstTextPart = parts.find((part) => part.type === "text")
+
+		if (firstTextPart) {
+			firstTextPart.text = `${notificationText}\n\n${firstTextPart.text ?? ""}`
+			output.parts = parts
+			return
+		}
+
+		output.parts = [{ type: "text", text: notificationText }, ...parts]
 	}
 
 	private markRetrieved(id: string, readerSessionID: string): DelegationRecord | undefined {
@@ -975,20 +1042,18 @@ class DelegationManager {
 			const remainingCount = this.getPendingCount(delegation.parentSessionID)
 			const terminalNotification = this.buildTerminalNotification(delegation, remainingCount)
 
-			await this.client.session.prompt({
-				path: { id: delegation.parentSessionID },
-				body: {
-					noReply: true,
-					agent: delegation.parentAgent,
-					parts: [{ type: "text", text: terminalNotification }],
-				},
-			})
+			const deliveryStatus = await this.sendParentNotification(
+				delegation.parentSessionID,
+				delegation.parentAgent,
+				terminalNotification,
+				true,
+			)
 
 			this.markNotified(delegation.id)
 			this.scheduleAllCompleteForParent(delegation.parentSessionID, delegation.parentAgent)
 
 			await this.debugLog(
-				`notifyParent sent for ${delegation.id} (remaining=${remainingCount}, status=${delegation.status})`,
+				`notifyParent ${deliveryStatus} for ${delegation.id} (remaining=${remainingCount}, status=${delegation.status})`,
 			)
 		} catch (error) {
 			await this.debugLog(
@@ -1821,6 +1886,15 @@ const BackgroundAgentsPlugin: Plugin = async (ctx) => {
 			output.system.push(DELEGATION_RULES)
 		},
 
+		// Deliver queued parent notifications on the next user turn if direct delivery failed.
+		"chat.message": async (
+			input: { sessionID?: string },
+			output: { parts?: Array<{ type: string; text?: string }> },
+		) => {
+			if (!input.sessionID) return
+			manager.injectPendingNotificationsIntoChatMessage(output, input.sessionID)
+		},
+
 		// Compaction hook - inject delegation context for context recovery
 		"experimental.session.compacting": async (
 			input: { sessionID: string },
@@ -1896,8 +1970,8 @@ const BackgroundAgentsPlugin: Plugin = async (ctx) => {
 
 const BackgroundAgentsPluginWithInternals = Object.assign(BackgroundAgentsPlugin, {
 	testInternals: {
-	DelegationManager,
-	formatDelegationContext,
+		DelegationManager,
+		formatDelegationContext,
 	},
 } as const)
 
