@@ -30,6 +30,7 @@ type MockClientOptions = {
 	childPromptMode?: "pending" | "resolve"
 	parentPromptMode?: "resolve" | "reject"
 	agentPermissions?: Record<string, "readonly" | "write">
+	onChildPrompt?: (sessionID: string, prompt: string) => Promise<void> | void
 	onParentPrompt?: (text: string) => Promise<void> | void
 }
 
@@ -76,6 +77,8 @@ function createMockClient(options: MockClientOptions): {
 		if (options.childPromptMode === "pending") {
 			return await new Promise<never>(() => {})
 		}
+
+		await options.onChildPrompt?.(id, body.parts?.[0]?.text || "")
 
 		return { data: { parts: [] } }
 	}
@@ -453,6 +456,72 @@ describe("background-agents lifecycle refactor", () => {
 			getPromptText(call).includes("<summary>All delegations complete.</summary>"),
 		)
 		expect(allCompletePromptIndex).toBeGreaterThan(Math.max(...terminalPromptIndices))
+	})
+
+	it("finalizes completed child prompts even when session.idle is not delivered", async () => {
+		const rootSessionID = "root-session"
+		const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), "background-agents-prompt-complete-"))
+		testDirs.push(baseDir)
+
+		const { client, state } = createMockClient({
+			rootSessionID,
+			childPromptMode: "resolve",
+			onChildPrompt: (sessionID, prompt) => {
+				state.messagesBySession.set(sessionID, `Resolved output for ${prompt}`)
+			},
+		})
+
+		const manager = new DelegationManager(client as never, baseDir, createNoopLogger(), {
+			idGenerator: (() => {
+				const ids = ["prompt-complete-a", "prompt-complete-b"]
+				return () => {
+					const next = ids.shift()
+					if (!next) throw new Error("No IDs left")
+					return next
+				}
+			})(),
+			allCompleteQuietPeriodMs: 5,
+			metadataGenerator: async () => ({
+				title: "Prompt Complete",
+				description: "Prompt resolution finalized the delegation.",
+			}),
+		})
+
+		const first = await manager.delegate({
+			parentSessionID: rootSessionID,
+			parentMessageID: "msg-1",
+			parentAgent: "plan",
+			prompt: "first child",
+			agent: "researcher",
+		})
+
+		const second = await manager.delegate({
+			parentSessionID: rootSessionID,
+			parentMessageID: "msg-2",
+			parentAgent: "plan",
+			prompt: "second child",
+			agent: "researcher",
+		})
+
+		await sleep(40)
+
+		expect(manager.getPendingCount(rootSessionID)).toBe(0)
+
+		const completedList = await manager.listDelegations(rootSessionID)
+		expect(completedList.find((item) => item.id === first.id)?.status).toBe("complete")
+		expect(completedList.find((item) => item.id === second.id)?.status).toBe("complete")
+
+		const terminalNotifications = state.notificationTexts.filter((text) =>
+			text.includes("<task-id>"),
+		)
+		expect(terminalNotifications).toHaveLength(2)
+		expect(terminalNotifications.some((text) => text.includes(first.id))).toBe(true)
+		expect(terminalNotifications.some((text) => text.includes(second.id))).toBe(true)
+
+		const allCompleteNotifications = state.notificationTexts.filter((text) =>
+			text.includes("<summary>All delegations complete.</summary>"),
+		)
+		expect(allCompleteNotifications).toHaveLength(1)
 	})
 
 	it("allows batch B registration while cycle A all-complete is pending and suppresses stale cycle A before dispatch", async () => {

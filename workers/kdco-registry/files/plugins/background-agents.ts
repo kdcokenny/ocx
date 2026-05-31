@@ -1153,6 +1153,9 @@ class DelegationManager {
 					},
 				},
 			})
+			.then(() => {
+				void this.finalizeDelegation(delegation.id, "complete")
+			})
 			.catch((error: Error) => {
 				void this.finalizeDelegation(delegation.id, "error", error.message)
 			})
