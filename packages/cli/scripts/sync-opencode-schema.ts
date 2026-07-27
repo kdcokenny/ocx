@@ -1,0 +1,168 @@
+/**
+ * Sync ocx's opencode config field set from opencode's published JSON Schema.
+ *
+ * ocx does not validate opencode config against opencode itself — it keeps its own
+ * schema (`opencodeConfigSchema` in src/schemas/registry.ts). That list used to be
+ * hand-maintained and drifted out of date with opencode, so valid config keys a
+ * component shipped (e.g. `enabled_providers`) were silently stripped.
+ *
+ * This script regenerates the authoritative top-level field SET (names + shallow
+ * kinds) from opencode's canonical schema so ocx accepts exactly opencode's fields.
+ * The precise TYPES for the fields ocx actually manipulates stay hand-written in
+ * registry.ts; this file only governs which top-level keys are valid.
+ *
+ *   MAINTAINER ONLY. Run by hand whenever opencode's config surface changes:
+ *     bun run scripts/sync-opencode-schema.ts
+ *
+ * It fetches over the network and writes a COMMITTED file. It is never invoked by
+ * the build, the tests, or at ocx runtime — `ocx add`/`update` import the committed
+ * output and never touch the network for the schema.
+ */
+
+import { join } from "node:path"
+
+const SCHEMA_URL = "https://opencode.ai/config.json"
+const OUT_PATH = join(
+	import.meta.dir,
+	"..",
+	"src",
+	"schemas",
+	"opencode-config-fields.generated.ts",
+)
+
+type Kind = "string" | "number" | "boolean" | "array" | "object" | "unknown"
+
+interface JsonSchemaNode {
+	type?: string | string[]
+	$ref?: string
+	anyOf?: unknown[]
+	oneOf?: unknown[]
+	allOf?: unknown[]
+	properties?: Record<string, unknown>
+	additionalProperties?: unknown
+	items?: unknown
+	prefixItems?: unknown[]
+}
+
+function refName(ref: string): string {
+	// "#/$defs/Config" -> "Config"
+	return ref.split("/").pop() ?? ref
+}
+
+/** Derive a shallow kind for a top-level property, resolving one $ref level. */
+function kindOf(node: JsonSchemaNode, defs: Record<string, JsonSchemaNode>, depth = 0): Kind {
+	if (depth > 8 || !node || typeof node !== "object") return "unknown"
+
+	if (node.$ref) {
+		const target = defs[refName(node.$ref)]
+		return target ? kindOf(target, defs, depth + 1) : "unknown"
+	}
+
+	// A union of shapes -> we don't try to model it; accept permissively.
+	if (node.anyOf || node.oneOf || node.allOf) return "unknown"
+
+	if (node.type) {
+		const t = Array.isArray(node.type) ? node.type[0] : node.type
+		switch (t) {
+			case "string":
+				return "string"
+			case "boolean":
+				return "boolean"
+			case "number":
+			case "integer":
+				return "number"
+			case "array":
+				return "array"
+			case "object":
+				return "object"
+			default:
+				return "unknown"
+		}
+	}
+
+	if (node.properties || node.additionalProperties) return "object"
+	if (node.items || node.prefixItems) return "array"
+	return "unknown"
+}
+
+async function main(): Promise<void> {
+	console.log(`Fetching ${SCHEMA_URL} ...`)
+	const res = await fetch(SCHEMA_URL)
+	if (!res.ok) {
+		throw new Error(`Failed to fetch ${SCHEMA_URL}: HTTP ${res.status}`)
+	}
+	const schema = (await res.json()) as {
+		$defs?: Record<string, JsonSchemaNode>
+		definitions?: Record<string, JsonSchemaNode>
+	}
+	const defs = schema.$defs ?? schema.definitions ?? {}
+	const config = defs.Config
+	if (!config?.properties) {
+		throw new Error("Unexpected schema shape: $defs.Config.properties not found")
+	}
+
+	const kinds: Record<string, Kind> = {}
+	for (const [name, prop] of Object.entries(config.properties)) {
+		kinds[name] = kindOf(prop as JsonSchemaNode, defs)
+	}
+	const sortedNames = Object.keys(kinds).sort()
+
+	// Diff against the currently-committed file (if any) so the maintainer sees the change.
+	let previous: Record<string, string> | null = null
+	try {
+		const mod = (await import(OUT_PATH)) as { OPENCODE_CONFIG_FIELD_KINDS?: Record<string, string> }
+		previous = mod.OPENCODE_CONFIG_FIELD_KINDS ?? null
+	} catch {
+		previous = null
+	}
+	if (previous) {
+		const prevNames = new Set(Object.keys(previous))
+		const nextNames = new Set(sortedNames)
+		const added = sortedNames.filter((n) => !prevNames.has(n))
+		const removed = [...prevNames].filter((n) => !nextNames.has(n)).sort()
+		const changed = sortedNames.filter((n) => prevNames.has(n) && previous?.[n] !== kinds[n])
+		console.log(`Added:   ${added.join(", ") || "(none)"}`)
+		console.log(`Removed: ${removed.join(", ") || "(none)"}`)
+		console.log(
+			`Kind changed: ${changed.map((n) => `${n} ${previous?.[n]}->${kinds[n]}`).join(", ") || "(none)"}`,
+		)
+	} else {
+		console.log(`(no existing generated file — writing ${sortedNames.length} fields)`)
+	}
+
+	// Emit unquoted keys where they are valid JS identifiers (matches biome's
+	// quoteProps: "asNeeded"), so re-running the generator produces no formatting churn.
+	const body = sortedNames
+		.map((name) => {
+			const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name)
+			return `\t${key}: "${kinds[name]}",`
+		})
+		.join("\n")
+	const contents = `/**
+ * @generated by packages/cli/scripts/sync-opencode-schema.ts
+ * Source: ${SCHEMA_URL}
+ *
+ * DO NOT EDIT BY HAND. Refresh with: bun run scripts/sync-opencode-schema.ts
+ *
+ * Authoritative set of valid top-level opencode config fields (name -> shallow kind),
+ * synced from opencode's published JSON Schema. \`opencodeConfigSchema\` builds on this:
+ * it types the fields ocx manipulates precisely and accepts the rest by kind, rejecting
+ * any top-level key not listed here (matching opencode's own additionalProperties:false).
+ */
+
+export type OpencodeFieldKind = "string" | "number" | "boolean" | "array" | "object" | "unknown"
+
+export const OPENCODE_CONFIG_FIELD_KINDS: Record<string, OpencodeFieldKind> = {
+${body}
+}
+`
+
+	await Bun.write(OUT_PATH, contents)
+	console.log(`Wrote ${OUT_PATH} (${sortedNames.length} fields).`)
+	console.log("Now run: bun run check && bun test  — then review + commit the diff.")
+}
+
+main().catch((err) => {
+	console.error(err instanceof Error ? err.message : String(err))
+	process.exit(1)
+})

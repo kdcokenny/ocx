@@ -5,9 +5,11 @@
 
 import { describe, expect, it } from "bun:test"
 import { parseCanonicalId } from "../src/schemas/config"
+import { OPENCODE_CONFIG_FIELD_KINDS } from "../src/schemas/opencode-config-fields.generated"
 import {
 	agentConfigSchema,
 	aliasSchema,
+	componentManifestSchema,
 	createQualifiedComponent,
 	dependencyRefSchema,
 	inferTargetPath,
@@ -15,6 +17,7 @@ import {
 	normalizeFile,
 	normalizeMcpServer,
 	openCodeNameSchema,
+	opencodeConfigSchema,
 	parseQualifiedComponent,
 	permissionConfigSchema,
 	qualifiedComponentSchema,
@@ -565,6 +568,75 @@ describe("schemas", () => {
 		it("should throw for missing namespace separator", () => {
 			const id = "https://registry.example.com::component@1.0.0"
 			expect(() => parseCanonicalId(id)).toThrow("qualified")
+		})
+	})
+
+	describe("opencodeConfigSchema (synced field set)", () => {
+		it("accepts and retains a valid opencode field ocx does not model precisely", () => {
+			const result = opencodeConfigSchema.safeParse({
+				enabled_providers: ["acme"],
+				disabled_providers: ["legacy"],
+				plugin: ["./p.ts"],
+			})
+			expect(result.success).toBe(true)
+			if (result.success) {
+				// passed through unchanged (not stripped)
+				expect((result.data as Record<string, unknown>).enabled_providers).toEqual(["acme"])
+				expect((result.data as Record<string, unknown>).disabled_providers).toEqual(["legacy"])
+			}
+		})
+
+		it("still accepts ocx-managed fields, including the mcp string shorthand", () => {
+			const result = opencodeConfigSchema.safeParse({
+				mcp: { local: "npx some-server" },
+				permission: { bash: "ask" },
+				plugin: ["a"],
+				instructions: ["x.md"],
+			})
+			expect(result.success).toBe(true)
+		})
+
+		it("rejects a top-level key that is not in opencode's field set", () => {
+			const result = opencodeConfigSchema.safeParse({ bogus_key: 1 })
+			expect(result.success).toBe(false)
+			if (!result.success) {
+				expect(result.error.issues[0]?.message).toContain("bogus_key")
+				expect(result.error.issues[0]?.message).toContain("sync-opencode-schema")
+			}
+		})
+
+		it("rejects stale/renamed keys opencode no longer defines at top level", () => {
+			for (const stale of ["theme", "tui", "keybind", "auto_update", "auto_compact"]) {
+				expect(opencodeConfigSchema.safeParse({ [stale]: true }).success).toBe(false)
+			}
+		})
+
+		it("rejection propagates through componentManifestSchema (ocx validate / add)", () => {
+			const manifest = {
+				name: "x",
+				type: "plugin",
+				description: "d",
+				files: [],
+				dependencies: [],
+				opencode: { enabled_providers: ["acme"], not_a_real_key: true },
+			}
+			const result = componentManifestSchema.safeParse(manifest)
+			expect(result.success).toBe(false)
+		})
+
+		it("the generated field set is current with opencode (has new fields, not stale ones)", () => {
+			const fields = Object.keys(OPENCODE_CONFIG_FIELD_KINDS)
+			// Fields opencode has that ocx used to drop:
+			expect(fields).toContain("enabled_providers")
+			expect(fields).toContain("disabled_providers")
+			// Core managed fields:
+			expect(fields).toContain("plugin")
+			expect(fields).toContain("mcp")
+			expect(fields).toContain("permission")
+			// Stale/renamed ocx-only fields must NOT be present:
+			expect(fields).not.toContain("theme")
+			expect(fields).not.toContain("tui")
+			expect(fields).not.toContain("auto_update")
 		})
 	})
 })

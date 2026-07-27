@@ -17,6 +17,7 @@ import {
 import type { RegistryCompatIssue } from "../utils/errors"
 import { ValidationError } from "../utils/errors"
 import { PathValidationError, validatePath } from "../utils/path-security"
+import { OPENCODE_CONFIG_FIELD_KINDS } from "./opencode-config-fields.generated"
 
 // =============================================================================
 // NPM SPECIFIER SCHEMA
@@ -505,15 +506,35 @@ export const permissionConfigSchema = object({
 export type PermissionConfig = ZodInfer<typeof permissionConfigSchema>
 
 /**
- * OpenCode configuration block
- * Mirrors opencode.json structure exactly for 1:1 mapping
+ * Valid top-level opencode config field names, synced from opencode's published
+ * JSON Schema (https://opencode.ai/config.json) into
+ * `opencode-config-fields.generated.ts`. Refresh with
+ * `bun run scripts/sync-opencode-schema.ts`. This is the authority for which
+ * top-level keys `opencodeConfigSchema` accepts — so ocx never drifts out of sync
+ * and silently drops valid config (e.g. `enabled_providers`) again.
+ */
+const OPENCODE_CONFIG_FIELDS: ReadonlySet<string> = new Set(
+	Object.keys(OPENCODE_CONFIG_FIELD_KINDS),
+)
+
+/**
+ * OpenCode configuration block.
+ *
+ * ocx does NOT re-validate opencode's entire config — opencode does that at runtime
+ * (its schema is `additionalProperties: false`). ocx only:
+ *  - types precisely the fields it actually reads/merges/extends (below), and
+ *  - accepts every OTHER valid opencode field via `.passthrough()` so a component
+ *    can deliver it unchanged (that's how `enabled_providers`, `disabled_providers`,
+ *    etc. now reach `opencode.jsonc`), while
+ *  - rejecting any top-level key that is NOT in opencode's field set (`.superRefine`),
+ *    matching opencode's own `additionalProperties: false`.
+ *
+ * The `mcp` string shorthand and other shorthands are ocx extensions layered here;
+ * they are intentionally more lenient than opencode's schema.
  */
 export const opencodeConfigSchema = object({
 	/** JSON Schema URL for IDE support */
 	$schema: string().optional(),
-
-	/** UI theme name */
-	theme: string().optional(),
 
 	/** Logging level */
 	logLevel: string().optional(),
@@ -560,27 +581,32 @@ export const opencodeConfigSchema = object({
 	/** Custom command configurations */
 	command: record(string(), commandConfigSchema).optional(),
 
-	/** TUI configuration */
-	tui: tuiConfigSchema.optional(),
-
 	/** Server configuration */
 	server: serverConfigSchema.optional(),
-
-	/** Keybind configuration */
-	keybind: keybindConfigSchema.optional(),
 
 	/** File watcher configuration */
 	watcher: watcherConfigSchema.optional(),
 
-	/** Enable auto-updates */
-	auto_update: boolean().optional(),
-
-	/** Enable auto-compaction */
-	auto_compact: boolean().optional(),
-
 	/** Share configuration (boolean or URL string) */
 	share: union([boolean(), string()]).optional(),
 })
+	// Carry through any other valid opencode field a component ships, unchanged.
+	.passthrough()
+	// Reject top-level keys that are not part of opencode's config schema.
+	.superRefine((value, ctx) => {
+		for (const key of Object.keys(value)) {
+			if (!OPENCODE_CONFIG_FIELDS.has(key)) {
+				ctx.addIssue({
+					code: "custom",
+					path: [key],
+					message:
+						`Unknown opencode config key "${key}" — not part of opencode's config schema. ` +
+						"If opencode added it recently, refresh ocx's field set with " +
+						"`bun run scripts/sync-opencode-schema.ts`.",
+				})
+			}
+		}
+	})
 
 export type OpencodeConfig = ZodInfer<typeof opencodeConfigSchema>
 
