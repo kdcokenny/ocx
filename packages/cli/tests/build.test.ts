@@ -85,6 +85,104 @@ describe("ocx build", () => {
 		expect(index.components[0].name).toBe("comp-1")
 	})
 
+	it("should preserve valid MCP OAuth fields in built component manifests", async () => {
+		const sourceDir = join(testDir, "registry-mcp-oauth")
+		await mkdir(sourceDir, { recursive: true })
+
+		const oauth = {
+			clientId: "client-id",
+			clientSecret: "client-secret",
+			scope: "files:read files:write",
+			callbackPort: 24567,
+			redirectUri: "http://127.0.0.1:24567/mcp/oauth/callback",
+		}
+		const registryJson = {
+			$schema: REGISTRY_SCHEMA_V2_URL,
+			name: "MCP OAuth Registry",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "oauth-mcp",
+					type: "bundle",
+					description: "Remote MCP server with OAuth",
+					files: [],
+					dependencies: [],
+					opencode: {
+						mcp: {
+							remote: {
+								type: "remote",
+								url: "https://mcp.example.com/mcp",
+								oauth,
+							},
+						},
+					},
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		const outDir = "dist-mcp-oauth"
+		const { exitCode, output } = await runCLI(
+			["build", "registry-mcp-oauth", "--out", outDir],
+			testDir,
+		)
+
+		expect(exitCode).toBe(0)
+		expect(output).toContain("Built 1 component")
+
+		const packument = JSON.parse(
+			await readFile(join(testDir, outDir, "components", "oauth-mcp.json"), "utf-8"),
+		)
+		expect(packument.versions["1.0.0"].opencode.mcp.remote.oauth).toEqual(oauth)
+	})
+
+	it("should reject legacy MCP OAuth fields in v2 registries", async () => {
+		const sourceDir = join(testDir, "registry-legacy-mcp-oauth")
+		await mkdir(sourceDir, { recursive: true })
+
+		const registryJson = {
+			$schema: REGISTRY_SCHEMA_V2_URL,
+			name: "Invalid Legacy MCP OAuth Registry",
+			version: "1.0.0",
+			author: "Test Author",
+			components: [
+				{
+					name: "legacy-oauth-mcp",
+					type: "bundle",
+					description: "MCP server using registry v1 OAuth fields",
+					files: [],
+					dependencies: [],
+					opencode: {
+						mcp: {
+							remote: {
+								type: "remote",
+								url: "https://mcp.example.com/mcp",
+								oauth: {
+									scopes: ["files:read"],
+									authUrl: "https://auth.example.com",
+									tokenUrl: "https://token.example.com",
+								},
+							},
+						},
+					},
+				},
+			],
+		}
+
+		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
+
+		const { exitCode, output } = await runCLI(
+			["build", "registry-legacy-mcp-oauth", "--out", "dist-legacy-mcp-oauth"],
+			testDir,
+		)
+
+		expect(exitCode).toBe(EXIT_CODES.GENERAL)
+		expect(output).toContain("components.0.opencode.mcp.remote")
+		expect(existsSync(join(testDir, "dist-legacy-mcp-oauth"))).toBe(false)
+	})
+
 	it("should display validation results when --show-validation is used", async () => {
 		const sourceDir = join(testDir, "registry")
 		await mkdir(sourceDir, { recursive: true })

@@ -81,6 +81,14 @@ MCP (Model Context Protocol) servers add external tools to OpenCode. Configure l
 }
 ```
 
+| Option | Type | Description |
+|--------|------|-------------|
+| `clientId` | string | OAuth client ID; dynamic client registration is attempted when omitted |
+| `clientSecret` | string | OAuth client secret, when required by the authorization server |
+| `scope` | string | Space-delimited OAuth scopes requested during authorization |
+| `callbackPort` | integer | Local callback port from 1–65535; defaults to 19876 |
+| `redirectUri` | string | Full redirect URI; takes precedence over `callbackPort` |
+
 ## Per-Agent MCP Tools
 
 Restrict MCP tools to specific agents:

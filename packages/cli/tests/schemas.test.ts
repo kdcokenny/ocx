@@ -14,6 +14,7 @@ import {
 	namespaceSchema,
 	normalizeFile,
 	normalizeMcpServer,
+	oauthConfigSchema,
 	openCodeNameSchema,
 	parseQualifiedComponent,
 	permissionConfigSchema,
@@ -350,6 +351,40 @@ describe("schemas", () => {
 			const result = normalizeMcpServer(input)
 			expect(result).toEqual(input)
 			expect(result.command).toBe("npx some-mcp-server --port 3000")
+		})
+	})
+
+	describe("oauthConfigSchema", () => {
+		it("rejects legacy v1 fields in current manifests", () => {
+			const result = oauthConfigSchema.safeParse({
+				scopes: ["files:read"],
+				authUrl: "https://auth.example.com",
+				tokenUrl: "https://token.example.com",
+			})
+
+			expect(result.success).toBe(false)
+			if (!result.success) {
+				expect(result.error.issues[0]?.code).toBe("unrecognized_keys")
+				expect(result.error.issues[0]?.message).toContain("scopes")
+			}
+		})
+
+		it("rejects unknown fields instead of silently stripping them", () => {
+			const result = oauthConfigSchema.safeParse({ unexpected: true })
+
+			expect(result.success).toBe(false)
+			if (!result.success) {
+				expect(result.error.issues[0]?.code).toBe("unrecognized_keys")
+				expect(result.error.issues[0]?.message).toContain("unexpected")
+			}
+		})
+
+		it("enforces the callback port range from OpenCode's schema", () => {
+			expect(oauthConfigSchema.safeParse({ callbackPort: 1 }).success).toBe(true)
+			expect(oauthConfigSchema.safeParse({ callbackPort: 65535 }).success).toBe(true)
+			expect(oauthConfigSchema.safeParse({ callbackPort: 0 }).success).toBe(false)
+			expect(oauthConfigSchema.safeParse({ callbackPort: 65536 }).success).toBe(false)
+			expect(oauthConfigSchema.safeParse({ callbackPort: 1.5 }).success).toBe(false)
 		})
 	})
 

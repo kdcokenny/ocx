@@ -264,10 +264,16 @@
 												"type": "object",
 												"properties": {
 													"clientId": { "type": "string" },
-													"scopes": { "type": "array", "items": { "type": "string" } },
-													"authUrl": { "type": "string", "format": "uri" },
-													"tokenUrl": { "type": "string", "format": "uri" }
-												}
+													"clientSecret": { "type": "string" },
+													"scope": { "type": "string" },
+													"callbackPort": {
+														"type": "integer",
+														"minimum": 1,
+														"maximum": 65535
+													},
+													"redirectUri": { "type": "string" }
+												},
+												"additionalProperties": false
 											}
 										],
 										"description": "OAuth configuration for MCP server"

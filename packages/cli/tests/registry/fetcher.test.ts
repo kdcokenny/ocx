@@ -764,6 +764,71 @@ describe("fetchComponentVersion legacy manifest adaptation", () => {
 		expect(manifest.files[0]).toEqual({ path: "plugin.ts", target: "plugins/legacy-plugin.ts" })
 	})
 
+	it("preserves legacy v1 MCP OAuth fields during manifest adaptation", async () => {
+		const legacyOauth = {
+			clientId: "legacy-client",
+			scopes: ["files:read"],
+			authUrl: "https://auth.example.com",
+			tokenUrl: "https://token.example.com",
+		}
+		globalThis.fetch = mock((input) => {
+			const requestUrl = new URL(String(input))
+
+			if (requestUrl.pathname === "/index.json") {
+				return Promise.resolve(
+					new Response(
+						JSON.stringify({
+							author: "Legacy",
+							components: [{ name: "legacy-mcp", type: "ocx:bundle", description: "Legacy MCP" }],
+						}),
+						{
+							status: 200,
+							headers: { "content-type": "application/json" },
+						},
+					),
+				)
+			}
+
+			return Promise.resolve(
+				new Response(
+					JSON.stringify({
+						name: "legacy-mcp",
+						"dist-tags": { latest: "1.4.6" },
+						versions: {
+							"1.4.6": {
+								name: "legacy-mcp",
+								type: "ocx:bundle",
+								description: "Legacy MCP",
+								files: [],
+								dependencies: [],
+								opencode: {
+									mcp: {
+										remote: {
+											type: "remote",
+											url: "https://mcp.example.com",
+											oauth: legacyOauth,
+										},
+									},
+								},
+							},
+						},
+					}),
+					{
+						status: 200,
+						headers: { "content-type": "application/json" },
+					},
+				),
+			)
+		})
+
+		const { manifest } = await fetchComponentVersion("https://legacy.example.com", "legacy-mcp")
+		const remote = manifest.opencode?.mcp?.remote
+		expect(typeof remote).toBe("object")
+		if (typeof remote === "object" && remote !== null && "oauth" in remote) {
+			expect(remote.oauth).toEqual(legacyOauth)
+		}
+	})
+
 	it("adapts legacy manifest when schema mode is null (index fetch fails)", async () => {
 		globalThis.fetch = mock((input) => {
 			const requestUrl = new URL(String(input))

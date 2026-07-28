@@ -10,6 +10,7 @@ import {
 	classifyRegistrySchemaIssue,
 	componentManifestSchema,
 	componentTypeSchema,
+	legacyComponentManifestSchema,
 	packumentSchema,
 	registryIndexSchema,
 } from "../schemas/registry"
@@ -190,7 +191,29 @@ function hasLegacySignalsInManifest(manifest: unknown): boolean {
 		return true
 	}
 
-	return collectLegacyManifestTargetIssues(manifest).length > 0
+	if (collectLegacyManifestTargetIssues(manifest).length > 0) {
+		return true
+	}
+
+	const opencode = manifest.opencode
+	if (!isPlainObject(opencode) || !isPlainObject(opencode.mcp)) {
+		return false
+	}
+
+	for (const server of Object.values(opencode.mcp)) {
+		if (!isPlainObject(server) || !isPlainObject(server.oauth)) {
+			continue
+		}
+		if (
+			Object.hasOwn(server.oauth, "scopes") ||
+			Object.hasOwn(server.oauth, "authUrl") ||
+			Object.hasOwn(server.oauth, "tokenUrl")
+		) {
+			return true
+		}
+	}
+
+	return false
 }
 
 async function resolveRegistrySchemaMode(baseUrl: string): Promise<RegistrySchemaMode | null> {
@@ -612,12 +635,14 @@ export async function fetchComponentVersion(
 			// 3. Validate manifest (legacy adaptation is version-gated)
 			const context = `component "${name}@${resolvedVersion}"`
 			let candidateManifest: unknown = manifest
+			let manifestSchema = componentManifestSchema
 
 			if (hasLegacySignalsInManifest(manifest)) {
 				const schemaMode = await resolveRegistrySchemaMode(baseUrl)
 
 				if (schemaMode !== "v2") {
 					candidateManifest = adaptLegacyComponentManifest(manifest, context)
+					manifestSchema = legacyComponentManifestSchema
 				} else {
 					const legacyTargetIssues = collectLegacyManifestTargetIssues(manifest)
 					const firstLegacyTargetIssue = legacyTargetIssues[0]
@@ -637,7 +662,7 @@ export async function fetchComponentVersion(
 				}
 			}
 
-			const manifestResult = componentManifestSchema.safeParse(candidateManifest)
+			const manifestResult = manifestSchema.safeParse(candidateManifest)
 			if (!manifestResult.success) {
 				throw new ValidationError(
 					`Invalid component manifest for "${name}@${resolvedVersion}": ${manifestResult.error.message}`,

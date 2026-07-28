@@ -221,15 +221,26 @@ export const targetPathSchema = string()
 export const oauthConfigSchema = object({
 	/** OAuth client ID */
 	clientId: string().optional(),
-	/** OAuth scopes to request */
-	scopes: array(string()).optional(),
-	/** OAuth authorization URL */
-	authUrl: string().optional(),
-	/** OAuth token URL */
-	tokenUrl: string().optional(),
-})
+	/** OAuth client secret, when required by the authorization server */
+	clientSecret: string().optional(),
+	/** Space-delimited OAuth scopes to request */
+	scope: string().optional(),
+	/** Port for the local OAuth callback server */
+	callbackPort: number().int().min(1).max(65535).optional(),
+	/** Full OAuth redirect URI (takes precedence over callbackPort) */
+	redirectUri: string().optional(),
+}).strict()
 
 export type OAuthConfig = ZodInfer<typeof oauthConfigSchema>
+
+const legacyOAuthConfigSchema = oauthConfigSchema.safeExtend({
+	/** @deprecated Registry v1 compatibility; v2 uses singular `scope` */
+	scopes: array(string()).optional(),
+	/** @deprecated Registry v1 compatibility */
+	authUrl: string().optional(),
+	/** @deprecated Registry v1 compatibility */
+	tokenUrl: string().optional(),
+})
 
 /**
  * Full MCP server configuration object
@@ -269,6 +280,10 @@ export const mcpServerObjectSchema = object({
 
 export type McpServer = ZodInfer<typeof mcpServerObjectSchema>
 
+const legacyMcpServerObjectSchema = mcpServerObjectSchema.safeExtend({
+	oauth: union([boolean(), legacyOAuthConfigSchema]).optional(),
+})
+
 /**
  * Cargo-style MCP server reference:
  * - String: URL shorthand for remote server (e.g., "https://mcp.example.com")
@@ -277,6 +292,8 @@ export type McpServer = ZodInfer<typeof mcpServerObjectSchema>
 export const mcpServerRefSchema = union([string(), mcpServerObjectSchema])
 
 export type McpServerRef = ZodInfer<typeof mcpServerRefSchema>
+
+const legacyMcpServerRefSchema = union([string(), legacyMcpServerObjectSchema])
 
 // =============================================================================
 // COMPONENT FILE SCHEMA (Cargo-style: string path or full object)
@@ -584,6 +601,10 @@ export const opencodeConfigSchema = object({
 
 export type OpencodeConfig = ZodInfer<typeof opencodeConfigSchema>
 
+const legacyOpencodeConfigSchema = opencodeConfigSchema.extend({
+	mcp: record(string(), legacyMcpServerRefSchema).optional(),
+})
+
 // =============================================================================
 // COMPONENT MANIFEST SCHEMA
 // =============================================================================
@@ -627,6 +648,10 @@ export const componentManifestSchema = object({
 })
 
 export type ComponentManifest = ZodInfer<typeof componentManifestSchema>
+
+export const legacyComponentManifestSchema = componentManifestSchema.extend({
+	opencode: legacyOpencodeConfigSchema.optional(),
+})
 
 // =============================================================================
 // NORMALIZER FUNCTIONS (Parse, Don't Validate - Law 2)
