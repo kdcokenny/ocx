@@ -273,12 +273,12 @@ describe("updateOpencodeJsonConfig", () => {
 
 	it("should add plugins", async () => {
 		await updateOpencodeJsonConfig(testDir, {
-			plugin: ["@some/plugin@1.0.0", "@another/plugin"],
+			plugin: ["@some/plugin@1.0.0", ["@another/plugin", { nested: { enabled: true } }]],
 		})
 
 		const config = parseJsonc(await readFile(join(testDir, ".opencode", "opencode.jsonc"), "utf-8"))
 		expect(config.plugin).toContain("@some/plugin@1.0.0")
-		expect(config.plugin).toContain("@another/plugin")
+		expect(config.plugin).toContainEqual(["@another/plugin", { nested: { enabled: true } }])
 	})
 
 	it("should add instructions", async () => {

@@ -888,6 +888,52 @@ describe("ocx add --json mixed-input contract", () => {
 		expect(payload.installed).toEqual(["kdco/test-plugin"])
 	})
 
+	it("preserves configured plugin tuples and detects npm conflicts by their specifier", async () => {
+		testDir = await createTempDir("add-npm-plugin-tuple")
+		const configDir = join(testDir, ".opencode")
+		await mkdir(configDir, { recursive: true })
+		const configuredTuple = ["configured-plugin@1.0.0", { nested: { enabled: true } }] as const
+		await writeFile(
+			join(configDir, "opencode.jsonc"),
+			JSON.stringify({ plugin: [configuredTuple] }),
+		)
+
+		spyOn(global, "fetch").mockImplementation(
+			mock(async (input: string | URL | Request, init?: RequestInit) => {
+				const url = getRequestUrl(input)
+				const packageName = url.split("/").at(-1)
+				if (packageName === "new-plugin" || packageName === "configured-plugin") {
+					return new Response(
+						JSON.stringify({
+							name: packageName,
+							"dist-tags": { latest: "1.0.0" },
+							versions: {},
+						}),
+						{ status: 200, headers: { "content-type": "application/json" } },
+					)
+				}
+
+				return originalFetch(input as RequestInfo | URL, init)
+			}) as unknown as typeof fetch,
+		)
+
+		const { runAddCore } = await importAddCommandModule()
+		const provider = {
+			cwd: testDir,
+			getRegistries: () => ({}),
+			getComponentPath: () => ".opencode/components",
+		}
+
+		await runAddCore(["npm:new-plugin"], { quiet: true, trust: true }, provider)
+
+		const config = parseJsonc(await readFile(join(configDir, "opencode.jsonc"), "utf-8"))
+		expect(config.plugin).toEqual([configuredTuple, "new-plugin"])
+
+		await expect(
+			runAddCore(["npm:configured-plugin"], { quiet: true, trust: true }, provider),
+		).rejects.toThrow("Plugin(s) already exist")
+	})
+
 	it("emits strict single-channel JSON on mixed-mode conflict failure without stderr contamination", async () => {
 		testDir = await createTempDir("add-json-mixed-failure")
 

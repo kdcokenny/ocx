@@ -64,9 +64,11 @@ export {
 	normalizeFile,
 	normalizeMcpServer,
 	type OpencodeConfig,
+	type OpencodePluginSpec,
 	// Name schemas
 	openCodeNameSchema,
 	opencodeConfigSchema,
+	opencodePluginSpecSchema,
 	type Packument,
 	type PermissionConfig,
 	packumentSchema,

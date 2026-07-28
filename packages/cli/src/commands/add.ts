@@ -15,6 +15,7 @@ import { ConfigResolver } from "../config/resolver"
 import { CLI_VERSION, GITHUB_REPO } from "../constants"
 import { getProfileDir } from "../profile/paths"
 import { fetchFileContent, fetchRegistryIndex } from "../registry/fetcher"
+import { getPluginSpecifier } from "../registry/merge"
 import type { ResolvedComponent } from "../registry/resolver"
 import { resolveDependencies } from "../registry/resolver"
 import {
@@ -24,7 +25,7 @@ import {
 	readReceipt,
 	writeReceipt,
 } from "../schemas/config"
-import type { ComponentFileObject, RegistryIndex } from "../schemas/registry"
+import type { ComponentFileObject, OpencodePluginSpec, RegistryIndex } from "../schemas/registry"
 import { parseQualifiedComponent } from "../schemas/registry"
 import {
 	findOpencodeConfig,
@@ -369,12 +370,12 @@ async function handleNpmPlugins(
 
 		// Read existing opencode config
 		const existingConfig = await readOpencodeJsonConfig(cwd)
-		const existingPlugins: string[] = existingConfig?.config.plugin ?? []
+		const existingPlugins: OpencodePluginSpec[] = existingConfig?.config.plugin ?? []
 
 		// Build a map of existing plugin names (without version) for conflict detection
-		const existingPluginMap = new Map<string, string>()
+		const existingPluginMap = new Map<string, OpencodePluginSpec>()
 		for (const plugin of existingPlugins) {
-			const name = extractPackageName(plugin)
+			const name = extractPackageName(getPluginSpecifier(plugin))
 			existingPluginMap.set(name, plugin)
 		}
 

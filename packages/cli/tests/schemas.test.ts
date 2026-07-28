@@ -649,6 +649,47 @@ describe("schemas", () => {
 			expect(result.success).toBe(true)
 		})
 
+		it("accepts and retains plugin option tuples", () => {
+			const plugin = [
+				"./plugins/demo/index.ts",
+				{ someConfig: { use: { data: true } }, retries: 2 },
+			]
+			const result = opencodeConfigSchema.safeParse({
+				plugin: ["plain-plugin", plugin],
+			})
+
+			expect(result.success).toBe(true)
+			if (result.success) {
+				expect(result.data.plugin).toEqual(["plain-plugin", plugin])
+			}
+		})
+
+		it("rejects malformed plugin option tuples", () => {
+			expect(opencodeConfigSchema.safeParse({ plugin: [["plugin-only"]] }).success).toBe(false)
+			expect(
+				opencodeConfigSchema.safeParse({ plugin: [["plugin", { enabled: true }, "extra"]] })
+					.success,
+			).toBe(false)
+			expect(opencodeConfigSchema.safeParse({ plugin: [["plugin", true]] }).success).toBe(false)
+		})
+
+		it("retains plugin option tuples through the component manifest boundary", () => {
+			const plugin = ["./plugins/demo/index.ts", { enabled: true }]
+			const result = componentManifestSchema.safeParse({
+				name: "x",
+				type: "plugin",
+				description: "d",
+				files: [],
+				dependencies: [],
+				opencode: { plugin: [plugin] },
+			})
+
+			expect(result.success).toBe(true)
+			if (result.success) {
+				expect(result.data.opencode?.plugin).toEqual([plugin])
+			}
+		})
+
 		it("rejects a top-level key that is not in opencode's field set", () => {
 			const result = opencodeConfigSchema.safeParse({ bogus_key: 1 })
 			expect(result.success).toBe(false)

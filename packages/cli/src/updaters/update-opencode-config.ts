@@ -15,7 +15,7 @@ import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { applyEdits, type ModificationOptions, modify, parse as parseJsonc } from "jsonc-parser"
 import { resolveOpencodePathScope } from "../profile/paths"
-import type { OpencodeConfig } from "../schemas/registry"
+import type { OpencodeConfig, OpencodePluginSpec } from "../schemas/registry"
 import { isPlainObject } from "../utils/type-guards"
 
 const LOCAL_CONFIG_DIR = ".opencode"
@@ -41,7 +41,7 @@ export interface OpencodeJsonConfig {
 	mcp?: Record<string, unknown>
 	tools?: Record<string, boolean>
 	agent?: Record<string, unknown>
-	plugin?: string[]
+	plugin?: OpencodePluginSpec[]
 	instructions?: string[]
 	permission?: unknown
 	[key: string]: unknown

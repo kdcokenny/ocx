@@ -11,7 +11,14 @@
  */
 
 import { mergeDeep } from "remeda"
-import type { NormalizedOpencodeConfig } from "../schemas/registry"
+import type { NormalizedOpencodeConfig, OpencodePluginSpec } from "../schemas/registry"
+
+/**
+ * Return the string specifier from either supported OpenCode plugin entry form.
+ */
+export function getPluginSpecifier(plugin: OpencodePluginSpec): string {
+	return typeof plugin === "string" ? plugin : plugin[0]
+}
 
 /**
  * Extract canonical plugin name by stripping version suffix.
@@ -26,7 +33,9 @@ import type { NormalizedOpencodeConfig } from "../schemas/registry"
  * The version delimiter is the LAST "@" that is not at position 0
  * and not immediately after "npm:" (scoped package prefix).
  */
-export function extractCanonicalPluginName(specifier: string): string {
+export function extractCanonicalPluginName(plugin: OpencodePluginSpec): string {
+	const specifier = getPluginSpecifier(plugin)
+
 	// Strip npm: prefix for parsing, re-add later
 	const hasNpmPrefix = specifier.startsWith("npm:")
 	const remainder = hasNpmPrefix ? specifier.slice(4) : specifier
@@ -62,11 +71,11 @@ export function extractCanonicalPluginName(specifier: string): string {
  * the later entry wins (higher-priority source overwrites lower-priority target).
  * This matches OpenCode's mergeConfigWithPlugins semantics.
  */
-export function dedupePluginsByCanonicalName(plugins: string[]): string[] {
+export function dedupePluginsByCanonicalName(plugins: OpencodePluginSpec[]): OpencodePluginSpec[] {
 	// Walk backwards: first seen (from end) wins
 	const seen = new Map<string, number>()
 	for (let i = plugins.length - 1; i >= 0; i--) {
-		const plugin = plugins[i] as string
+		const plugin = plugins[i] as OpencodePluginSpec
 		const canonical = extractCanonicalPluginName(plugin)
 		if (!seen.has(canonical)) {
 			seen.set(canonical, i)
@@ -74,7 +83,7 @@ export function dedupePluginsByCanonicalName(plugins: string[]): string[] {
 	}
 
 	// Collect in original order, keeping only the last occurrence per canonical name
-	const result: string[] = []
+	const result: OpencodePluginSpec[] = []
 	for (const [i, plugin] of plugins.entries()) {
 		const canonical = extractCanonicalPluginName(plugin)
 		if (seen.get(canonical) === i) {

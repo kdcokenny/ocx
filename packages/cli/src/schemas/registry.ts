@@ -7,7 +7,18 @@
 
 import { isAbsolute, normalize } from "node:path"
 import type { infer as ZodInfer } from "zod"
-import { any, array, boolean, number, object, record, string, union, enum as zEnum } from "zod"
+import {
+	any,
+	array,
+	boolean,
+	number,
+	object,
+	record,
+	string,
+	tuple,
+	union,
+	enum as zEnum,
+} from "zod"
 import {
 	OCX_DOMAIN,
 	REGISTRY_SCHEMA_LATEST_MAJOR,
@@ -535,6 +546,19 @@ const OPENCODE_CONFIG_FIELDS: ReadonlySet<string> = new Set(
 )
 
 /**
+ * OpenCode plugin entry.
+ *
+ * OpenCode accepts either a plugin specifier or a tuple containing the
+ * specifier and an options object.
+ */
+export const opencodePluginSpecSchema = union([
+	string(),
+	tuple([string(), record(string(), any())]),
+])
+
+export type OpencodePluginSpec = ZodInfer<typeof opencodePluginSpecSchema>
+
+/**
  * OpenCode configuration block.
  *
  * ocx does NOT re-validate opencode's entire config — opencode does that at runtime
@@ -571,8 +595,8 @@ export const opencodeConfigSchema = object({
 	/** MCP servers (matches opencode.json 'mcp' field) */
 	mcp: record(string(), mcpServerRefSchema).optional(),
 
-	/** NPM plugin packages to add to opencode.json 'plugin' array */
-	plugin: array(string()).optional(),
+	/** Plugin specifiers, optionally paired with plugin-specific options */
+	plugin: array(opencodePluginSpecSchema).optional(),
 
 	/** Tool enable/disable patterns */
 	tools: record(string(), boolean()).optional(),

@@ -18,6 +18,7 @@ import {
 	OPENCODE_CONFIG_FILE,
 } from "../profile/paths"
 import { dedupePluginsByCanonicalName, extractCanonicalPluginName } from "../registry/merge"
+import { type OpencodePluginSpec, opencodePluginSpecSchema } from "../schemas/registry"
 import { ConfigError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError } from "../utils/handle-error"
@@ -133,8 +134,8 @@ function mergeInstructionArrayOrigins(
 }
 
 function mergePluginArrayOrigins(
-	profileValues: string[],
-	localValues: string[],
+	profileValues: OpencodePluginSpec[],
+	localValues: OpencodePluginSpec[],
 	pathSegments: OpencodePathSegment[],
 	origins: Map<string, OpencodeLeafOrigin>,
 ): void {
@@ -154,11 +155,13 @@ function mergePluginArrayOrigins(
 		}
 	}
 
-	for (const [index, pluginSpecifier] of mergedValues.entries()) {
-		const canonicalName = extractCanonicalPluginName(pluginSpecifier)
-		origins.set(
-			pathSegmentsToKey([...pathSegments, index]),
+	for (const [index, plugin] of mergedValues.entries()) {
+		const canonicalName = extractCanonicalPluginName(plugin)
+		collectLeafOriginsForValue(
+			plugin,
 			lastOwnerByCanonical.get(canonicalName) ?? "local",
+			[...pathSegments, index],
+			origins,
 		)
 	}
 }
@@ -214,8 +217,12 @@ function mergeLeafOriginsAtPath(args: {
 
 		if (isTopLevelOpencodeArrayPath(pathSegments, "plugin")) {
 			if (
-				profileValue.every((value) => typeof value === "string") &&
-				localValue.every((value) => typeof value === "string")
+				profileValue.every(
+					(value): value is OpencodePluginSpec => opencodePluginSpecSchema.safeParse(value).success,
+				) &&
+				localValue.every(
+					(value): value is OpencodePluginSpec => opencodePluginSpecSchema.safeParse(value).success,
+				)
 			) {
 				mergePluginArrayOrigins(profileValue, localValue, pathSegments, origins)
 				return

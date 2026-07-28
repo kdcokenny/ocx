@@ -70,6 +70,12 @@ describe("extractCanonicalPluginName", () => {
 	it("handles npm: with empty remainder", () => {
 		expect(extractCanonicalPluginName("npm:")).toBe("npm:")
 	})
+
+	it("extracts the canonical name from a plugin option tuple", () => {
+		expect(extractCanonicalPluginName(["npm:@scope/pkg@2.0.0", { mode: "strict" }])).toBe(
+			"npm:@scope/pkg",
+		)
+	})
 })
 
 // =============================================================================
@@ -115,6 +121,16 @@ describe("dedupePluginsByCanonicalName", () => {
 		const combined = ["npm:@franlol/formatter@0.0.2", "npm:@franlol/formatter@0.0.3"]
 		const result = dedupePluginsByCanonicalName(combined)
 		expect(result).toEqual(["npm:@franlol/formatter@0.0.3"])
+	})
+
+	it("deduplicates strings and tuples while retaining the winning options", () => {
+		const result = dedupePluginsByCanonicalName([
+			["npm:pkg@1.0.0", { source: "profile" }],
+			"npm:other",
+			["npm:pkg@2.0.0", { source: "local" }],
+		])
+
+		expect(result).toEqual(["npm:other", ["npm:pkg@2.0.0", { source: "local" }]])
 	})
 })
 
@@ -236,6 +252,26 @@ describe("mergeOpencodeConfig", () => {
 			const result = mergeOpencodeConfig(target, source)
 
 			expect(result.plugin).toEqual(["npm:chalk@5.0.0"])
+		})
+
+		it("merges plugin option tuples by canonical specifier without dropping options", () => {
+			const target: NormalizedOpencodeConfig = {
+				plugin: [
+					["npm:formatter@1.0.0", { source: "profile" }],
+					["npm:keep", { setting: true }],
+				],
+			}
+			const source: NormalizedOpencodeConfig = {
+				plugin: [["npm:formatter@2.0.0", { source: "local" }], "npm:new"],
+			}
+
+			const result = mergeOpencodeConfig(target, source)
+
+			expect(result.plugin).toEqual([
+				["npm:keep", { setting: true }],
+				["npm:formatter@2.0.0", { source: "local" }],
+				"npm:new",
+			])
 		})
 
 		it("preserves plugins when later component has none", () => {

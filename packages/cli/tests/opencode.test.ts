@@ -1279,8 +1279,8 @@ describe("oc command CLI contract", () => {
 				join(profileDir, "opencode.jsonc"),
 				JSON.stringify({
 					plugin: [
-						"npm:@scope/tool@1.0.0",
-						"{file:./prompts/profile-plugin-token.md}",
+						["npm:@scope/tool@1.0.0", { source: "profile" }],
+						["{file:./prompts/profile-plugin-token.md}", { source: "profile" }],
 						"npm:keep-profile",
 					],
 				}),
@@ -1291,7 +1291,10 @@ describe("oc command CLI contract", () => {
 			await Bun.write(
 				join(localConfigDir, "opencode.jsonc"),
 				JSON.stringify({
-					plugin: ["npm:@scope/tool@2.0.0", "{file:./prompts/local-plugin-token.md}"],
+					plugin: [
+						["npm:@scope/tool@2.0.0", { source: "local" }],
+						["{file:./prompts/local-plugin-token.md}", { source: "local" }],
+					],
 				}),
 			)
 
@@ -1308,13 +1311,13 @@ describe("oc command CLI contract", () => {
 				configContent: string | null
 			}
 			const parsedConfig = JSON.parse(payload.configContent as string) as {
-				plugin?: string[]
+				plugin?: Array<string | [string, Record<string, unknown>]>
 			}
 			expect(parsedConfig.plugin).toEqual([
-				`{file:${join(profileDir, "prompts", "profile-plugin-token.md")}}`,
+				[`{file:${join(profileDir, "prompts", "profile-plugin-token.md")}}`, { source: "profile" }],
 				"npm:keep-profile",
-				"npm:@scope/tool@2.0.0",
-				"{file:./prompts/local-plugin-token.md}",
+				["npm:@scope/tool@2.0.0", { source: "local" }],
+				["{file:./prompts/local-plugin-token.md}", { source: "local" }],
 			])
 		} finally {
 			await cleanupTempDir(testDir)
