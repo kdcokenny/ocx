@@ -824,9 +824,7 @@ describe("fetchComponentVersion legacy manifest adaptation", () => {
 		const { manifest } = await fetchComponentVersion("https://legacy.example.com", "legacy-mcp")
 		const remote = manifest.opencode?.mcp?.remote
 		expect(typeof remote).toBe("object")
-		if (typeof remote === "object" && remote !== null && "oauth" in remote) {
-			expect(remote.oauth).toEqual(legacyOauth)
-		}
+		expect(remote).toMatchObject({ oauth: legacyOauth })
 	})
 
 	it("adapts legacy manifest when schema mode is null (index fetch fails)", async () => {
