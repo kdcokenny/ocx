@@ -601,7 +601,7 @@ export const opencodeConfigSchema = object({
 
 export type OpencodeConfig = ZodInfer<typeof opencodeConfigSchema>
 
-const legacyOpencodeConfigSchema = opencodeConfigSchema.extend({
+const legacyOpencodeConfigSchema = opencodeConfigSchema.safeExtend({
 	mcp: record(string(), legacyMcpServerRefSchema).optional(),
 })
 
