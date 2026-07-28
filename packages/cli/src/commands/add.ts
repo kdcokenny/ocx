@@ -375,7 +375,10 @@ async function handleNpmPlugins(
 		// Build a map of existing plugin names (without version) for conflict detection
 		const existingPluginMap = new Map<string, OpencodePluginSpec>()
 		for (const plugin of existingPlugins) {
-			const name = extractPackageName(getPluginSpecifier(plugin))
+			const specifier = getPluginSpecifier(plugin)
+			const name = isNpmSpecifier(specifier)
+				? parseNpmSpecifier(specifier).name
+				: extractPackageName(specifier)
 			existingPluginMap.set(name, plugin)
 		}
 

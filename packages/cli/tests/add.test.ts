@@ -892,7 +892,7 @@ describe("ocx add --json mixed-input contract", () => {
 		testDir = await createTempDir("add-npm-plugin-tuple")
 		const configDir = join(testDir, ".opencode")
 		await mkdir(configDir, { recursive: true })
-		const configuredTuple = ["configured-plugin@1.0.0", { nested: { enabled: true } }] as const
+		const configuredTuple = ["npm:configured-plugin@1.0.0", { nested: { enabled: true } }] as const
 		await writeFile(
 			join(configDir, "opencode.jsonc"),
 			JSON.stringify({ plugin: [configuredTuple] }),
