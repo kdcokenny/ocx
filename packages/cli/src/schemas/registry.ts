@@ -510,8 +510,8 @@ export type PermissionConfig = ZodInfer<typeof permissionConfigSchema>
  * JSON Schema (https://opencode.ai/config.json) into
  * `opencode-config-fields.generated.ts`. Refresh with
  * `bun run scripts/sync-opencode-schema.ts`. This is the authority for which
- * top-level keys `opencodeConfigSchema` accepts — so ocx never drifts out of sync
- * and silently drops valid config (e.g. `enabled_providers`) again.
+ * top-level keys `opencodeConfigSchema` accepts, and gives maintainers a
+ * deterministic refresh path when opencode adds or removes fields.
  */
 const OPENCODE_CONFIG_FIELDS: ReadonlySet<string> = new Set(
 	Object.keys(OPENCODE_CONFIG_FIELD_KINDS),

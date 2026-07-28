@@ -586,6 +586,24 @@ describe("schemas", () => {
 			}
 		})
 
+		it("retains synced fields through the component manifest boundary", () => {
+			const result = componentManifestSchema.safeParse({
+				name: "x",
+				type: "plugin",
+				description: "d",
+				files: [],
+				dependencies: [],
+				opencode: { enabled_providers: ["acme"] },
+			})
+
+			expect(result.success).toBe(true)
+			if (result.success) {
+				expect(
+					(result.data.opencode as Record<string, unknown> | undefined)?.enabled_providers,
+				).toEqual(["acme"])
+			}
+		})
+
 		it("still accepts ocx-managed fields, including the mcp string shorthand", () => {
 			const result = opencodeConfigSchema.safeParse({
 				mcp: { local: "npx some-server" },

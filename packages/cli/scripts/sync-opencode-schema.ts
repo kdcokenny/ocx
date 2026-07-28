@@ -146,8 +146,8 @@ async function main(): Promise<void> {
  *
  * Authoritative set of valid top-level opencode config fields (name -> shallow kind),
  * synced from opencode's published JSON Schema. \`opencodeConfigSchema\` builds on this:
- * it types the fields ocx manipulates precisely and accepts the rest by kind, rejecting
- * any top-level key not listed here (matching opencode's own additionalProperties:false).
+ * it types the fields ocx manipulates precisely, passes other known fields through for
+ * opencode to validate, and rejects top-level keys not listed here.
  */
 
 export type OpencodeFieldKind = "string" | "number" | "boolean" | "array" | "object" | "unknown"
