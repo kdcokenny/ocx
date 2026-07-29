@@ -100,7 +100,13 @@ export function dedupePluginsByCanonicalName(plugins: OpencodePluginSpec[]): Ope
  * (scoped names start with `@`).
  */
 function isTuiFilesystemPath(entry: string): boolean {
-	return entry.startsWith("/") || entry.startsWith("./") || entry.startsWith("../")
+	return (
+		entry.startsWith("/") ||
+		/^[A-Za-z]:[\\/]/.test(entry) ||
+		entry.startsWith("\\\\") ||
+		entry.startsWith("./") ||
+		entry.startsWith("../")
+	)
 }
 
 /**
