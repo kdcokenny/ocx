@@ -17,7 +17,11 @@ import {
 	normalizeComponentManifest,
 	parseQualifiedComponent,
 } from "../schemas/registry"
-import { applyTuiConfigDelta, resolveTuiPluginEntries } from "../updaters/update-tui-config"
+import {
+	applyTuiConfigDelta,
+	getGlobalTuiConfigPath,
+	resolveTuiPluginEntries,
+} from "../updaters/update-tui-config"
 import { type DryRunAction, type DryRunResult, outputDryRun } from "../utils/dry-run"
 import { ConfigError, NotFoundError, ValidationError } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
@@ -91,6 +95,19 @@ interface UpdateFileOps {
 }
 
 type UpdateFailurePhase = "check" | "apply"
+
+/** Extract the TUI plugin entries from a raw `tui` block (receipt or manifest). */
+function tuiPluginList(tui: unknown): string[] {
+	const plugin = (tui as { plugin?: unknown } | undefined)?.plugin
+	return Array.isArray(plugin) ? plugin.filter((p): p is string => typeof p === "string") : []
+}
+
+/** True when two `tui` blocks declare a different set of plugin entries (order-insensitive). */
+function tuiConfigChanged(oldTui: unknown, newTui: unknown): boolean {
+	const before = [...tuiPluginList(oldTui)].sort()
+	const after = [...tuiPluginList(newTui)].sort()
+	return before.length !== after.length || before.some((value, index) => value !== after[index])
+}
 
 function formatAddCommandHint(component: string, options: UpdateOptions): string {
 	return `ocx add${options.global ? " --global" : ""} ${component}`
@@ -287,7 +304,12 @@ export async function runUpdateCore(
 				? (await checkFileIntegrity(provider.cwd, entry)).intact
 				: false
 
-			if (bundleIsUnchanged && installedFilesAreIntact) {
+			// The bundle hash covers file content only. A component can change its `tui`
+			// block (add/drop TUI plugins) without touching file bytes; detect that so the
+			// tui.json reconcile still runs.
+			const tuiChanged = tuiConfigChanged(entry.tui, normalizedManifest.tui)
+
+			if (bundleIsUnchanged && installedFilesAreIntact && !tuiChanged) {
 				results.push({
 					qualifiedName: canonicalId,
 					oldVersion: entry.revision,
@@ -464,15 +486,34 @@ export async function runUpdateCore(
 		await appliedWriteTransaction.commit()
 		appliedWriteTransaction = null
 
-		// Reflect upstream TUI changes in the global tui.json: resolve both the old
-		// and new contributions to absolute paths, then reconcile by delta. Unrelated
-		// third-party entries stay untouched.
+		// Reflect upstream TUI changes in the global tui.json: reconcile by delta.
+		// This runs AFTER the update is committed (files + receipt), so a tui.json
+		// failure must not report the update itself as failed — warn and continue.
 		if (tuiOldRaw.length > 0 || tuiNewRaw.length > 0) {
-			const removeAbsolute = resolveTuiPluginEntries(tuiOldRaw, provider.cwd)
-			const addAbsolute = resolveTuiPluginEntries(tuiNewRaw, provider.cwd)
-			const tuiResult = await applyTuiConfigDelta(removeAbsolute, addAbsolute)
-			if (!options.quiet && tuiResult.changed) {
-				logger.info(`${tuiResult.created ? "Created" : "Updated"} ${tuiResult.path}`)
+			try {
+				// Entries still declared by SOME installed component after this update —
+				// the receipt already holds the new tui blocks. Never remove these: another
+				// component may share an entry the updated one dropped.
+				const stillReferencedRaw = Object.values(receipt.installed).flatMap((installed) =>
+					tuiPluginList(installed.tui),
+				)
+				const stillReferenced = new Set(resolveTuiPluginEntries(stillReferencedRaw, provider.cwd))
+
+				const removeAbsolute = resolveTuiPluginEntries(tuiOldRaw, provider.cwd).filter(
+					(entry) => !stillReferenced.has(entry),
+				)
+				const addAbsolute = resolveTuiPluginEntries(tuiNewRaw, provider.cwd)
+
+				const tuiResult = await applyTuiConfigDelta(removeAbsolute, addAbsolute)
+				if (!options.quiet && tuiResult.changed) {
+					logger.info(`${tuiResult.created ? "Created" : "Updated"} ${tuiResult.path}`)
+				}
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				logger.warn(
+					`Components updated, but failed to update ${getGlobalTuiConfigPath()}: ${message}. ` +
+						"Re-run `ocx update` or edit tui.json manually.",
+				)
 			}
 		}
 

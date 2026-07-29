@@ -836,6 +836,7 @@ async function runRegistryAddCore(
 			cwd,
 			isFlattened,
 			trackOpencodeConfig: Boolean(resolved.opencode && Object.keys(resolved.opencode).length > 0),
+			trackTuiConfig: Boolean(resolved.tui?.plugin?.length),
 			trackNpmManifests:
 				resolved.npmDependencies.length > 0 || resolved.npmDevDependencies.length > 0,
 			quiet: options.quiet,
@@ -1161,6 +1162,7 @@ async function createAddManifestSideEffectTransaction(options: {
 	cwd: string
 	isFlattened: boolean
 	trackOpencodeConfig: boolean
+	trackTuiConfig: boolean
 	trackNpmManifests: boolean
 	quiet?: boolean
 }): Promise<AddManifestSideEffectTransaction> {
@@ -1179,6 +1181,11 @@ async function createAddManifestSideEffectTransaction(options: {
 	if (options.trackOpencodeConfig) {
 		const opencodeConfigPath = findOpencodeConfig(options.cwd).path
 		await trackPath(opencodeConfigPath)
+	}
+
+	if (options.trackTuiConfig) {
+		// tui.json is the single global file, regardless of install scope.
+		await trackPath(getGlobalTuiConfigPath())
 	}
 
 	if (options.trackNpmManifests) {

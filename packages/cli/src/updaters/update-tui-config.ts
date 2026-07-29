@@ -21,7 +21,8 @@ import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { applyEdits, type ModificationOptions, modify, parse as parseJsonc } from "jsonc-parser"
 import { getGlobalOpencodeRoot, resolveOpencodePathScope, TUI_CONFIG_FILE } from "../profile/paths"
-import { dedupePluginsByCanonicalName } from "../registry/merge"
+import { dedupeTuiEntries } from "../registry/merge"
+import { ValidationError } from "../utils/errors"
 import { resolveTargetPath } from "../utils/paths"
 
 // =============================================================================
@@ -88,14 +89,35 @@ function tuiIsFlattened(installRoot: string): boolean {
  * - npm name / already-absolute path → returned unchanged.
  * - `./relative` path → resolved to the absolute install path of the shipped file,
  *   using the same target resolution ocx uses to place the file on disk.
+ *
+ * `../` parent-traversal entries are rejected — ocx can never ship a matching
+ * traversal file target, and (in flattened installs) such a path would otherwise
+ * escape the install root. Embedded `..` that escapes the root is rejected too.
  */
 function resolveTuiPluginEntry(entry: string, installRoot: string): string {
-	if (!entry.startsWith("./") && !entry.startsWith("../")) {
+	if (entry.startsWith("../")) {
+		throw new ValidationError(
+			`Invalid tui plugin entry "${entry}": parent traversal ("../") is not allowed.`,
+		)
+	}
+	// npm name or already-absolute path → use as-is.
+	if (!entry.startsWith("./")) {
 		return entry
 	}
+
 	const root = path.resolve(installRoot)
-	const target = entry.replace(/^\.\//, "")
-	return path.join(root, resolveTargetPath(target, tuiIsFlattened(root), root))
+	const target = entry.slice(2)
+	const resolved = path.join(root, resolveTargetPath(target, tuiIsFlattened(root), root))
+
+	// Defense in depth: reject entries whose resolved path escapes the install root
+	// (e.g. embedded "..") — resolveTargetPath validates this for local installs, but
+	// not for flattened (global/profile) installs.
+	if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+		throw new ValidationError(
+			`Invalid tui plugin entry "${entry}": resolves outside the install root.`,
+		)
+	}
+	return resolved
 }
 
 /**
@@ -173,8 +195,8 @@ export async function applyTuiConfigDelta(
 	const addSet = new Set(addAbsolute)
 	// Keep entries unless this component owned them and no longer declares them.
 	const base = currentPlugins.filter((entry) => !removeSet.has(entry) || addSet.has(entry))
-	// tui entries are plain strings, so the deduped result is string[].
-	const finalPlugins = dedupePluginsByCanonicalName([...base, ...addAbsolute]) as string[]
+	// Dedupe paths by exact string, npm names by canonical name (see dedupeTuiEntries).
+	const finalPlugins = dedupeTuiEntries([...base, ...addAbsolute])
 
 	const originalContent = content
 	const edits = modify(content, ["plugin"], finalPlugins, JSONC_OPTIONS)

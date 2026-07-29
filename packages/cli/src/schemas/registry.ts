@@ -666,14 +666,15 @@ const legacyOpencodeConfigSchema = opencodeConfigSchema.safeExtend({
  * Distinct from `tuiConfigSchema` above (opencode's `tui.disabled` sub-field).
  */
 export const componentTuiConfigSchema = object({
-	/** JSON Schema URL for IDE support */
-	$schema: string().optional(),
 	/**
 	 * TUI plugin entries. Each is an absolute path, an npm name, or a `./relative`
 	 * path (resolved to the absolute install path at install time).
 	 */
 	plugin: array(string()).optional(),
-}).passthrough()
+})
+	// `plugin` is the only field ocx acts on. Reject unknown keys (fail loud) rather
+	// than silently accepting settings that would never reach tui.json.
+	.strict()
 
 export type ComponentTuiConfig = ZodInfer<typeof componentTuiConfigSchema>
 

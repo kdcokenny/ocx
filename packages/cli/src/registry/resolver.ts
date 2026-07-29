@@ -16,7 +16,7 @@ import {
 } from "../schemas/registry"
 import { NetworkError, NotFoundError, OCXError, ValidationError } from "../utils/errors"
 import { fetchComponent } from "./fetcher"
-import { dedupePluginsByCanonicalName, mergeOpencodeConfig } from "./merge"
+import { dedupeTuiEntries, mergeOpencodeConfig } from "./merge"
 
 /**
  * Parse a component reference into registry alias and component name.
@@ -202,8 +202,7 @@ export async function resolveDependencies(
 		npmDependencies: Array.from(npmDeps),
 		npmDevDependencies: Array.from(npmDevDeps),
 		opencode,
-		// tui entries are plain strings (paths / npm names), never tuples, so the
-		// deduped result is string[] — the cast just narrows the shared helper's type.
-		tui: { plugin: dedupePluginsByCanonicalName(tuiPlugins) as string[] },
+		// Dedupe paths by exact string and npm names by canonical name (see dedupeTuiEntries).
+		tui: { plugin: dedupeTuiEntries(tuiPlugins) },
 	}
 }

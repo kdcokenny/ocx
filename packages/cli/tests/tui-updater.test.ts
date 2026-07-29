@@ -118,6 +118,17 @@ describe("update-tui-config", () => {
 
 			expect(await readTuiPlugins()).toEqual(["/abs/plugins/mine/status.tui.tsx"])
 		})
+
+		it("keeps distinct absolute paths under a @scope directory (regression: @-truncation)", async () => {
+			await applyTuiConfigDelta(
+				[],
+				["/abs/plugins/@acme/a.tui.tsx", "/abs/plugins/@acme/b.tui.tsx"],
+			)
+			const plugins = await readTuiPlugins()
+			expect(plugins).toContain("/abs/plugins/@acme/a.tui.tsx")
+			expect(plugins).toContain("/abs/plugins/@acme/b.tui.tsx")
+			expect(plugins).toHaveLength(2)
+		})
 	})
 
 	describe("resolveTuiPluginEntries", () => {
@@ -149,6 +160,20 @@ describe("update-tui-config", () => {
 				installRoot,
 			)
 			expect(resolved).toBe(join(installRoot, "plugins", "my-plugin", "status.tui.tsx"))
+		})
+
+		it("rejects ../ parent-traversal entries", () => {
+			expect(() =>
+				resolveTuiPluginEntries(["../evil/plugin.tui.tsx"], getGlobalOpencodeRoot()),
+			).toThrow(/parent traversal/i)
+		})
+
+		it("rejects ./ entries whose embedded .. escapes the install root (flattened)", () => {
+			// Flattened installs skip resolveTargetPath's local containment check, so the
+			// updater's own guard must catch this.
+			expect(() =>
+				resolveTuiPluginEntries(["./plugins/../../etc/passwd"], getGlobalOpencodeRoot()),
+			).toThrow(/install root/i)
 		})
 	})
 

@@ -95,6 +95,42 @@ export function dedupePluginsByCanonicalName(plugins: OpencodePluginSpec[]): Ope
 }
 
 /**
+ * True when a TUI plugin entry is a filesystem path (absolute or `./`/`../`
+ * relative) rather than an npm specifier. npm names never start with `/` or `.`
+ * (scoped names start with `@`).
+ */
+function isTuiFilesystemPath(entry: string): boolean {
+	return entry.startsWith("/") || entry.startsWith("./") || entry.startsWith("../")
+}
+
+/**
+ * Deduplicate TUI plugin entries (for `tui.json`).
+ *
+ * Filesystem paths are deduped by **exact string** — canonical-name extraction
+ * would truncate a path at its first `@` (e.g. a `@scope` directory), collapsing
+ * distinct plugins. npm specifiers still dedupe by canonical name (version-stripped).
+ * Order is preserved; the last occurrence of each key wins (matching
+ * {@link dedupePluginsByCanonicalName}).
+ */
+export function dedupeTuiEntries(entries: string[]): string[] {
+	const keyOf = (entry: string): string =>
+		isTuiFilesystemPath(entry) ? entry : extractCanonicalPluginName(entry)
+
+	const lastIndexByKey = new Map<string, number>()
+	entries.forEach((entry, index) => {
+		lastIndexByKey.set(keyOf(entry), index)
+	})
+
+	const result: string[] = []
+	entries.forEach((entry, index) => {
+		if (lastIndexByKey.get(keyOf(entry)) === index) {
+			result.push(entry)
+		}
+	})
+	return result
+}
+
+/**
  * Merge two OpenCode config objects with special array handling.
  *
  * INTERNAL UTILITY - expects pre-validated configs.

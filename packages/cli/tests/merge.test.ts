@@ -12,6 +12,7 @@
 import { describe, expect, it } from "bun:test"
 import {
 	dedupePluginsByCanonicalName,
+	dedupeTuiEntries,
 	extractCanonicalPluginName,
 	mergeOpencodeConfig,
 } from "../src/registry/merge"
@@ -131,6 +132,49 @@ describe("dedupePluginsByCanonicalName", () => {
 		])
 
 		expect(result).toEqual(["npm:other", ["npm:pkg@2.0.0", { source: "local" }]])
+	})
+})
+
+// =============================================================================
+// dedupeTuiEntries
+// =============================================================================
+
+describe("dedupeTuiEntries", () => {
+	it("keeps distinct absolute paths under a @scope directory (regression: @-truncation)", () => {
+		// extractCanonicalPluginName would truncate both at the first "@", collapsing them.
+		const result = dedupeTuiEntries([
+			"/home/me/.config/opencode/plugins/@acme/a.tui.tsx",
+			"/home/me/.config/opencode/plugins/@acme/b.tui.tsx",
+		])
+		expect(result).toEqual([
+			"/home/me/.config/opencode/plugins/@acme/a.tui.tsx",
+			"/home/me/.config/opencode/plugins/@acme/b.tui.tsx",
+		])
+	})
+
+	it("keeps distinct ./relative paths under a @scope directory", () => {
+		const result = dedupeTuiEntries(["./plugins/@acme/a.tui.tsx", "./plugins/@acme/b.tui.tsx"])
+		expect(result).toEqual(["./plugins/@acme/a.tui.tsx", "./plugins/@acme/b.tui.tsx"])
+	})
+
+	it("dedupes identical filesystem paths by exact string", () => {
+		expect(dedupeTuiEntries(["/abs/a.tui.tsx", "/abs/a.tui.tsx"])).toEqual(["/abs/a.tui.tsx"])
+	})
+
+	it("canonical-dedupes npm specifiers by version-stripped name (last wins)", () => {
+		expect(dedupeTuiEntries(["@vendor/progress@1.0.0", "@vendor/progress@2.0.0"])).toEqual([
+			"@vendor/progress@2.0.0",
+		])
+	})
+
+	it("keeps distinct scoped npm names", () => {
+		expect(dedupeTuiEntries(["@vendor/a", "@vendor/b"])).toEqual(["@vendor/a", "@vendor/b"])
+	})
+
+	it("preserves order and mixes paths with npm names", () => {
+		expect(
+			dedupeTuiEntries(["/abs/a.tui.tsx", "@vendor/x", "/abs/a.tui.tsx", "@vendor/x@2"]),
+		).toEqual(["/abs/a.tui.tsx", "@vendor/x@2"])
 	})
 })
 
