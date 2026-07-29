@@ -13,6 +13,11 @@ ocx add <components...> [options]
 
 Add components or npm plugins to your project. Components are copied into `.opencode/` (not `node_modules`) — you own the code and can customize freely.
 
+A component's [`opencode` block](/registries/create#opencode-config-block) is merged into
+`opencode.jsonc`, and its [`tui` block](/registries/create#tui-config-block) is merged into
+`~/.config/opencode/tui.json` (with `./…` entries resolved to absolute install paths). Both merges
+add + dedupe, preserving unrelated entries.
+
 ## Arguments
 
 | Argument | Required | Description |

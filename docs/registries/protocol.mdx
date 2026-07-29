@@ -120,11 +120,18 @@ Returns full component metadata in npm-style packument format.
         }
       ],
       "dependencies": [],
-      "opencode": {}
+      "opencode": {},
+      "tui": {}
     }
   }
 }
 ```
+
+<Note>
+  The optional `opencode` block merges into `opencode.jsonc`; the optional `tui` block merges TUI
+  plugins into `~/.config/opencode/tui.json`. Both are manifest fields, not component types. See
+  [Creating a Registry](/registries/create#opencode-config-block).
+</Note>
 
 | Field | Type | Description |
 |-------|------|-------------|

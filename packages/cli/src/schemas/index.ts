@@ -42,11 +42,13 @@ export {
 	type ComponentFile,
 	type ComponentFileObject,
 	type ComponentManifest,
+	type ComponentTuiConfig,
 	// Types
 	type ComponentType,
 	componentFileObjectSchema,
 	componentFileSchema,
 	componentManifestSchema,
+	componentTuiConfigSchema,
 	// Component schemas
 	componentTypeSchema,
 	createQualifiedComponent,

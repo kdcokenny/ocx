@@ -13,6 +13,10 @@ ocx update [components...] [options]
 
 Update installed components from their registries to the latest version. You can update specific components, all components, or all components from a particular registry.
 
+If an updated component declares a [`tui` block](/registries/create#tui-config-block), `update`
+reconciles `~/.config/opencode/tui.json` with its new upstream contribution — adding newly-declared
+TUI plugins and dropping ones the component no longer declares, while leaving unrelated entries intact.
+
 ## Arguments
 
 | Argument | Required | Description |

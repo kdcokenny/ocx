@@ -17,6 +17,7 @@ import {
 	normalizeComponentManifest,
 	parseQualifiedComponent,
 } from "../schemas/registry"
+import { applyTuiConfigDelta, resolveTuiPluginEntries } from "../updaters/update-tui-config"
 import { type DryRunAction, type DryRunResult, outputDryRun } from "../utils/dry-run"
 import { ConfigError, NotFoundError, ValidationError } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
@@ -401,6 +402,12 @@ export async function runUpdateCore(
 			fileOps,
 		})
 
+		// Accumulate raw TUI plugin entries across all updated components so tui.json
+		// can be reconciled once after the write transaction commits: drop entries a
+		// component no longer declares, add newly-declared ones.
+		const tuiOldRaw: string[] = []
+		const tuiNewRaw: string[] = []
+
 		for (const prepared of preparedUpdates) {
 			const { update, preparedFiles } = prepared
 
@@ -408,6 +415,16 @@ export async function runUpdateCore(
 			const existingEntry = receipt.installed[update.canonicalId]
 			if (!existingEntry) {
 				throw new NotFoundError(`Component '${update.canonicalId}' not found in receipt.`)
+			}
+
+			// Capture the component's previous vs new TUI contribution (raw entries)
+			// BEFORE the receipt entry is overwritten below.
+			const oldTuiPlugins = existingEntry.tui?.plugin
+			if (Array.isArray(oldTuiPlugins)) {
+				tuiOldRaw.push(...oldTuiPlugins.filter((p): p is string => typeof p === "string"))
+			}
+			if (update.component.tui?.plugin) {
+				tuiNewRaw.push(...update.component.tui.plugin)
 			}
 
 			// Compute individual file hashes
@@ -432,6 +449,10 @@ export async function runUpdateCore(
 				...(update.component.opencode && {
 					opencode: update.component.opencode as Record<string, unknown>,
 				}),
+				// Update TUI config so `ocx update` can reconcile tui.json next time
+				...(update.component.tui && {
+					tui: update.component.tui as Record<string, unknown>,
+				}),
 			}
 		}
 
@@ -442,6 +463,18 @@ export async function runUpdateCore(
 		}
 		await appliedWriteTransaction.commit()
 		appliedWriteTransaction = null
+
+		// Reflect upstream TUI changes in the global tui.json: resolve both the old
+		// and new contributions to absolute paths, then reconcile by delta. Unrelated
+		// third-party entries stay untouched.
+		if (tuiOldRaw.length > 0 || tuiNewRaw.length > 0) {
+			const removeAbsolute = resolveTuiPluginEntries(tuiOldRaw, provider.cwd)
+			const addAbsolute = resolveTuiPluginEntries(tuiNewRaw, provider.cwd)
+			const tuiResult = await applyTuiConfigDelta(removeAbsolute, addAbsolute)
+			if (!options.quiet && tuiResult.changed) {
+				logger.info(`${tuiResult.created ? "Created" : "Updated"} ${tuiResult.path}`)
+			}
+		}
 
 		installSpin?.succeed(`Updated ${updates.length} component(s)`)
 

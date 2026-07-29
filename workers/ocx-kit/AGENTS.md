@@ -424,6 +424,31 @@ config: {
 
 ---
 
+## TUI Plugins
+
+OpenCode TUI plugins (`*.tui.tsx`) are **not** part of `opencode.jsonc`. They live in a separate file,
+`~/.config/opencode/tui.json`, whose `plugin` array holds absolute paths or npm names. Declare a
+top-level `tui` block (a sibling of `opencode`, **not** a component `type`) and OCX merges it there:
+
+```json
+{
+  "name": "my-plugin",
+  "type": "plugin",
+  "files": ["plugins/my-plugin/status.tui.tsx"],
+  "tui": {
+    "plugin": ["./plugins/my-plugin/status.tui.tsx"]
+  }
+}
+```
+
+- `./…` entries resolve to the **absolute install path** of the shipped file; npm names and absolute
+  paths pass through unchanged.
+- `ocx add` adds + dedupes into `tui.json`, preserving unrelated third-party entries.
+- `ocx update` reconciles against the component's new `tui` block (adds new, drops removed).
+- `ocx remove` leaves `tui.json` untouched.
+
+---
+
 ## File Patterns
 
 Components can specify files in two formats:

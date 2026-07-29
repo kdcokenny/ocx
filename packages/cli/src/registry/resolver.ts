@@ -6,6 +6,7 @@
 import type { RegistryConfig } from "../schemas/config"
 import {
 	type ComponentManifest,
+	type ComponentTuiConfig,
 	createQualifiedComponent,
 	type NormalizedComponentManifest,
 	type NormalizedOpencodeConfig,
@@ -15,7 +16,7 @@ import {
 } from "../schemas/registry"
 import { NetworkError, NotFoundError, OCXError, ValidationError } from "../utils/errors"
 import { fetchComponent } from "./fetcher"
-import { mergeOpencodeConfig } from "./merge"
+import { dedupePluginsByCanonicalName, mergeOpencodeConfig } from "./merge"
 
 /**
  * Parse a component reference into registry alias and component name.
@@ -64,6 +65,8 @@ export interface ResolvedDependencies {
 	npmDevDependencies: string[]
 	/** Merged opencode configuration from all components (deep merged) */
 	opencode: OpencodeConfig
+	/** Merged TUI configuration from all components (plugin entries concatenated + deduped) */
+	tui: ComponentTuiConfig
 }
 
 /**
@@ -79,6 +82,7 @@ export async function resolveDependencies(
 	const npmDeps = new Set<string>()
 	const npmDevDeps = new Set<string>()
 	let opencode: NormalizedOpencodeConfig = {}
+	const tuiPlugins: string[] = []
 
 	async function resolve(
 		componentNamespace: string,
@@ -173,6 +177,12 @@ export async function resolveDependencies(
 				normalizedComponent.opencode as NormalizedOpencodeConfig,
 			)
 		}
+
+		// Collect TUI plugin entries (raw ./relative or npm/absolute); resolved to
+		// absolute install paths later, in the install/update commands.
+		if (normalizedComponent.tui?.plugin) {
+			tuiPlugins.push(...normalizedComponent.tui.plugin)
+		}
 	}
 
 	// Resolve all requested components
@@ -192,5 +202,8 @@ export async function resolveDependencies(
 		npmDependencies: Array.from(npmDeps),
 		npmDevDependencies: Array.from(npmDevDeps),
 		opencode,
+		// tui entries are plain strings (paths / npm names), never tuples, so the
+		// deduped result is string[] — the cast just narrows the shared helper's type.
+		tui: { plugin: dedupePluginsByCanonicalName(tuiPlugins) as string[] },
 	}
 }

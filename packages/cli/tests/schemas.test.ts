@@ -690,6 +690,22 @@ describe("schemas", () => {
 			}
 		})
 
+		it("accepts a top-level tui block with plugin entries", () => {
+			const result = componentManifestSchema.safeParse({
+				name: "my-plugin",
+				type: "plugin",
+				description: "d",
+				files: ["plugins/my-plugin/status.tui.tsx"],
+				dependencies: [],
+				tui: { plugin: ["./plugins/my-plugin/status.tui.tsx"] },
+			})
+
+			expect(result.success).toBe(true)
+			if (result.success) {
+				expect(result.data.tui?.plugin).toEqual(["./plugins/my-plugin/status.tui.tsx"])
+			}
+		})
+
 		it("rejects a top-level key that is not in opencode's field set", () => {
 			const result = opencodeConfigSchema.safeParse({ bogus_key: 1 })
 			expect(result.success).toBe(false)

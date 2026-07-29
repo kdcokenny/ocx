@@ -120,6 +120,14 @@ export const installedComponentSchema = object({
 	 * Install-root-relative paths in instructions array are resolved at runtime.
 	 */
 	opencode: record(string(), unknown()).optional(),
+
+	/**
+	 * TUI config provided by this component (raw block, relative entries).
+	 * Stored so `ocx update` can reconcile ~/.config/opencode/tui.json against the
+	 * component's new upstream `tui` block (add newly-declared entries, drop the
+	 * ones it previously contributed but no longer declares).
+	 */
+	tui: record(string(), unknown()).optional(),
 })
 
 export type InstalledComponent = ZodInfer<typeof installedComponentSchema>

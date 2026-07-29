@@ -83,6 +83,13 @@ Globally enable or disable tools:
 }
 ```
 
+<Note>
+  This `tui` **field inside `opencode.jsonc`** tunes TUI behavior (scroll, diff style, …). It is
+  distinct from `~/.config/opencode/tui.json`, the separate file that lists TUI **plugins**
+  (`*.tui.tsx`). Registry components register TUI plugins via a top-level `tui` block — see
+  [TUI Plugins](/reference/plugins#tui-plugins).
+</Note>
+
 ## Server Configuration
 
 ```jsonc

@@ -46,6 +46,35 @@ ocx add npm:@scope/plugin
 ocx add kdco/researcher npm:some-plugin
 ```
 
+## TUI Plugins
+
+OpenCode TUI plugins (`*.tui.tsx`) extend the terminal UI and are loaded from a **separate** file —
+`~/.config/opencode/tui.json` — not `opencode.jsonc`. Its `plugin` array holds absolute paths or npm
+names:
+
+```jsonc title="~/.config/opencode/tui.json"
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": ["/home/me/.config/opencode/plugins/my-plugin/status.tui.tsx"]
+}
+```
+
+A registry component registers a TUI plugin by shipping the file **and** declaring a top-level
+[`tui` block](/registries/create#tui-config-block):
+
+```jsonc title="registry.jsonc"
+{
+  "name": "my-plugin",
+  "type": "plugin",
+  "files": ["plugins/my-plugin/status.tui.tsx"],
+  "tui": { "plugin": ["./plugins/my-plugin/status.tui.tsx"] }
+}
+```
+
+On `ocx add`, ocx resolves the `./…` entry to the absolute install path, adds it to `tui.json`, and
+dedupes — leaving unrelated entries untouched. `ocx update` reconciles the file with the component's
+new `tui` block; `ocx remove` leaves it in place.
+
 ## Basic Plugin Structure
 
 ```typescript

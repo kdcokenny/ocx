@@ -655,6 +655,28 @@ const legacyOpencodeConfigSchema = opencodeConfigSchema.safeExtend({
 	mcp: record(string(), legacyMcpServerRefSchema).optional(),
 })
 
+/**
+ * Component-level TUI configuration block.
+ *
+ * Mirrors the `opencode` block, but targets opencode's separate TUI config file
+ * (`~/.config/opencode/tui.json`) instead of `opencode.jsonc`. TUI plugins
+ * (`*.tui.tsx`) are declared here; ocx resolves each `./…` entry to the absolute
+ * install path and merges it into `tui.json`.
+ *
+ * Distinct from `tuiConfigSchema` above (opencode's `tui.disabled` sub-field).
+ */
+export const componentTuiConfigSchema = object({
+	/** JSON Schema URL for IDE support */
+	$schema: string().optional(),
+	/**
+	 * TUI plugin entries. Each is an absolute path, an npm name, or a `./relative`
+	 * path (resolved to the absolute install path at install time).
+	 */
+	plugin: array(string()).optional(),
+}).passthrough()
+
+export type ComponentTuiConfig = ZodInfer<typeof componentTuiConfigSchema>
+
 // =============================================================================
 // COMPONENT MANIFEST SCHEMA
 // =============================================================================
@@ -695,6 +717,12 @@ export const componentManifestSchema = object({
 	 * Use this for: mcp servers, plugins, tools, agent config, instructions, permissions
 	 */
 	opencode: opencodeConfigSchema.optional(),
+
+	/**
+	 * TUI configuration to merge into opencode's separate TUI config file
+	 * (`~/.config/opencode/tui.json`). Use this to register TUI plugins (`*.tui.tsx`).
+	 */
+	tui: componentTuiConfigSchema.optional(),
 })
 
 export type ComponentManifest = ZodInfer<typeof componentManifestSchema>

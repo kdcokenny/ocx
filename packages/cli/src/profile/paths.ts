@@ -13,6 +13,9 @@ export const OCX_CONFIG_FILE = "ocx.jsonc"
 /** OpenCode configuration file name */
 export const OPENCODE_CONFIG_FILE = "opencode.jsonc"
 
+/** OpenCode TUI configuration file name (global-only, lives at the OpenCode root) */
+export const TUI_CONFIG_FILE = "tui.json"
+
 /** Local config directory name */
 export const LOCAL_CONFIG_DIR = ".opencode"
 

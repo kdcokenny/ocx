@@ -32,6 +32,11 @@ import {
 	readOpencodeJsonConfig,
 	updateOpencodeJsonConfig,
 } from "../updaters/update-opencode-config"
+import {
+	applyTuiConfigDelta,
+	getGlobalTuiConfigPath,
+	resolveTuiPluginEntries,
+} from "../updaters/update-tui-config"
 import { isContentIdentical } from "../utils/content"
 import {
 	buildInvalidationDryRunAction,
@@ -621,6 +626,15 @@ async function runRegistryAddCore(
 				actions.push(buildInvalidationDryRunAction(packageDir, dryDeltaEntries))
 			}
 
+			// Report tui.json merge if any component declares TUI plugins.
+			if (resolved.tui?.plugin?.length) {
+				actions.push({
+					action: "modify",
+					target: getGlobalTuiConfigPath(),
+					details: { plugins: resolveTuiPluginEntries(resolved.tui.plugin, cwd) },
+				})
+			}
+
 			const dryRunResult: DryRunResult = {
 				dryRun: true,
 				command: "add",
@@ -886,6 +900,8 @@ async function runRegistryAddCore(
 				installedAt: new Date().toISOString(),
 				// Store component's opencode config for runtime instruction path resolution
 				...(component.opencode && { opencode: component.opencode as Record<string, unknown> }),
+				// Store component's raw tui block so `ocx update` can reconcile tui.json
+				...(component.tui && { tui: component.tui as Record<string, unknown> }),
 			}
 		}
 
@@ -901,6 +917,18 @@ async function runRegistryAddCore(
 				} else {
 					logger.info(`Updated ${result.path}`)
 				}
+			}
+		}
+
+		// Merge TUI plugins into the global ~/.config/opencode/tui.json.
+		// Relative ./… entries resolve to the absolute install path; unrelated
+		// third-party entries are preserved (add-only, no removals).
+		if (resolved.tui?.plugin?.length) {
+			const additions = resolveTuiPluginEntries(resolved.tui.plugin, cwd)
+			const result = await applyTuiConfigDelta([], additions)
+
+			if (!options.quiet && result.changed) {
+				logger.info(`${result.created ? "Created" : "Updated"} ${result.path}`)
 			}
 		}
 

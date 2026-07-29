@@ -110,6 +110,9 @@
 				"opencode": {
 					"$ref": "#/definitions/opencodeConfig"
 				},
+				"tui": {
+					"$ref": "#/definitions/tuiConfig"
+				},
 				"npmDependencies": {
 					"type": "array",
 					"description": "NPM packages to install as dependencies",
@@ -404,6 +407,22 @@
 							}
 						}
 					}
+				}
+			}
+		},
+		"tuiConfig": {
+			"type": "object",
+			"description": "TUI configuration to merge into opencode's TUI config file (~/.config/opencode/tui.json)",
+			"additionalProperties": true,
+			"properties": {
+				"$schema": {
+					"type": "string",
+					"description": "JSON Schema URL for IDE support"
+				},
+				"plugin": {
+					"type": "array",
+					"description": "TUI plugin entries (absolute path, npm name, or ./relative path resolved to absolute at install)",
+					"items": { "type": "string" }
 				}
 			}
 		}

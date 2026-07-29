@@ -159,6 +159,43 @@ Components can specify settings to merge into the user's `opencode.jsonc`:
 | `opencode.permission` | Permission settings for bash/edit/mcp |
 | `opencode.instructions` | Global instructions appended to config |
 
+### TUI Config Block
+
+OpenCode TUI plugins (`*.tui.tsx`) are **not** registered in `opencode.jsonc`. They live in a
+separate file, `~/.config/opencode/tui.json`, whose `plugin` array holds absolute paths or npm names.
+Declare a top-level `tui` block (a sibling of `opencode`) and ocx will merge it into that file:
+
+```jsonc
+{
+  "name": "my-plugin",
+  "type": "plugin",
+  "files": ["plugins/my-plugin/status.tui.tsx"],
+  "tui": {
+    "plugin": ["./plugins/my-plugin/status.tui.tsx"]
+  }
+}
+```
+
+On `ocx add`, ocx resolves each `./…` entry to the **absolute install path** of the shipped file
+(`tui.json` requires absolute paths), adds it to the `plugin` array, and dedupes — leaving any
+unrelated entries (e.g. `@streetturtle/opencode-context-progress`) untouched.
+
+| Field | Description |
+|-------|-------------|
+| `tui.plugin` | TUI plugin entries merged into `~/.config/opencode/tui.json`. Each is a `./relative` path (resolved to the absolute install path), an already-absolute path, or an npm name. |
+
+<Note>
+  `tui` is a **manifest block**, not a component `type`. A TUI-plugin component is still
+  `type: "plugin"`; the `tui` block just tells ocx which config file to register it in. A single
+  component may declare `opencode` (→ `opencode.jsonc`), `tui` (→ `tui.json`), or both.
+</Note>
+
+Lifecycle:
+
+- **`ocx add`** — merges the component's TUI entries into `tui.json` (add + dedupe; unrelated entries preserved).
+- **`ocx update`** — reconciles against the component's new upstream `tui` block: adds newly-declared entries and drops ones the component no longer declares.
+- **`ocx remove`** — leaves `tui.json` untouched (like `opencode.jsonc`); remove the entry by hand if you no longer want it.
+
 ## Plugin Discovery vs Registration
 
 OpenCode handles plugins in two ways:
@@ -180,6 +217,18 @@ npm plugins installed via `ocx add npm:package-name` require registration in `op
 ```bash
 ocx add npm:@franlol/opencode-md-table-formatter
 # Adds to opencode.jsonc: {"plugin": ["@franlol/opencode-md-table-formatter"]}
+```
+
+### TUI Plugins (Registered in `tui.json`)
+
+TUI plugins (`*.tui.tsx`) are neither auto-discovered nor registered in `opencode.jsonc` — OpenCode
+loads them from `~/.config/opencode/tui.json`. Ship the file **and** declare a [`tui` block](#tui-config-block)
+so ocx registers its absolute path there:
+
+```bash
+ocx add kdco/my-tui-plugin
+# Installs: plugins/my-tui-plugin/status.tui.tsx
+# Registers its absolute path in ~/.config/opencode/tui.json
 ```
 
 ## Instruction Files for Components
