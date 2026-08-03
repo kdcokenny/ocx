@@ -14,7 +14,8 @@ import { GlobalConfigProvider, LocalConfigProvider } from "../config/provider"
 import { ConfigResolver } from "../config/resolver"
 import { CLI_VERSION, GITHUB_REPO } from "../constants"
 import { getProfileDir } from "../profile/paths"
-import { fetchFileContent, fetchRegistryIndex } from "../registry/fetcher"
+import { createAuthResolver } from "../registry/auth"
+import { fetchFileContent, fetchRegistryIndex, setInsecureTls } from "../registry/fetcher"
 import { getPluginSpecifier } from "../registry/merge"
 import type { ResolvedComponent } from "../registry/resolver"
 import { resolveDependencies } from "../registry/resolver"
@@ -57,7 +58,15 @@ import { PathValidationError, validatePath } from "../utils/path-security"
 import { resolveTargetPath } from "../utils/paths"
 import { registerPlannedWriteOrThrow } from "../utils/planned-writes"
 import { hashBundle, hashContent } from "../utils/receipt"
-import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
+import {
+	addAuthOptions,
+	addCommonOptions,
+	addGlobalOption,
+	addInsecureTlsOption,
+	addVerboseOption,
+	type CliAuthOptions,
+	resolveCliAuth,
+} from "../utils/shared-options"
 import { createSpinner } from "../utils/spinner"
 import { normalizeRegistryUrl } from "../utils/url"
 import { collectCompatIssues, warnCompatIssues } from "../utils/version-compat"
@@ -150,7 +159,8 @@ export function parseAddInput(input: string): AddInput {
 	return { type: "registry", namespace: "", component: trimmed }
 }
 
-export interface AddOptions {
+// Extends CliAuthOptions for the `--from` credential flags + `--insecure-skip-tls-verify` + `from`.
+export interface AddOptions extends CliAuthOptions {
 	dryRun?: boolean
 	cwd?: string
 	quiet?: boolean
@@ -160,7 +170,6 @@ export interface AddOptions {
 	trust?: boolean
 	global?: boolean
 	profile?: string
-	from?: string
 }
 
 interface NpmAddResult {
@@ -218,9 +227,12 @@ export function registerAddCommand(program: Command): void {
 	addCommonOptions(cmd)
 	addVerboseOption(cmd)
 	addGlobalOption(cmd)
+	addAuthOptions(cmd)
+	addInsecureTlsOption(cmd)
 
 	cmd.action(async (components: string[], options: AddOptions) => {
 		try {
+			setInsecureTls(Boolean(options.insecureSkipTlsVerify))
 			const runtimeOptions = options.json ? { ...options, quiet: true, verbose: false } : options
 
 			// Create appropriate provider based on flags
@@ -237,6 +249,7 @@ export function registerAddCommand(program: Command): void {
 					cwd: profileDir,
 					getRegistries: () => resolver.getRegistries(),
 					getComponentPath: () => resolver.getComponentPath(),
+					getScope: () => "profile",
 				}
 			} else if (runtimeOptions.global) {
 				provider = await GlobalConfigProvider.requireInitialized()
@@ -477,8 +490,12 @@ async function runRegistryAddCore(
 	const isFlattened = !!(options.global || options.profile)
 	const registries = provider.getRegistries()
 
+	// Resolve CLI auth flags (only valid alongside --from; throws otherwise)
+	const cliAuth = resolveCliAuth(options)
+
 	// V2: Handle --from flag for ephemeral registry
 	let effectiveRegistries = registries
+	let ephemeralName: string | undefined
 	if (options.from) {
 		// Validate --from URL
 		const fromUrl = options.from.trim()
@@ -510,13 +527,10 @@ async function runRegistryAddCore(
 		}
 
 		// Use the single prefix as the ephemeral registry name
-		const ephemeralName = Array.from(requestedPrefixes)[0]
+		ephemeralName = Array.from(requestedPrefixes)[0]
 		if (!ephemeralName) {
 			throw new ValidationError("No valid component references provided")
 		}
-
-		// Fetch registry index to validate the URL serves a valid registry (alias-first: ignore its namespace)
-		await fetchRegistryIndex(fromUrl)
 
 		// Create ephemeral registry config (does not persist)
 		effectiveRegistries = {
@@ -524,6 +538,19 @@ async function runRegistryAddCore(
 			[ephemeralName]: {
 				url: fromUrl,
 			},
+		}
+	}
+
+	// Per-registry auth resolver: config `auth`/env for configured registries, CLI flags for --from.
+	const resolveAuth = createAuthResolver(effectiveRegistries, provider.getScope(), {
+		ephemeral: ephemeralName ? { alias: ephemeralName, cliAuth } : undefined,
+	})
+
+	// Validate the --from registry serves a valid index (authenticated; alias-first)
+	if (ephemeralName) {
+		const ephemeralConfig = effectiveRegistries[ephemeralName]
+		if (ephemeralConfig) {
+			await fetchRegistryIndex(ephemeralConfig.url, resolveAuth(ephemeralName))
 		}
 	}
 
@@ -552,12 +579,12 @@ async function runRegistryAddCore(
 		for (const registryAlias of requestedRegistries) {
 			const registryConfig = effectiveRegistries[registryAlias]
 			if (registryConfig) {
-				await fetchRegistryIndex(registryConfig.url)
+				await fetchRegistryIndex(registryConfig.url, resolveAuth(registryAlias))
 			}
 		}
 
 		// Resolve all dependencies across all configured registries
-		const resolved = await resolveDependencies(effectiveRegistries, componentNames)
+		const resolved = await resolveDependencies(effectiveRegistries, componentNames, resolveAuth)
 
 		if (options.verbose) {
 			logger.info("Install order:")
@@ -577,7 +604,7 @@ async function runRegistryAddCore(
 		}
 
 		for (const [namespace, baseUrl] of uniqueBaseUrls) {
-			const index = await fetchRegistryIndex(baseUrl)
+			const index = await fetchRegistryIndex(baseUrl, resolveAuth(namespace))
 			registryIndexes.set(namespace, index)
 		}
 
@@ -653,9 +680,10 @@ async function runRegistryAddCore(
 
 		for (const component of resolved.components) {
 			// Fetch component files and compute bundle hash
+			const auth = resolveAuth(component.registryName)
 			const files: { path: string; content: Buffer }[] = []
 			for (const file of component.files) {
-				const content = await fetchFileContent(component.baseUrl, component.name, file.path)
+				const content = await fetchFileContent(component.baseUrl, component.name, file.path, auth)
 				files.push({ path: file.path, content: Buffer.from(content) })
 			}
 

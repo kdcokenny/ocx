@@ -10,8 +10,10 @@ import type { Command } from "commander"
 import kleur from "kleur"
 import { ProfileManager } from "../profile/manager"
 import { getProfileOcxConfig } from "../profile/paths"
-import type { RegistryConfig } from "../schemas/config"
-import { findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config"
+import { buildRegistryAuthConfig, type RegistryScope, resolveRegistryAuth } from "../registry/auth"
+import { fetchRegistryIndex, setInsecureTls } from "../registry/fetcher"
+import type { RegistryAuthConfig, RegistryConfig } from "../schemas/config"
+import { AUTH_REF_FIELDS, findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config"
 import { type DryRunResult, outputDryRun } from "../utils/dry-run"
 import {
 	ConfigError,
@@ -26,7 +28,9 @@ import { getGlobalConfigPath } from "../utils/paths"
 import {
 	addCommonOptions,
 	addGlobalOption,
+	addInsecureTlsOption,
 	addProfileOption,
+	addRegistryAuthOptions,
 	validateProfileName,
 } from "../utils/shared-options"
 import { normalizeRegistryUrl } from "../utils/url"
@@ -42,6 +46,33 @@ export interface RegistryOptions {
 export interface RegistryAddOptions extends RegistryOptions {
 	name: string // Always present — enforced by Commander .requiredOption()
 	dryRun?: boolean
+	// Persisted credential flags (parsed by buildRegistryAuthConfig in registry/auth.ts)
+	token?: string
+	tokenEnv?: string
+	tokenFile?: string
+	username?: string
+	password?: string
+	passwordEnv?: string
+	passwordFile?: string
+	insecureSkipTlsVerify?: boolean
+}
+
+type WriteScope = Exclude<RegistryScope, "ephemeral">
+
+/**
+ * A committed local config must not carry env/file credential references. Refuse to write them there
+ * (the runtime resolver would reject the config on read anyway — fail fast at write time instead).
+ */
+export function assertAuthPersistableInScope(auth: RegistryAuthConfig, scope: WriteScope): void {
+	if (scope !== "local") return
+	const refFields = AUTH_REF_FIELDS.filter((f) => auth[f] !== undefined)
+	if (refFields.length > 0) {
+		throw new ValidationError(
+			`Refusing to write ${refFields.join(", ")} to a committed local config (.opencode/ocx.jsonc). ` +
+				`Environment/file credential references are only honored in global or profile config. ` +
+				`Re-run with --global or --profile, or use a literal value (e.g. --token, or --username/--password).`,
+		)
+	}
 }
 
 // =============================================================================
@@ -92,12 +123,38 @@ export async function runRegistryAddCore(
 	const registries = callbacks.getRegistries()
 	const existingByName = registries[name]
 
+	// Build the credential block to persist (if any) and refuse env/file refs for local configs.
+	const authConfig = buildRegistryAuthConfig(options)
+	const writeScope: WriteScope = options.profile ? "profile" : options.global ? "global" : "local"
+	if (authConfig) assertAuthPersistableInScope(authConfig, writeScope)
+
+	// `--insecure-skip-tls-verify` is persisted as `insecure: true`. Unlike env/file credential
+	// refs, TLS-skip is not a secret and is allowed in any scope (including committed local config).
+	// It also applies to this command's own validation fetch below via the run-level toggle.
+	const insecure = options.insecureSkipTlsVerify === true
+	setInsecureTls(insecure)
+
+	// Anything to persist beyond the URL?
+	const hasCredentialChange = authConfig !== undefined || insecure
+
 	// URL uniqueness check: find any existing registry with the same normalized URL
 	const existingByUrl = findRegistryByUrl(registries, normalizedUrl)
 
-	// Fetch registry index to validate the URL serves a valid registry
-	const { fetchRegistryIndex } = await import("../registry/fetcher")
-	await fetchRegistryIndex(normalizedUrl)
+	// The fields to persist beyond the URL (used by both validation and the write rules below).
+	const persistedExtras = {
+		...(authConfig ? { auth: authConfig } : {}),
+		...(insecure ? { insecure: true } : {}),
+	}
+
+	// Fetch registry index to validate the URL serves a valid registry. For a private registry,
+	// auth comes from the credentials just provided (resolved at "ephemeral"/trusted scope), falling
+	// back to the OCX_REGISTRY_<NAME>_* env override — the alias is known here via --name.
+	const validationAuth = resolveRegistryAuth(
+		name,
+		{ url: normalizedUrl, ...persistedExtras },
+		"ephemeral",
+	)
+	await fetchRegistryIndex(normalizedUrl, validationAuth)
 
 	// -------------------------------------------------------------------------
 	// Conflict resolution matrix (alias-first model)
@@ -129,8 +186,15 @@ export async function runRegistryAddCore(
 		}
 
 		const isConflict = (nameExists && !sameUrl) || urlOwnedByDifferentName
-		const isIdempotent = nameExists && sameUrl
+		// Same name + same URL with new credentials/TLS settings updates the entry; otherwise no-op.
+		const isAuthUpdate = nameExists && sameUrl && hasCredentialChange
+		const isIdempotent = nameExists && sameUrl && !isAuthUpdate
 		const targetLabel = callbacks.targetLabel || "config"
+		const details = {
+			url: normalizedUrl,
+			...(authConfig ? { auth: authConfig.type } : {}),
+			...(insecure ? { insecure: true } : {}),
+		}
 
 		const dryRunResult: DryRunResult = {
 			dryRun: true,
@@ -139,11 +203,9 @@ export async function runRegistryAddCore(
 				? []
 				: [
 						{
-							action: "add",
+							action: isAuthUpdate ? "update" : "add",
 							target: `registry:${name}`,
-							details: {
-								url: normalizedUrl,
-							},
+							details,
 						},
 					],
 			validation: {
@@ -154,7 +216,9 @@ export async function runRegistryAddCore(
 				? `Would fail: conflict detected for registry '${name}'`
 				: isIdempotent
 					? `Registry '${name}' already configured with same URL (no-op)`
-					: `Would add registry '${name}' to ${targetLabel}`,
+					: isAuthUpdate
+						? `Would update credentials for registry '${name}' in ${targetLabel}`
+						: `Would add registry '${name}' to ${targetLabel}`,
 		}
 
 		return dryRunResult
@@ -176,15 +240,21 @@ export async function runRegistryAddCore(
 		)
 	}
 
-	// Rule 2: Same name + same URL => idempotent no-op
+	// Rule 2: Same name + same URL. Update stored credentials/TLS if provided; otherwise no-op.
 	if (nameExists && sameUrl) {
+		if (hasCredentialChange) {
+			await callbacks.setRegistry(name, {
+				...existingByName,
+				url: normalizedUrl,
+				...persistedExtras,
+			})
+			return { name, url: normalizedUrl, updated: true, alreadyConfigured: false }
+		}
 		return { name, url: normalizedUrl, updated: false, alreadyConfigured: true }
 	}
 
 	// Rule 1: New name + new URL => add
-	await callbacks.setRegistry(name, {
-		url: normalizedUrl,
-	})
+	await callbacks.setRegistry(name, { url: normalizedUrl, ...persistedExtras })
 
 	return { name, url: normalizedUrl, updated: false, alreadyConfigured: false }
 }
@@ -339,7 +409,12 @@ export function registerRegistryCommand(program: Command): void {
 	// registry add <url> --name <name>
 	const addCmd = registry
 		.command("add")
-		.description("Add a registry")
+		.description(
+			"Add a registry (optionally with credentials).\n\n" +
+				"  Public:  ocx registry add <url> --name <alias>\n" +
+				"  Bearer:  ocx registry add <url> --name <alias> --token-env TOKEN --global\n" +
+				"  Basic:   ocx registry add <url> --name <alias> --username ci --password-env PW --global",
+		)
 		.argument("<url>", "Registry URL")
 		.requiredOption(
 			"--name <name>",
@@ -349,6 +424,8 @@ export function registerRegistryCommand(program: Command): void {
 
 	addGlobalOption(addCmd)
 	addProfileOption(addCmd)
+	addRegistryAuthOptions(addCmd)
+	addInsecureTlsOption(addCmd)
 	addCommonOptions(addCmd)
 
 	addCmd.action(async (url: string, options: RegistryAddOptions, command: Command) => {

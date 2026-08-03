@@ -860,6 +860,7 @@ describe("ocx add --json mixed-input contract", () => {
 			cwd: testDir,
 			getRegistries: () => ({ kdco: { url: registry.url } }),
 			getComponentPath: () => ".opencode/components",
+			getScope: () => "local" as const,
 		}
 
 		await runAddCore(
@@ -922,6 +923,7 @@ describe("ocx add --json mixed-input contract", () => {
 			cwd: testDir,
 			getRegistries: () => ({}),
 			getComponentPath: () => ".opencode/components",
+			getScope: () => "local" as const,
 		}
 
 		await runAddCore(["npm:new-plugin"], { quiet: true, trust: true }, provider)
@@ -972,6 +974,7 @@ describe("ocx add --json mixed-input contract", () => {
 			cwd: testDir,
 			getRegistries: () => ({ kdco: { url: registry.url } }),
 			getComponentPath: () => ".opencode/components",
+			getScope: () => "local" as const,
 		}
 
 		let thrownError: unknown

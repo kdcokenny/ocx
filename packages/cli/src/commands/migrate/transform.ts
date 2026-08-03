@@ -203,7 +203,7 @@ const DEPRECATED_REGISTRY_FIELDS = ["version"] as const
  * Detect deprecated `version` fields in registry config entries.
  *
  * Legacy v1.4.6 allowed `registries.<alias>.version` for pinning.
- * Current schema only allows `url` and `headers`. This function
+ * Current schema allows `url`, `headers`, `auth`, and `insecure`. This function
  * inspects raw config data (pre-Zod-parse) to find deprecated keys.
  *
  * Pure function: returns planned actions, never mutates.

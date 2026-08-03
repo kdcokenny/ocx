@@ -14,6 +14,7 @@ import {
 	parseQualifiedComponent,
 } from "../schemas/registry"
 import { NetworkError, NotFoundError, OCXError, ValidationError } from "../utils/errors"
+import type { AuthResolver } from "./auth"
 import { fetchComponent } from "./fetcher"
 import { mergeOpencodeConfig } from "./merge"
 
@@ -73,6 +74,7 @@ export interface ResolvedDependencies {
 export async function resolveDependencies(
 	registries: Record<string, RegistryConfig>,
 	componentNames: string[],
+	resolveAuth?: AuthResolver,
 ): Promise<ResolvedDependencies> {
 	const resolved = new Map<string, ResolvedComponent>()
 	const visiting = new Set<string>()
@@ -111,7 +113,11 @@ export async function resolveDependencies(
 		// Fetch component from the specific registry
 		let component: ComponentManifest
 		try {
-			component = await fetchComponent(regConfig.url, componentName)
+			component = await fetchComponent(
+				regConfig.url,
+				componentName,
+				resolveAuth?.(componentNamespace),
+			)
 		} catch (err) {
 			// Re-throw network errors as-is (preserves exit code 69)
 			if (err instanceof NetworkError) {

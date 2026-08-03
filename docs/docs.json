@@ -52,7 +52,7 @@
 					},
 					{
 						"group": "Registries",
-						"pages": ["registries/create", "registries/protocol"]
+						"pages": ["registries/create", "registries/protocol", "registries/authentication"]
 					},
 					{
 						"group": "Reference",

@@ -35,7 +35,26 @@
 					"headers": {
 						"type": "object",
 						"additionalProperties": { "type": "string" },
-						"description": "Custom headers for registry requests"
+						"description": "Custom headers for registry requests. ${ENV_VAR} expansion is NOT applied in a committed local ocx.jsonc (use global/profile config for env references)."
+					},
+					"auth": {
+						"type": "object",
+						"description": "Per-registry authentication. In a committed local ocx.jsonc only LITERAL credentials are allowed; env/file references (tokenEnv/tokenFile/passwordEnv/passwordFile) and insecure must live in global or profile config.",
+						"properties": {
+							"type": { "type": "string", "enum": ["bearer", "basic"] },
+							"token": { "type": "string", "description": "Bearer: literal token" },
+							"tokenEnv": { "type": "string", "description": "Bearer: env var name (global/profile only)" },
+							"tokenFile": { "type": "string", "description": "Bearer: token file path (global/profile only)" },
+							"username": { "type": "string", "description": "Basic: username" },
+							"password": { "type": "string", "description": "Basic: literal password" },
+							"passwordEnv": { "type": "string", "description": "Basic: env var name (global/profile only)" },
+							"passwordFile": { "type": "string", "description": "Basic: password file path (global/profile only)" }
+						},
+						"required": ["type"]
+					},
+					"insecure": {
+						"type": "boolean",
+						"description": "Skip TLS certificate verification for this registry"
 					}
 				}
 			}

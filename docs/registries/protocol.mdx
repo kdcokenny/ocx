@@ -11,6 +11,12 @@ This document specifies the HTTP API that OCX-compatible registries must impleme
 **V2 Changes:** Registry targets are now root-relative (no `.opencode/` prefix required). The OCX CLI handles path resolution based on component type.
 </Note>
 
+<Note>
+**Private registries:** A registry may require authentication. When credentials are configured for a
+registry, OCX attaches them (e.g. an `Authorization` header) to every request below — index,
+component, and file endpoints alike. See [Registry Authentication](/registries/authentication).
+</Note>
+
 ## Discovery (Optional)
 
 ```

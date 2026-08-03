@@ -14,6 +14,7 @@ import { parse } from "jsonc-parser"
 import type { ConfigProvider } from "../../config/provider"
 import { getProfileDir, getProfilesDir } from "../../profile/paths"
 import { profileNameSchema } from "../../profile/schema"
+import type { RequestAuth } from "../../registry/auth"
 import { fetchComponent, fetchFileContent } from "../../registry/fetcher"
 import type { RegistryConfig } from "../../schemas/config"
 import { writeReceipt } from "../../schemas/config"
@@ -48,6 +49,8 @@ export interface InstallProfileOptions {
 	profileName: string
 	/** Resolved registry URL */
 	registryUrl: string
+	/** Resolved auth for the source registry (config `auth` block / env override). */
+	sourceAuth?: RequestAuth
 	/** Suppress output */
 	quiet?: boolean
 }
@@ -302,7 +305,14 @@ export function resolveEmbeddedProfileTarget(rawTarget: string, stagingDir: stri
  * @throws ConflictError if profile exists and force is not set
  */
 export async function installProfileFromRegistry(options: InstallProfileOptions): Promise<void> {
-	const { namespace: providedNamespace, component, profileName, registryUrl, quiet } = options
+	const {
+		namespace: providedNamespace,
+		component,
+		profileName,
+		registryUrl,
+		sourceAuth,
+		quiet,
+	} = options
 
 	// ==========================================================================
 	// Guard: Validate profile name at boundary (Law 2: Parse Don't Validate)
@@ -355,7 +365,7 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 
 	let manifest: Awaited<ReturnType<typeof fetchComponent>>
 	try {
-		manifest = await fetchComponent(registryUrl, component)
+		manifest = await fetchComponent(registryUrl, component, sourceAuth)
 	} catch (error) {
 		fetchSpin?.fail(`Failed to fetch ${qualifiedName}`)
 		if (error instanceof NetworkError) {
@@ -401,7 +411,7 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 	const embeddedFiles: { path: string; target: string; content: Buffer }[] = []
 
 	for (const file of normalized.files) {
-		const content = await fetchFileContent(registryUrl, component, file.path)
+		const content = await fetchFileContent(registryUrl, component, file.path, sourceAuth)
 		const fileEntry = {
 			path: file.path,
 			target: file.target,
@@ -560,6 +570,7 @@ export async function installProfileFromRegistry(options: InstallProfileOptions)
 					cwd: profileDir,
 					getRegistries: () => dependencyRegistries,
 					getComponentPath: () => "", // Flat install - no .opencode/ prefix
+					getScope: () => "profile",
 				}
 
 				await runAddCore(depRefs, { profile: profileName, quiet }, provider)

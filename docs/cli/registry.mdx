@@ -13,6 +13,8 @@ ocx registry <subcommand> [options]
 
 Manage configured component registries. Registries are sources for components that OCX can install. By default, registry commands operate on local project configuration; use `--global` for global scope.
 
+For private registries, authenticate per registry with a Bearer token or Basic credentials. `ocx registry add` can persist them for you (`--token`/`--token-env`/`--token-file`, or `--username` + `--password`/`--password-env`/`--password-file`), or you can supply an `OCX_REGISTRY_<ALIAS>_TOKEN` environment variable. See [Registry Authentication](/registries/authentication).
+
 ## Subcommands
 
 - [`ocx registry add`](#registry-add) — Add a registry

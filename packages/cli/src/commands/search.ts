@@ -2,7 +2,7 @@ import type { Command } from "commander"
 import { InvalidArgumentError, Option } from "commander"
 import type { ConfigProvider } from "../config/provider"
 import { handleError } from "../utils/handle-error"
-import { addCommonOptions, addVerboseOption } from "../utils/shared-options"
+import { addCommonOptions, addInsecureTlsOption, addVerboseOption } from "../utils/shared-options"
 
 export interface SearchOptions {
 	cwd: string
@@ -12,6 +12,7 @@ export interface SearchOptions {
 	installed: boolean
 	limit: number
 	profile?: string
+	insecureSkipTlsVerify?: boolean
 }
 
 function parsePositiveInt(value: string): number {
@@ -35,6 +36,7 @@ export function registerSearchCommand(program: Command): void {
 
 	addCommonOptions(cmd)
 	addVerboseOption(cmd)
+	addInsecureTlsOption(cmd)
 
 	cmd.action(async (query: string | undefined, options: SearchOptions) => {
 		try {

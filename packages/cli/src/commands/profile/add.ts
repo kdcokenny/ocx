@@ -20,6 +20,9 @@ import {
 	RequiredGlobalConfigReadError,
 	readRequiredGlobalOcxConfig,
 } from "../../profile/paths"
+import { type RegistryScope, resolveRegistryAuth } from "../../registry/auth"
+import { setInsecureTls } from "../../registry/fetcher"
+import type { RegistryConfig } from "../../schemas/config"
 import type { ProfileOcxConfig } from "../../schemas/ocx"
 import { profileOcxConfigSchema } from "../../schemas/ocx"
 import {
@@ -87,6 +90,7 @@ interface ProfileAddOptions {
 	from?: string
 	global?: boolean
 	json?: boolean
+	insecureSkipTlsVerify?: boolean
 }
 
 interface ProfileAddResult {
@@ -146,7 +150,7 @@ async function readGlobalOcxConfig() {
  */
 async function requireGlobalRegistry(
 	namespace: string,
-): Promise<{ config: ProfileOcxConfig; registryUrl: string }> {
+): Promise<{ config: ProfileOcxConfig; registryUrl: string; registry: RegistryConfig }> {
 	let globalConfig: ProfileOcxConfig
 	try {
 		globalConfig = await readGlobalOcxConfig()
@@ -172,7 +176,7 @@ async function requireGlobalRegistry(
 		)
 	}
 
-	return { config: globalConfig, registryUrl: registry.url }
+	return { config: globalConfig, registryUrl: registry.url, registry }
 }
 
 // =============================================================================
@@ -189,6 +193,7 @@ export function registerProfileAddCommand(parent: Command): void {
 		.option("--source <namespace/component>", "Install from registry (requires --global)")
 		.option("--from <url>", "Ephemeral registry URL for --source (does not persist)")
 		.option("-g, --global", "Create global profile (required — local profiles are unsupported)")
+		.option("--insecure-skip-tls-verify", "Skip TLS certificate verification for registry requests")
 		.option("--json", "Output as JSON")
 		.addHelpText(
 			"after",
@@ -365,30 +370,35 @@ async function runProfileAdd(name: string, options: ProfileAddOptions): Promise<
 	// Route: --source (registry installation)
 	if (options.source) {
 		const { namespace, component } = parseSourceOption(options.source)
-		let registryUrl: string
+		// Run-level TLS-skip applies to the source fetch and its dependency installs.
+		setInsecureTls(Boolean(options.insecureSkipTlsVerify))
 
+		// Resolve the source registry: an ephemeral --from URL, or a configured global registry.
+		let registryUrl: string
+		let sourceConfig: RegistryConfig
+		let sourceScope: RegistryScope
 		if (options.from) {
-			// Ephemeral registry URL
+			// Ephemeral registry URL — source auth via OCX_REGISTRY_<NS>_* env override.
 			registryUrl = normalizeRegistryUrl(options.from.trim())
-			await installProfileFromRegistry({
-				namespace,
-				component,
-				profileName: name,
-				registryUrl,
-				quiet,
-			})
+			sourceConfig = { url: registryUrl }
+			sourceScope = "ephemeral"
 		} else {
-			// Configured registry
+			// Configured registry (global scope: config `auth` block + env override honored).
 			const globalRegistry = await requireGlobalRegistry(namespace)
 			registryUrl = globalRegistry.registryUrl
-			await installProfileFromRegistry({
-				namespace,
-				component,
-				profileName: name,
-				registryUrl,
-				quiet,
-			})
+			sourceConfig = globalRegistry.registry
+			sourceScope = "global"
 		}
+
+		const sourceAuth = resolveRegistryAuth(namespace, sourceConfig, sourceScope)
+		await installProfileFromRegistry({
+			namespace,
+			component,
+			profileName: name,
+			registryUrl,
+			sourceAuth,
+			quiet,
+		})
 
 		return {
 			name,

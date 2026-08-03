@@ -9,6 +9,7 @@
  * Implementations parse config at construction; getters are sync and pure.
  */
 
+import type { RegistryScope } from "../registry/auth"
 import { type OcxConfig, type RegistryConfig, readOcxConfig } from "../schemas/config"
 import { ConfigError } from "../utils/errors"
 import { getGlobalConfigPath, globalDirectoryExists } from "../utils/paths"
@@ -30,6 +31,12 @@ export interface ConfigProvider {
 
 	/** Get component installation path */
 	getComponentPath(): string
+
+	/**
+	 * Config scope, used to gate credential resolution.
+	 * `local` is committed (untrusted); `global`/`profile` are user-owned (trusted).
+	 */
+	getScope(): RegistryScope
 }
 
 // =============================================================================
@@ -77,6 +84,10 @@ export class LocalConfigProvider implements ConfigProvider {
 	getComponentPath(): string {
 		// Default to .opencode directory for local projects
 		return ".opencode"
+	}
+
+	getScope(): RegistryScope {
+		return "local"
 	}
 }
 
@@ -130,5 +141,9 @@ export class GlobalConfigProvider implements ConfigProvider {
 	 */
 	getComponentPath(): string {
 		return ""
+	}
+
+	getScope(): RegistryScope {
+		return "global"
 	}
 }

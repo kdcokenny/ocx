@@ -3,7 +3,8 @@ import kleur from "kleur"
 import type { ConfigProvider } from "../config/provider"
 import { LocalConfigProvider } from "../config/provider"
 import { ConfigResolver } from "../config/resolver"
-import { fetchRegistryIndex } from "../registry/fetcher"
+import { createAuthResolver } from "../registry/auth"
+import { fetchRegistryIndex, setInsecureTls } from "../registry/fetcher"
 import { readReceipt } from "../schemas"
 import { outputJson } from "../utils/json-output"
 import { logger } from "../utils/logger"
@@ -14,6 +15,8 @@ export async function runSearchCommandAction(
 	query: string | undefined,
 	options: SearchOptions,
 ): Promise<void> {
+	setInsecureTls(Boolean(options.insecureSkipTlsVerify))
+
 	if (options.installed) {
 		const receipt = await readReceipt(options.cwd)
 		if (!receipt || Object.keys(receipt.installed).length === 0) {
@@ -53,6 +56,7 @@ export async function runSearchCommandAction(
 			cwd: resolver.getCwd(),
 			getRegistries: () => resolver.getRegistries(),
 			getComponentPath: () => resolver.getComponentPath(),
+			getScope: () => "profile",
 		}
 	} else {
 		provider = await LocalConfigProvider.requireInitialized(options.cwd)
@@ -67,6 +71,7 @@ export async function runSearchCore(
 	provider: ConfigProvider,
 ): Promise<void> {
 	const registries = provider.getRegistries()
+	const resolveAuth = createAuthResolver(registries, provider.getScope())
 
 	if (options.verbose) {
 		logger.info(`Searching in ${Object.keys(registries).length} registries...`)
@@ -93,7 +98,7 @@ export async function runSearchCore(
 			if (options.verbose) {
 				logger.info(`Fetching index from ${registryName} (${registryConfig.url})...`)
 			}
-			const index = await fetchRegistryIndex(registryConfig.url)
+			const index = await fetchRegistryIndex(registryConfig.url, resolveAuth(registryName))
 			if (options.verbose) {
 				logger.info(`Found ${index.components.length} components in ${registryName}`)
 			}

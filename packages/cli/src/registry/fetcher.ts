@@ -23,9 +23,34 @@ import {
 } from "../utils/errors"
 import { isPlainObject } from "../utils/type-guards"
 import { normalizeRegistryUrl } from "../utils/url"
+import type { RequestAuth } from "./auth"
 
 // In-memory cache for deduplication
 const cache = new Map<string, Promise<unknown>>()
+
+/**
+ * Run-level TLS-skip (`--insecure-skip-tls-verify`). This is a process-global toggle set once by the
+ * active command — unlike per-registry auth, it is not alias-scoped, so it lives here rather than
+ * being threaded through every call. Per-registry `insecure: true` still comes via RequestAuth.
+ */
+let insecureTls = false
+export function setInsecureTls(value: boolean): void {
+	insecureTls = value
+}
+
+/**
+ * Build the Bun fetch init (headers + TLS policy) from resolved registry auth.
+ * Returns undefined when there is nothing to apply (keeps public-registry calls unchanged).
+ */
+function buildRequestInit(auth?: RequestAuth): BunFetchRequestInit | undefined {
+	const skipTls = insecureTls || auth?.rejectUnauthorized === false
+	const headers = auth?.headers
+	if (!headers && !skipTls) return undefined
+	const init: BunFetchRequestInit = {}
+	if (headers) init.headers = headers
+	if (skipTls) init.tls = { rejectUnauthorized: false }
+	return init
+}
 type RegistrySchemaMode = "legacy-v1" | "v2"
 const registrySchemaModeCache = new Map<string, RegistrySchemaMode>()
 
@@ -216,7 +241,10 @@ function hasLegacySignalsInManifest(manifest: unknown): boolean {
 	return false
 }
 
-async function resolveRegistrySchemaMode(baseUrl: string): Promise<RegistrySchemaMode | null> {
+async function resolveRegistrySchemaMode(
+	baseUrl: string,
+	auth?: RequestAuth,
+): Promise<RegistrySchemaMode | null> {
 	const normalizedBaseUrl = normalizeRegistryUrl(baseUrl)
 	const cachedMode = registrySchemaModeCache.get(normalizedBaseUrl)
 	if (cachedMode) {
@@ -224,7 +252,7 @@ async function resolveRegistrySchemaMode(baseUrl: string): Promise<RegistrySchem
 	}
 
 	try {
-		await fetchRegistryIndex(normalizedBaseUrl)
+		await fetchRegistryIndex(normalizedBaseUrl, auth)
 	} catch (error) {
 		if (error instanceof NetworkError || error instanceof NotFoundError) {
 			return null
@@ -421,6 +449,7 @@ async function fetchWithCache<T>(
 	options: {
 		phase?: string
 		requestUrl?: string
+		auth?: RequestAuth
 	} = {},
 ): Promise<T> {
 	const cached = cache.get(cacheKey)
@@ -438,7 +467,7 @@ async function fetchWithCache<T>(
 
 		let response: Response
 		try {
-			response = await fetch(requestUrl)
+			response = await fetch(requestUrl, buildRequestInit(options.auth))
 		} catch (error) {
 			throw new NetworkError(
 				`Network request failed for ${requestUrl}: ${error instanceof Error ? error.message : String(error)}`,
@@ -507,7 +536,10 @@ export function classifyRegistryIndexIssue(data: unknown): {
 /**
  * Fetch registry index
  */
-export async function fetchRegistryIndex(baseUrl: string): Promise<RegistryIndex> {
+export async function fetchRegistryIndex(
+	baseUrl: string,
+	auth?: RequestAuth,
+): Promise<RegistryIndex> {
 	const normalizedBaseUrl = normalizeRegistryUrl(baseUrl)
 	const url = `${normalizedBaseUrl}/index.json`
 
@@ -580,15 +612,19 @@ export async function fetchRegistryIndex(baseUrl: string): Promise<RegistryIndex
 			registrySchemaModeCache.set(normalizedBaseUrl, schemaMode)
 			return result.data
 		},
-		{ phase: "registry-index-fetch" },
+		{ phase: "registry-index-fetch", auth },
 	)
 }
 
 /**
  * Fetch a component from registry and return the latest manifest
  */
-export async function fetchComponent(baseUrl: string, name: string): Promise<ComponentManifest> {
-	const result = await fetchComponentVersion(baseUrl, name)
+export async function fetchComponent(
+	baseUrl: string,
+	name: string,
+	auth?: RequestAuth,
+): Promise<ComponentManifest> {
+	const result = await fetchComponentVersion(baseUrl, name, undefined, auth)
 	return result.manifest
 }
 
@@ -600,6 +636,7 @@ export async function fetchComponentVersion(
 	baseUrl: string,
 	name: string,
 	version?: string,
+	auth?: RequestAuth,
 ): Promise<{ manifest: ComponentManifest; version: string }> {
 	const url = `${normalizeRegistryUrl(baseUrl)}/components/${name}.json`
 
@@ -638,7 +675,7 @@ export async function fetchComponentVersion(
 			let manifestSchema = componentManifestSchema
 
 			if (hasLegacySignalsInManifest(manifest)) {
-				const schemaMode = await resolveRegistrySchemaMode(baseUrl)
+				const schemaMode = await resolveRegistrySchemaMode(baseUrl, auth)
 
 				if (schemaMode !== "v2") {
 					candidateManifest = adaptLegacyComponentManifest(manifest, context)
@@ -671,7 +708,7 @@ export async function fetchComponentVersion(
 
 			return { manifest: manifestResult.data, version: resolvedVersion }
 		},
-		{ phase: "packument-fetch", requestUrl: url },
+		{ phase: "packument-fetch", requestUrl: url, auth },
 	)
 }
 
@@ -682,6 +719,7 @@ export async function fetchFileContent(
 	baseUrl: string,
 	componentName: string,
 	filePath: string,
+	auth?: RequestAuth,
 ): Promise<string> {
 	const url = `${normalizeRegistryUrl(baseUrl)}/components/${componentName}/${filePath}`
 	const networkErrorContext = {
@@ -692,7 +730,7 @@ export async function fetchFileContent(
 
 	let response: Response
 	try {
-		response = await fetch(url)
+		response = await fetch(url, buildRequestInit(auth))
 	} catch (error) {
 		throw new NetworkError(
 			`Network request failed for ${url}: ${error instanceof Error ? error.message : String(error)}`,
@@ -717,8 +755,9 @@ export async function fetchFileContent(
 // Re-export types for convenience
 export type { ComponentManifest, McpServer, RegistryIndex }
 
-/** @internal Clear cache for testing purposes only */
+/** @internal Clear cache (and reset run-level TLS-skip) for testing purposes only */
 export function _clearFetcherCacheForTests(): void {
 	cache.clear()
 	registrySchemaModeCache.clear()
+	insecureTls = false
 }

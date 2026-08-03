@@ -10,7 +10,8 @@ import { dirname, join } from "node:path"
 
 import type { Command } from "commander"
 import { type ConfigProvider, GlobalConfigProvider, LocalConfigProvider } from "../config/provider"
-import { fetchComponentVersion, fetchFileContent } from "../registry/fetcher"
+import { createAuthResolver } from "../registry/auth"
+import { fetchComponentVersion, fetchFileContent, setInsecureTls } from "../registry/fetcher"
 import { parseCanonicalId, type Receipt, readReceipt, writeReceipt } from "../schemas/config"
 import {
 	type ComponentFileObject,
@@ -24,7 +25,12 @@ import { logger } from "../utils/logger"
 import { resolveTargetPath } from "../utils/paths"
 import { registerPlannedWriteOrThrow } from "../utils/planned-writes"
 import { checkFileIntegrity, hashBundle, hashContent } from "../utils/receipt"
-import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
+import {
+	addCommonOptions,
+	addGlobalOption,
+	addInsecureTlsOption,
+	addVerboseOption,
+} from "../utils/shared-options"
 import { createSpinner } from "../utils/spinner"
 
 // =============================================================================
@@ -40,6 +46,7 @@ export interface UpdateOptions {
 	quiet?: boolean
 	verbose?: boolean
 	json?: boolean
+	insecureSkipTlsVerify?: boolean
 }
 
 interface ComponentSpec {
@@ -109,6 +116,7 @@ export function registerUpdateCommand(program: Command): void {
 	addCommonOptions(cmd)
 	addVerboseOption(cmd)
 	addGlobalOption(cmd)
+	addInsecureTlsOption(cmd)
 
 	cmd
 		.option("--all", "Update all installed components")
@@ -116,6 +124,7 @@ export function registerUpdateCommand(program: Command): void {
 		.option("--dry-run", "Preview changes without applying")
 		.action(async (components: string[], options: UpdateOptions) => {
 			try {
+				setInsecureTls(Boolean(options.insecureSkipTlsVerify))
 				await runUpdate(components, options)
 			} catch (error) {
 				handleError(error, { json: options.json })
@@ -148,6 +157,9 @@ export async function runUpdateCore(
 	const registries = provider.getRegistries()
 	const componentPath = provider.getComponentPath()
 	const isFlattened = componentPath === "" || componentPath === "."
+
+	// Per-registry auth resolver (config `auth` block / OCX_REGISTRY_<ALIAS>_* env), scope-gated.
+	const resolveAuth = createAuthResolver(registries, provider.getScope())
 
 	// -------------------------------------------------------------------------
 	// Parse component specs (Law 2: Parse at boundary before any logic)
@@ -264,7 +276,8 @@ export async function runUpdateCore(
 			}
 
 			// Fetch component (latest version)
-			const fetchResult = await fetchComponentVersion(regConfig.url, componentName, undefined)
+			const auth = resolveAuth(registryName)
+			const fetchResult = await fetchComponentVersion(regConfig.url, componentName, undefined, auth)
 			const manifest = fetchResult.manifest
 
 			const normalizedManifest = normalizeComponentManifest(manifest)
@@ -272,7 +285,7 @@ export async function runUpdateCore(
 			// Fetch all files and compute hash
 			const files: { path: string; content: Buffer }[] = []
 			for (const file of normalizedManifest.files) {
-				const content = await fetchFileContent(regConfig.url, componentName, file.path)
+				const content = await fetchFileContent(regConfig.url, componentName, file.path, auth)
 				files.push({ path: file.path, content: Buffer.from(content) })
 			}
 

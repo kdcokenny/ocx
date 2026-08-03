@@ -19,17 +19,93 @@ import { qualifiedComponentSchema } from "./registry"
 // =============================================================================
 
 /**
+ * Per-registry authentication block in ocx.jsonc.
+ *
+ * Credential precedence and security rules are enforced at resolution time in
+ * `src/registry/auth.ts` (not here). Key rules:
+ * - Literal `token`/`password` are allowed in ANY config scope.
+ * - Env/file references (`tokenEnv`, `tokenFile`, `passwordEnv`, `passwordFile`) are only
+ *   honored in user-owned scopes (global/profile), never in a committed local ocx.jsonc.
+ */
+export const registryAuthConfigSchema = object({
+	/** Auth scheme: "bearer" (Authorization: Bearer) or "basic" (Authorization: Basic) */
+	type: zEnum(["bearer", "basic"]),
+
+	// -- bearer sources (choose exactly one) --
+	/** Literal bearer token (allowed in any scope) */
+	token: string().optional(),
+	/** Name of the env var holding the bearer token (trusted scope only) */
+	tokenEnv: string().optional(),
+	/** Path to a file containing the bearer token (trusted scope only) */
+	tokenFile: string().optional(),
+
+	// -- basic sources --
+	/** Basic-auth username */
+	username: string().optional(),
+	/** Literal basic-auth password (allowed in any scope) */
+	password: string().optional(),
+	/** Name of the env var holding the basic-auth password (trusted scope only) */
+	passwordEnv: string().optional(),
+	/** Path to a file containing the basic-auth password (trusted scope only) */
+	passwordFile: string().optional(),
+}).superRefine((data, ctx) => {
+	if (data.type === "bearer") {
+		const sources = [data.token, data.tokenEnv, data.tokenFile].filter((v) => v !== undefined)
+		if (sources.length !== 1) {
+			ctx.addIssue('Bearer auth requires exactly one of "token", "tokenEnv", or "tokenFile".')
+		}
+		for (const field of ["username", "password", "passwordEnv", "passwordFile"] as const) {
+			if (data[field] !== undefined) {
+				ctx.addIssue(`"${field}" is not valid for bearer auth.`)
+			}
+		}
+		return
+	}
+
+	// basic
+	if (!data.username) {
+		ctx.addIssue('Basic auth requires "username".')
+	}
+	const passwordSources = [data.password, data.passwordEnv, data.passwordFile].filter(
+		(v) => v !== undefined,
+	)
+	if (passwordSources.length !== 1) {
+		ctx.addIssue('Basic auth requires exactly one of "password", "passwordEnv", or "passwordFile".')
+	}
+	for (const field of ["token", "tokenEnv", "tokenFile"] as const) {
+		if (data[field] !== undefined) {
+			ctx.addIssue(`"${field}" is not valid for basic auth.`)
+		}
+	}
+})
+
+export type RegistryAuthConfig = ZodInfer<typeof registryAuthConfigSchema>
+
+/**
  * Registry configuration in ocx.jsonc
  */
 export const registryConfigSchema = object({
 	/** Registry URL */
 	url: string().url("Registry URL must be a valid URL"),
 
-	/** Optional auth headers (supports ${ENV_VAR} expansion) */
+	/** Optional raw auth headers (supports ${ENV_VAR} expansion in trusted scopes) */
 	headers: record(string(), string()).optional(),
+
+	/** Structured per-registry authentication */
+	auth: registryAuthConfigSchema.optional(),
+
+	/** Skip TLS certificate verification for this registry (trusted scope only) */
+	insecure: boolean().optional(),
 })
 
 export type RegistryConfig = ZodInfer<typeof registryConfigSchema>
+
+/**
+ * Auth fields that reference a secret indirectly (an env-var name or a file path) rather than
+ * holding a literal. These are only honored in user-owned (global/profile) config — the local-scope
+ * read guard and the `registry add` write guard both key off this list.
+ */
+export const AUTH_REF_FIELDS = ["tokenEnv", "tokenFile", "passwordEnv", "passwordFile"] as const
 
 /**
  * Main OCX config schema (ocx.jsonc)

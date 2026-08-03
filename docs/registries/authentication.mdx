@@ -1,0 +1,221 @@
+---
+title: "Registry Authentication"
+description: "Authenticate OCX to private registries with per-registry Bearer or Basic credentials"
+---
+
+## Overview
+
+OCX authenticates to a registry **per registry**. Because a single command (e.g. `ocx add`) can
+pull from several registries at once — and dependencies can cross registries — credentials are
+attached to each registry entry rather than passed globally.
+
+There are three ways to supply credentials, in precedence order (highest first):
+
+1. **CLI flags** — only for a one-off `--from <url>` registry.
+2. **Per-registry environment variables** — `OCX_REGISTRY_<ALIAS>_TOKEN` and friends.
+3. **The registry's `auth` block** in `ocx.jsonc`.
+
+Both **Bearer tokens** and **HTTP Basic** are supported, with the secret provided as a literal, an
+environment variable, or a file.
+
+## Security model
+
+Where a credential *reference* is allowed depends on **which config file** it lives in — the same
+model pnpm uses to stop a checked-out repository from stealing your secrets:
+
+| Config scope | File | Literal creds | `${ENV}` / file references | `insecure` |
+| --- | --- | --- | --- | --- |
+| **local** | `./.opencode/ocx.jsonc` (committed) | ✅ allowed | ❌ **rejected** | ❌ rejected |
+| **global** | `~/.config/opencode/ocx.jsonc` | ✅ allowed | ✅ allowed | ✅ allowed |
+| **profile** | `~/.config/opencode/profiles/<name>/ocx.jsonc` | ✅ allowed | ✅ allowed | ✅ allowed |
+
+<Warning>
+Environment/file references are **not** resolved in a committed local `ocx.jsonc`. If a repository
+you clone paired a registry URL with `${CI_TOKEN}`, resolving it would leak your token to that
+repo's registry. A local config that uses `tokenEnv`, `tokenFile`, `passwordEnv`, `passwordFile`,
+`${…}` in `headers`, `insecure`, or an alias that matches a set `OCX_REGISTRY_<ALIAS>_*` override
+fails fast with an error — move it to your **global** or **profile** config, or use a literal value.
+</Warning>
+
+## The `auth` block
+
+Add an `auth` object to any registry in `ocx.jsonc`.
+
+### Bearer token
+
+```jsonc
+{
+  "registries": {
+    "acme": {
+      "url": "https://reg.acme.com/r",
+      "auth": { "type": "bearer", "tokenEnv": "ACME_TOKEN" }
+    }
+  }
+}
+```
+
+Provide the token with exactly one of:
+
+- `token` — a literal token (allowed in any scope)
+- `tokenEnv` — the name of an environment variable (global/profile only)
+- `tokenFile` — a path to a file containing the token, `~` is expanded (global/profile only)
+
+Produces `Authorization: Bearer <token>`.
+
+### Basic auth
+
+```jsonc
+{
+  "registries": {
+    "acme": {
+      "url": "https://reg.acme.com/r",
+      "auth": { "type": "basic", "username": "ci", "passwordEnv": "ACME_PASS" }
+    }
+  }
+}
+```
+
+Requires `username` plus exactly one of `password`, `passwordEnv`, or `passwordFile`. Produces
+`Authorization: Basic base64(username:password)`.
+
+Committing literal Basic credentials to a local `ocx.jsonc` is allowed if that suits your workflow:
+
+```jsonc
+{
+  "registries": {
+    "acme": {
+      "url": "https://reg.acme.com/r",
+      "auth": { "type": "basic", "username": "ci", "password": "s3cret" }
+    }
+  }
+}
+```
+
+### Raw headers
+
+For anything the structured block doesn't cover, set `headers` directly. `${ENV_VAR}` is expanded
+in global/profile config only:
+
+```jsonc
+{
+  "registries": {
+    "acme": {
+      "url": "https://reg.acme.com/r",
+      "headers": { "X-Api-Key": "${ACME_KEY}" }
+    }
+  }
+}
+```
+
+## Environment variable overrides
+
+Set credentials without editing config — ideal for CI. Variables are keyed by the registry
+**alias**, uppercased with non-alphanumeric characters replaced by `_` (so alias `my-reg` →
+`MY_REG`):
+
+| Variable | Effect |
+| --- | --- |
+| `OCX_REGISTRY_<ALIAS>_TOKEN` | Bearer token |
+| `OCX_REGISTRY_<ALIAS>_TOKEN_FILE` | Path to a file containing a Bearer token |
+| `OCX_REGISTRY_<ALIAS>_BASIC` | `username:password` for Basic auth |
+
+```bash
+OCX_REGISTRY_ACME_TOKEN=$CI_ACME_TOKEN ocx add acme/deploy-bot
+```
+
+An env override takes precedence over the registry's `auth` block, so CI can inject a token even
+when the config ships a different default.
+
+<Warning>
+Env overrides are honored only for registries defined in **global** or **profile** config. Because
+a committed local `ocx.jsonc` controls both the alias and the URL, a local-scope registry whose
+alias matches a set `OCX_REGISTRY_<ALIAS>_*` variable is **rejected** — otherwise a cloned repo
+could name a registry to grab your token and point it at its own URL. Put registries that rely on
+env-var auth in your global or profile config.
+</Warning>
+
+## One-off registries (`--from`)
+
+When installing from an unconfigured registry via `--from <url>`, pass credentials with flags. These
+flags are **only** valid together with `--from`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--token <token>` | Bearer token (literal — avoid in CI; visible in your shell history) |
+| `--token-env <NAME>` | Bearer token from an environment variable |
+| `--token-file <path>` | Bearer token from a file |
+| `--username <user>` | HTTP Basic username (combine with a `--password*` flag) |
+| `--password <pass>` | HTTP Basic password (literal) |
+| `--password-env <NAME>` | HTTP Basic password from an environment variable |
+| `--password-file <path>` | HTTP Basic password from a file |
+| `--auth-header <Name: Value>` | Extra header (repeatable) |
+| `--insecure-skip-tls-verify` | Skip TLS certificate verification |
+
+```bash
+ocx add acme/deploy-bot --from https://reg.acme.com/r --token-env ACME_TOKEN
+```
+
+## TLS
+
+HTTPS certificates are verified by default. To talk to a registry with a self-signed or otherwise
+untrusted certificate, use `--insecure-skip-tls-verify`. It's available on every command that
+fetches from a registry — `add`, `update`, `search`, `profile add`, and `registry add` — and skips
+verification for that invocation's registry requests:
+
+```bash
+ocx add acme/deploy-bot --insecure-skip-tls-verify
+```
+
+For a persistent setting, pass it to `registry add` and it's stored as `"insecure": true` on the
+registry, so later commands skip verification automatically:
+
+```bash
+ocx registry add https://reg.internal --name acme --insecure-skip-tls-verify --global
+```
+
+Unlike env/file credential references, `"insecure": true` is allowed in **any** scope — including a
+committed local `ocx.jsonc`. It is not a secret, and the config author already controls the registry
+URL, so committing it (e.g. for a team's internal self-signed registry) adds no exfiltration risk.
+
+## `ocx registry add`
+
+`ocx registry add` can persist credentials for you — no hand-editing JSON. Pass the credential as a
+flag and it's written into the registry's `auth` block in the right form:
+
+Bearer and Basic use the same flags whether persisted here or passed to `add --from`:
+
+| Flag | Written as |
+| --- | --- |
+| `--token <token>` | `{ "type": "bearer", "token": … }` |
+| `--token-env <NAME>` | `{ "type": "bearer", "tokenEnv": … }` |
+| `--token-file <path>` | `{ "type": "bearer", "tokenFile": … }` |
+| `--username <u> --password <p>` | `{ "type": "basic", "username": …, "password": … }` |
+| `--username <u> --password-env <NAME>` | `{ …, "passwordEnv": … }` |
+| `--username <u> --password-file <path>` | `{ …, "passwordFile": … }` |
+
+The `--password` secret has the same three forms as `--token` (literal, env, file); `--username` is
+the non-secret prefix. The same credential is also used to authenticate the validation request, so
+adding a private registry works in one step:
+
+```bash
+# Basic, persisted literally (fine in any scope)
+ocx registry add https://reg.acme.com/r --name acme --username ci --password s3cret --global
+
+# Bearer, persisted as an env reference (global/profile only)
+ocx registry add https://reg.acme.com/r --name acme --token-env ACME_TOKEN --global
+```
+
+<Warning>
+Scope rules are enforced at write time. Targeting a **committed local** config (`--cwd`, the default)
+with an env/file reference (`--token-env`, `--token-file`, `--password-env`, `--password-file`) is
+**refused** — those are only honored in `--global`/`--profile` config. Literal values (`--token`,
+`--username`/`--password`) are allowed in any scope. Re-running `registry add` with new credentials
+for an existing registry updates its stored `auth`.
+</Warning>
+
+Prefer not to persist anything? Omit the flags and authenticate the validation request with the
+`OCX_REGISTRY_<NAME>_*` env override instead:
+
+```bash
+OCX_REGISTRY_ACME_TOKEN=$TOKEN ocx registry add https://reg.acme.com/r --name acme --global
+```

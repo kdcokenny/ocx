@@ -35,7 +35,26 @@
 					"headers": {
 						"type": "object",
 						"additionalProperties": { "type": "string" },
-						"description": "Custom headers for registry requests"
+						"description": "Custom headers for registry requests. ${ENV_VAR} expansion is honored in profile config."
+					},
+					"auth": {
+						"type": "object",
+						"description": "Per-registry authentication. Profile config is user-owned, so literal credentials and env/file references (tokenEnv/tokenFile/passwordEnv/passwordFile) are all honored.",
+						"properties": {
+							"type": { "type": "string", "enum": ["bearer", "basic"] },
+							"token": { "type": "string", "description": "Bearer: literal token" },
+							"tokenEnv": { "type": "string", "description": "Bearer: env var name" },
+							"tokenFile": { "type": "string", "description": "Bearer: token file path" },
+							"username": { "type": "string", "description": "Basic: username" },
+							"password": { "type": "string", "description": "Basic: literal password" },
+							"passwordEnv": { "type": "string", "description": "Basic: env var name" },
+							"passwordFile": { "type": "string", "description": "Basic: password file path" }
+						},
+						"required": ["type"]
+					},
+					"insecure": {
+						"type": "boolean",
+						"description": "Skip TLS certificate verification for this registry"
 					}
 				}
 			}
