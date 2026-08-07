@@ -3,7 +3,7 @@
  * Tests shell escaping functions, temp script cleanup, and security hardening.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -17,6 +17,7 @@ import {
 	detectTerminalType,
 	openCmuxTerminal,
 	openCmuxTerminalWithState,
+	openMacOSTerminal,
 	openTerminal,
 	withTempScript,
 } from "../files/plugins/worktree/terminal"
@@ -698,6 +699,112 @@ setInterval(() => {}, 1000)
 			}
 
 			expect(detectTerminalType()).toBe("tmux")
+		})
+	})
+
+	describe("openMacOSTerminal (kitty)", () => {
+		const originalEnv = { ...process.env }
+		const macTerminalEnvKeys = [
+			"TERM_PROGRAM",
+			"GHOSTTY_RESOURCES_DIR",
+			"ITERM_SESSION_ID",
+			"KITTY_WINDOW_ID",
+			"ALACRITTY_WINDOW_ID",
+			"__CFBundleIdentifier",
+		]
+
+		const spawnSyncSpy = {
+			current: undefined as ReturnType<typeof spyOn<typeof Bun, "spawnSync">> | undefined,
+		}
+		const spawnSpy = {
+			current: undefined as ReturnType<typeof spyOn<typeof Bun, "spawn">> | undefined,
+		}
+		const createdScripts: string[] = []
+
+		beforeEach(() => {
+			for (const key of macTerminalEnvKeys) {
+				delete process.env[key]
+			}
+			process.env.KITTY_WINDOW_ID = "999"
+		})
+
+		afterEach(() => {
+			spawnSyncSpy.current?.mockRestore()
+			spawnSpy.current?.mockRestore()
+			spawnSyncSpy.current = undefined
+			spawnSpy.current = undefined
+			for (const scriptPath of createdScripts) {
+				try {
+					fs.rmSync(scriptPath)
+				} catch {
+					// Best-effort cleanup
+				}
+			}
+			createdScripts.length = 0
+			process.env = { ...originalEnv }
+		})
+
+		it("keeps the launch script alive for the spawned tab", async () => {
+			let launchArgv: readonly string[] = []
+			let scriptExistedAtLaunch = false
+
+			spawnSyncSpy.current = spyOn(Bun, "spawnSync").mockImplementation(
+				((argv: readonly string[]) => {
+					launchArgv = argv
+					const scriptPath = argv[argv.length - 1]
+					scriptExistedAtLaunch = fs.existsSync(scriptPath)
+					createdScripts.push(scriptPath)
+					return { exitCode: 0 }
+				}) as never,
+			)
+
+			const result = await openMacOSTerminal("/tmp/worktree-script-race", [
+				"opencode",
+				"--session",
+				"ses_123",
+			])
+
+			expect(result.success).toBe(true)
+			expect(launchArgv.slice(0, 5)).toEqual(["kitty", "@", "launch", "--type", "tab"])
+			expect(scriptExistedAtLaunch).toBe(true)
+
+			const scriptPath = launchArgv[launchArgv.length - 1]
+			// kitty accepts the launch before the new tab's bash reads the script,
+			// so the plugin must NOT delete it - the script self-cleans via trap.
+			expect(fs.existsSync(scriptPath)).toBe(true)
+			const content = fs.readFileSync(scriptPath, "utf8")
+			expect(content).toContain('trap \'rm -f "$0"\' EXIT INT TERM')
+			expect(content).toContain('cd "/tmp/worktree-script-race"')
+			expect(content).toContain('"opencode" "--session" "ses_123"')
+		})
+
+		it("reuses the live script for the detached fallback window", async () => {
+			let fallbackArgv: readonly string[] = []
+
+			spawnSyncSpy.current = spyOn(Bun, "spawnSync").mockImplementation(
+				((argv: readonly string[]) => {
+					createdScripts.push(argv[argv.length - 1])
+					return { exitCode: 1 }
+				}) as never,
+			)
+			spawnSpy.current = spyOn(Bun, "spawn").mockImplementation(
+				((argv: readonly string[]) => {
+					fallbackArgv = argv
+					return { unref: () => {} }
+				}) as never,
+			)
+
+			const result = await openMacOSTerminal("/tmp/worktree-script-race", ["opencode"])
+
+			expect(result.success).toBe(true)
+			expect(fallbackArgv.slice(0, 3)).toEqual([
+				"kitty",
+				"--directory",
+				"/tmp/worktree-script-race",
+			])
+			const scriptPath = fallbackArgv[fallbackArgv.length - 1]
+			expect(scriptPath).toBe(createdScripts[0])
+			expect(fs.existsSync(scriptPath)).toBe(true)
 		})
 	})
 })

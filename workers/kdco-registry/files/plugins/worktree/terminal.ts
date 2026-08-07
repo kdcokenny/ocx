@@ -617,27 +617,10 @@ export async function openMacOSTerminal(cwd: string, argv?: string[]): Promise<T
 			// DO NOT use withTempScript for these - the finally block would delete
 			// the script before the detached process reads it
 			case "kitty": {
-				// Try kitty @ remote control first (synchronous, can use withTempScript)
-				const remoteResult = await withTempScript(scriptContent, async (scriptPath) => {
-					const result = Bun.spawnSync([
-						"kitty",
-						"@",
-						"launch",
-						"--type",
-						"tab",
-						"--cwd",
-						cwd,
-						"--",
-						"bash",
-						scriptPath,
-					])
-					return result.exitCode === 0
-				})
-				if (remoteResult) {
-					return { success: true }
-				}
-
-				// Fallback: new window (detached) - write script directly
+				// kitty @ launch only blocks until kitty accepts the request, NOT until
+				// the spawned bash reads the script. Write the script directly and rely
+				// on its trap-based self-cleanup - withTempScript would race and delete
+				// the script before bash reads it, silently killing the new tab.
 				detachedScriptPath = path.join(
 					getTempDir(),
 					`worktree-${Date.now()}-${Math.random().toString(36).slice(2)}.sh`,
@@ -645,6 +628,24 @@ export async function openMacOSTerminal(cwd: string, argv?: string[]): Promise<T
 				await Bun.write(detachedScriptPath, scriptContent)
 				await fs.chmod(detachedScriptPath, 0o755)
 
+				const remoteResult = Bun.spawnSync([
+					"kitty",
+					"@",
+					"launch",
+					"--type",
+					"tab",
+					"--cwd",
+					cwd,
+					"--",
+					"bash",
+					detachedScriptPath,
+				])
+				if (remoteResult.exitCode === 0) {
+					detachedScriptPath = null // Clear - script self-cleans via trap
+					return { success: true }
+				}
+
+				// Fallback: new window (detached)
 				const kittyProc = Bun.spawn(
 					["kitty", "--directory", cwd, "-e", "bash", detachedScriptPath],
 					{
