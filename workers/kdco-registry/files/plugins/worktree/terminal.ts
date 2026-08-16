@@ -229,6 +229,7 @@ type LinuxTerminal =
 	| "foot"
 	| "gnome-terminal"
 	| "konsole"
+	| "yakuake"
 	| "xfce4-terminal"
 	| "xdg-terminal-exec"
 	| "x-terminal-emulator"
@@ -781,20 +782,90 @@ export async function openMacOSTerminal(cwd: string, argv?: string[]): Promise<T
 function detectCurrentLinuxTerminal(): LinuxTerminal | null {
 	const env = linuxTerminalEnvSchema.parse(process.env)
 
+	const termProgram = env.TERM_PROGRAM?.toLowerCase()
+
 	// Check specific env vars first (most reliable)
 	if (env.KITTY_WINDOW_ID) return "kitty"
 	if (env.WEZTERM_PANE) return "wezterm"
 	if (env.ALACRITTY_WINDOW_ID) return "alacritty"
 	if (env.GHOSTTY_RESOURCES_DIR) return "ghostty"
 	if (env.GNOME_TERMINAL_SERVICE) return "gnome-terminal"
+
+	// Yakuake embeds Konsole, so it must be checked first.
+	if (termProgram === "yakuake") return "yakuake"
+
 	if (env.KONSOLE_VERSION) return "konsole"
 
 	// TERM_PROGRAM fallback
-	const termProgram = env.TERM_PROGRAM?.toLowerCase()
 	if (termProgram === "warpterminal") return "warp"
 	if (termProgram === "foot") return "foot"
 
 	return null
+}
+
+type QdbusCommandResult = {
+	exitCode: number
+	stderr: string
+}
+type RunQdbusCommand = (args: string[]) => QdbusCommandResult | Promise<QdbusCommandResult>
+
+/**
+ * Build the ordered qdbus6 command sequence that launches a script in a new
+ * Yakuake session. Order matters: runCommand targets the session created by
+ * addSession, so addSession must complete first.
+ */
+export function buildYakuakeCommandSequence(launchScriptPath: string): string[][] {
+	return [
+		["qdbus6", "org.kde.yakuake", "/yakuake/sessions", "addSession"],
+		["qdbus6", "org.kde.yakuake", "/yakuake/sessions", "runCommand", launchScriptPath],
+	]
+}
+
+async function runQdbusCommandWithBun(args: string[]): Promise<QdbusCommandResult> {
+	const result = Bun.spawnSync(args)
+	return {
+		exitCode: result.exitCode,
+		stderr: result.stderr.toString(),
+	}
+}
+
+/**
+ * Launch a script in a new Yakuake session via qdbus6.
+ *
+ * Commands run sequentially via synchronous spawns: each qdbus6 call is
+ * awaited and must exit successfully before the next one is dispatched.
+ * If addSession were fire-and-forget, runCommand could race the session
+ * creation and target the previously active session.
+ */
+export async function openYakuakeTerminal(
+	launchScriptPath: string,
+	options?: {
+		runCommand?: RunQdbusCommand
+	},
+): Promise<TerminalResult> {
+	const runCommand = options?.runCommand ?? runQdbusCommandWithBun
+
+	for (const args of buildYakuakeCommandSequence(launchScriptPath)) {
+		let result: QdbusCommandResult
+		try {
+			result = await runCommand(args)
+		} catch (error) {
+			return {
+				success: false,
+				error: `yakuake ${args[3]} failed: ${error instanceof Error ? error.message : String(error)}`,
+			}
+		}
+
+		if (result.exitCode !== 0) {
+			const stderr = result.stderr.trim() || "unknown qdbus error"
+			return {
+				success: false,
+				error: `yakuake ${args[3]} failed: ${stderr}`,
+			}
+		}
+	}
+
+	return { success: true }
 }
 
 /**
@@ -999,6 +1070,12 @@ export async function openLinuxTerminal(cwd: string, argv?: string[]): Promise<T
 						"bash",
 						launchScriptPath,
 					])
+					break
+				}
+				case "yakuake": {
+					const launchScriptPath = await ensureScriptPath()
+					const yakuakeResult = await openYakuakeTerminal(launchScriptPath)
+					result = { tried: true, success: yakuakeResult.success }
 					break
 				}
 				default:

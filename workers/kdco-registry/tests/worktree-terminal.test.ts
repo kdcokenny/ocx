@@ -12,12 +12,14 @@ import {
 	buildBashCommandFromArgv,
 	buildBatchCommandFromArgv,
 	buildCmuxCommandSequence,
+	buildYakuakeCommandSequence,
 	canUseCmuxWorkflow,
 	detectCmuxContext,
 	detectTerminalType,
 	openCmuxTerminal,
 	openCmuxTerminalWithState,
 	openTerminal,
+	openYakuakeTerminal,
 	withTempScript,
 } from "../files/plugins/worktree/terminal"
 
@@ -698,6 +700,86 @@ setInterval(() => {}, 1000)
 			}
 
 			expect(detectTerminalType()).toBe("tmux")
+		})
+	})
+
+	describe("yakuake integration", () => {
+		it("builds addSession before runCommand in the qdbus6 sequence", () => {
+			const sequence = buildYakuakeCommandSequence("/tmp/worktree-launch.sh")
+
+			expect(sequence).toEqual([
+				["qdbus6", "org.kde.yakuake", "/yakuake/sessions", "addSession"],
+				["qdbus6", "org.kde.yakuake", "/yakuake/sessions", "runCommand", "/tmp/worktree-launch.sh"],
+			])
+		})
+
+		it("awaits addSession completion before dispatching runCommand", async () => {
+			const events: string[] = []
+
+			const result = await openYakuakeTerminal("/tmp/worktree-launch.sh", {
+				runCommand: async (args) => {
+					const method = args[3] ?? "unknown"
+					events.push(`start:${method}`)
+					await Bun.sleep(20)
+					events.push(`end:${method}`)
+					return { exitCode: 0, stderr: "" }
+				},
+			})
+
+			expect(result).toEqual({ success: true })
+			expect(events).toEqual([
+				"start:addSession",
+				"end:addSession",
+				"start:runCommand",
+				"end:runCommand",
+			])
+		})
+
+		it("skips runCommand when addSession exits non-zero", async () => {
+			const executed: string[][] = []
+
+			const result = await openYakuakeTerminal("/tmp/worktree-launch.sh", {
+				runCommand: (args) => {
+					executed.push(args)
+					return { exitCode: 1, stderr: "org.kde.yakuake is not registered" }
+				},
+			})
+
+			expect(result).toEqual({
+				success: false,
+				error: "yakuake addSession failed: org.kde.yakuake is not registered",
+			})
+			expect(executed).toHaveLength(1)
+			expect(executed[0][3]).toBe("addSession")
+		})
+
+		it("reports stderr when runCommand exits non-zero", async () => {
+			const result = await openYakuakeTerminal("/tmp/worktree-launch.sh", {
+				runCommand: (args) =>
+					args[3] === "runCommand"
+						? { exitCode: 1, stderr: "failed to run command" }
+						: { exitCode: 0, stderr: "" },
+			})
+
+			expect(result).toEqual({
+				success: false,
+				error: "yakuake runCommand failed: failed to run command",
+			})
+		})
+
+		it("returns failure without throwing when qdbus6 cannot be spawned", async () => {
+			const executed: string[][] = []
+
+			const result = await openYakuakeTerminal("/tmp/worktree-launch.sh", {
+				runCommand: (args) => {
+					executed.push(args)
+					throw new Error('Executable not found in $PATH: "qdbus6"')
+				},
+			})
+
+			expect(result.success).toBe(false)
+			expect(result.error).toContain("yakuake addSession failed")
+			expect(executed).toHaveLength(1)
 		})
 	})
 })
