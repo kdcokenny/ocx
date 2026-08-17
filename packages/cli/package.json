@@ -1,6 +1,6 @@
 {
 	"name": "ocx",
-	"version": "2.0.14",
+	"version": "2.0.15",
 	"description": "OCX CLI - OpenCode extension manager with portable, isolated profiles. Your setup, anywhere.",
 	"author": "kdcokenny",
 	"license": "MIT",
