@@ -122,6 +122,13 @@
 			"files": ["skills/plan-review/SKILL.md"],
 			"dependencies": []
 		},
+		{
+			"name": "gbr",
+			"type": "skill",
+			"description": "Pair a phone running Build Remote Agent (gbr/1) as a spectator for this OpenCode session",
+			"files": ["skills/gbr/SKILL.md"],
+			"dependencies": []
+		},
 
 		// ============================================================================
 		// AGENTS
