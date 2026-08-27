@@ -63,10 +63,11 @@ Worktrees are stored in `~/.local/share/opencode/worktree/<project-id>/<branch>/
 
 ## Configuration
 
-The plugin reads `.opencode/worktree.jsonc` first. If the file contains only
-generated default values, the plugin reads `~/.config/opencode/worktree.jsonc`
-when that file exists. A project config with custom values takes precedence.
-The two files are not merged.
+The plugin reads `.opencode/worktree.jsonc` first. A project file created by
+the plugin is treated as a placeholder when it still contains only default
+values, so the plugin reads `~/.config/opencode/worktree.jsonc` when that file
+exists. A manually created project config always takes precedence, including
+one with only default values. The two files are not merged.
 
 If neither config file exists, the plugin creates `.opencode/worktree.jsonc`
 with default values. The plugin does not create a project config when the
@@ -88,6 +89,8 @@ global config exists.
 ```
 
 For settings shared across projects, create `~/.config/opencode/worktree.jsonc`.
+It is used when no project config exists or when the project file is an
+auto-generated default that still contains only default values.
 
 ### Common Configurations
 

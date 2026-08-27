@@ -68,6 +68,19 @@ describe("worktree config loading", () => {
 		expect(config.hooks.postCreate).toEqual(["global"])
 	})
 
+	it("keeps a manually created default config ahead of the global config", async () => {
+		const localConfigPath = path.join(testDir, ".opencode", "worktree.jsonc")
+		const globalConfigPath = path.join(testHome, ".config", "opencode", "worktree.jsonc")
+
+		await writeConfig(localConfigPath, "{}")
+		await writeConfig(globalConfigPath, '{"worktreePath":"~/global-worktrees"}')
+
+		const config = await loadWorktreeConfig(testDir, log, testHome)
+
+		expect(config.worktreePath).toBeUndefined()
+		expect(config.sync.copyFiles).toEqual([])
+	})
+
 	it("falls back to the global config when the project config is missing", async () => {
 		const localConfigPath = path.join(testDir, ".opencode", "worktree.jsonc")
 		const globalConfigPath = path.join(testHome, ".config", "opencode", "worktree.jsonc")
