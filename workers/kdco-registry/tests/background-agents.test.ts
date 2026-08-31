@@ -11,13 +11,26 @@ type PromptCall = {
 	body: {
 		noReply?: boolean
 		agent?: string
-		parts?: Array<{ type: string; text?: string }>
+		parts?: Array<{ type: string; text?: string; synthetic?: boolean }>
 		tools?: Record<string, boolean>
+	}
+}
+
+type TuiToastCall = {
+	body?: {
+		type?: string
+		properties?: {
+			title?: string
+			message: string
+			variant: string
+			duration?: number
+		}
 	}
 }
 
 type MockClientState = {
 	promptCalls: PromptCall[]
+	tuiToastCalls: TuiToastCall[]
 	notificationTexts: string[]
 	messagesBySession: Map<string, string>
 	createdChildSessions: string[]
@@ -29,6 +42,7 @@ type MockClientOptions = {
 	rootSessionID: string
 	childPromptMode?: "pending" | "resolve"
 	parentPromptMode?: "resolve" | "reject"
+	tuiMode?: "available" | "missing" | "reject"
 	agentPermissions?: Record<string, "readonly" | "write">
 	onChildPrompt?: (sessionID: string, prompt: string) => Promise<void> | void
 	onParentPrompt?: (text: string) => Promise<void> | void
@@ -43,6 +57,7 @@ function createMockClient(options: MockClientOptions): {
 
 	const state: MockClientState = {
 		promptCalls: [],
+		tuiToastCalls: [],
 		notificationTexts: [],
 		messagesBySession: new Map(),
 		createdChildSessions: [],
@@ -83,6 +98,17 @@ function createMockClient(options: MockClientOptions): {
 		return { data: { parts: [] } }
 	}
 
+	const tui = {
+		publish(toastOptions: TuiToastCall) {
+			if (this !== tui) throw new Error("publish lost its client context")
+			if (options.tuiMode === "reject") {
+				return Promise.reject(new Error("TUI publish aborted"))
+			}
+			state.tuiToastCalls.push(toastOptions)
+			return Promise.resolve({ data: true })
+		},
+	}
+
 	const client = {
 		app: {
 			agents: async () => ({
@@ -120,6 +146,7 @@ function createMockClient(options: MockClientOptions): {
 				},
 			}),
 		},
+		tui: options.tuiMode === "missing" ? undefined : tui,
 		session: {
 			get: async ({ path: { id } }: { path: { id: string } }) => ({
 				data: {
@@ -258,6 +285,21 @@ describe("background-agents lifecycle refactor", () => {
 			text.includes("<task-id>stable-lifecycle-id</task-id>"),
 		)
 		expect(terminalNotifications).toHaveLength(1)
+		expect(state.promptCalls.some((call) => call.body.parts?.[0]?.synthetic)).toBe(true)
+		expect(state.tuiToastCalls).toHaveLength(1)
+		expect(state.tuiToastCalls[0]?.body).toEqual({
+			type: "tui.toast.show",
+			properties: {
+				title: "Background agent complete: Lifecycle Result",
+				message: [
+					"Status: complete",
+					"Task ID: stable-lifecycle-id",
+					`Artifact: ${delegation.artifact.filePath}`,
+					'Retrieve: delegation_read("stable-lifecycle-id")',
+				].join("\n"),
+				variant: "success",
+			},
+		})
 	})
 
 	it("queues parent notifications when direct delivery fails and injects them into the next chat message", async () => {
@@ -276,7 +318,7 @@ describe("background-agents lifecycle refactor", () => {
 			allCompleteQuietPeriodMs: 5,
 			metadataGenerator: async () => ({
 				title: "Queued Result",
-				description: "Direct delivery failed.",
+				description: "## Details\n\n- Direct delivery failed.\n\n<script>alert(1)</script>",
 			}),
 		})
 
@@ -298,14 +340,78 @@ describe("background-agents lifecycle refactor", () => {
 		const output = { parts: [{ type: "text", text: "continue" }] }
 		manager.injectPendingNotificationsIntoChatMessage(output, rootSessionID)
 
-		expect(output.parts[0]?.text).toContain("<task-id>queued-notification-id</task-id>")
-		expect(output.parts[0]?.text).toContain("<summary>All delegations complete.</summary>")
+		expect(output.parts[0]?.text).toContain("### Background agent complete: Queued Result")
+		expect(output.parts[0]?.text).toContain("- **Task ID:** `queued-notification-id`")
+		expect(output.parts[0]?.text).toContain("## Details")
+		expect(output.parts[0]?.text).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
+		expect(output.parts[0]?.text).not.toContain("<script>")
+		expect(output.parts[0]?.text).toContain("### All delegations complete")
+		expect(output.parts[0]?.text).not.toContain("<task-notification>")
 		expect(output.parts[0]?.text).toContain("continue")
 
 		const secondOutput = { parts: [{ type: "text", text: "next" }] }
 		manager.injectPendingNotificationsIntoChatMessage(secondOutput, rootSessionID)
 		expect(secondOutput.parts[0]?.text).toBe("next")
 	})
+
+	for (const tuiMode of ["missing", "reject"] as const) {
+		it(`falls back to a visible chat part when the TUI toast is ${tuiMode}`, async () => {
+			const rootSessionID = "root-session"
+			const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), "background-agents-tui-fallback-"))
+			testDirs.push(baseDir)
+
+			const { client, state } = createMockClient({
+				rootSessionID,
+				childPromptMode: "pending",
+				tuiMode,
+			})
+
+			const manager = new DelegationManager(client as never, baseDir, createNoopLogger(), {
+				idGenerator: () => `tui-${tuiMode}-id`,
+				allCompleteQuietPeriodMs: 5,
+				metadataGenerator: async () => ({
+					title: "TUI Fallback",
+					description: "The chat remains visible without a native toast.",
+				}),
+			})
+
+			const delegation = await manager.delegate({
+				parentSessionID: rootSessionID,
+				parentMessageID: "msg-1",
+				parentAgent: "plan",
+				prompt: "Finish without a TUI",
+				agent: "researcher",
+			})
+
+			state.messagesBySession.set(delegation.sessionID, "Fallback completion payload")
+			await manager.handleSessionIdle(delegation.sessionID)
+			await sleep(20)
+
+			expect(state.tuiToastCalls).toHaveLength(0)
+
+			const parentPromptCalls = state.promptCalls.filter((call) => call.sessionID === rootSessionID)
+			const terminalCall = parentPromptCalls.find((call) =>
+				getPromptText(call).includes("### Background agent complete: TUI Fallback"),
+			)
+			expect(terminalCall).toBeDefined()
+			expect(terminalCall?.body.parts?.[0]).toEqual({
+				type: "text",
+				text: expect.stringContaining("### Background agent complete: TUI Fallback"),
+			})
+			expect(terminalCall?.body.parts?.[0]?.synthetic).toBeUndefined()
+			expect(terminalCall?.body.parts?.[0]?.text ?? "").not.toContain("<task-notification>")
+
+			const allCompleteCall = parentPromptCalls.find((call) =>
+				getPromptText(call).includes("### All delegations complete"),
+			)
+			expect(allCompleteCall).toBeDefined()
+			expect(allCompleteCall?.body.parts?.[0]).toEqual({
+				type: "text",
+				text: expect.stringContaining("### All delegations complete"),
+			})
+			expect(allCompleteCall?.body.parts?.[0]?.synthetic).toBeUndefined()
+		})
+	}
 
 	it("delegation_read blocks until terminal and resolves deterministic timeout path", async () => {
 		const rootSessionID = "root-session"
@@ -445,6 +551,7 @@ describe("background-agents lifecycle refactor", () => {
 		expect(terminalPromptIndices).toHaveLength(2)
 		for (const call of terminalPromptCalls) {
 			expect(call.body.noReply).toBe(true)
+			expect(call.body.parts?.[0]?.synthetic).toBe(true)
 		}
 
 		const allCompletePromptCalls = parentPromptCalls.filter((call) =>
@@ -452,10 +559,15 @@ describe("background-agents lifecycle refactor", () => {
 		)
 		expect(allCompletePromptCalls).toHaveLength(1)
 		expect(allCompletePromptCalls[0]?.body.noReply).toBe(false)
+		expect(allCompletePromptCalls[0]?.body.parts?.[0]?.synthetic).toBe(true)
 		const allCompletePromptIndex = parentPromptCalls.findIndex((call) =>
 			getPromptText(call).includes("<summary>All delegations complete.</summary>"),
 		)
 		expect(allCompletePromptIndex).toBeGreaterThan(Math.max(...terminalPromptIndices))
+		expect(state.tuiToastCalls).toHaveLength(3)
+		expect(
+			state.tuiToastCalls.filter((call) => call.body?.properties?.title === "Background agents"),
+		).toHaveLength(1)
 	})
 
 	it("finalizes completed child prompts even when session.idle is not delivered", async () => {
@@ -765,5 +877,73 @@ describe("background-agents lifecycle refactor", () => {
 		await expect(
 			taskBeforeHook({ tool: "task" }, { args: { subagent_type: "researcher" } }),
 		).rejects.toThrow("read-only")
+	})
+})
+
+describe("notification text escaping", () => {
+	const { escapeNotificationText, escapeNotificationXml, markdownCodeSpan } =
+		BackgroundAgentsPlugin.testInternals
+
+	it("escapes Markdown control characters so a generated title cannot restructure the notification", () => {
+		const escaped = escapeNotificationText("[click me](https://evil.example) and **bold**")
+		expect(escaped).not.toContain("[click me](https://evil.example)")
+		expect(escaped).not.toContain("**bold**")
+		expect(escaped).toBe("\\[click me\\]\\(https://evil\\.example\\) and \\*\\*bold\\*\\*")
+	})
+
+	it("still HTML-escapes angle brackets and ampersands in plain text", () => {
+		const escaped = escapeNotificationText("<script>alert(1)</script> & friends")
+		expect(escaped).not.toContain("<script>")
+		expect(escaped).toBe("&lt;script&gt;alert\\(1\\)&lt;/script&gt; &amp; friends")
+	})
+
+	it("collapses newlines to spaces", () => {
+		expect(escapeNotificationText("line one\nline two\r\nline three")).toBe(
+			"line one line two line three",
+		)
+	})
+
+	it("escapes Markdown strikethrough markers", () => {
+		expect(escapeNotificationText("~~struck~~")).toBe("\\~\\~struck\\~\\~")
+	})
+
+	it("escapes XML text before sending it to the model", () => {
+		expect(escapeNotificationXml("<title>A & B</title>")).toBe(
+			"&lt;title&gt;A &amp; B&lt;/title&gt;",
+		)
+	})
+
+	it("wraps an ordinary value in single backticks", () => {
+		expect(markdownCodeSpan("stable-lifecycle-id")).toBe("`stable-lifecycle-id`")
+	})
+
+	it("widens the fence instead of backslash-escaping a backtick in the value", () => {
+		const span = markdownCodeSpan("a`b")
+		// A single backslash before the backtick would not be literal inside a code
+		// span at all: it would still close the span early. The fence has to widen
+		// past the internal backtick instead, which a 2-backtick fence already does
+		// unambiguously since the lone internal backtick is a run of length 1, not 2.
+		expect(span).toBe("``a`b``")
+	})
+
+	it("widens the fence past the longest run of backticks the value contains", () => {
+		const span = markdownCodeSpan("has ``double`` backticks")
+		expect(span).toBe("```has ``double`` backticks```")
+	})
+
+	it("pads with a space when the value itself starts or ends with a backtick", () => {
+		// Without the padding space, the fence's own backtick would merge with the
+		// value's leading one into a run one longer than the parser is looking for.
+		expect(markdownCodeSpan("`leading")).toBe("`` `leading ``")
+		expect(markdownCodeSpan("trailing`")).toBe("`` trailing` ``")
+	})
+
+	it("does not double backslashes in a Windows-style path", () => {
+		const span = markdownCodeSpan("C:\\Users\\foo\\artifact.txt")
+		expect(span).toBe("`C:\\Users\\foo\\artifact.txt`")
+	})
+
+	it("collapses newlines inside a code span too", () => {
+		expect(markdownCodeSpan("line one\nline two")).toBe("`line one line two`")
 	})
 })
