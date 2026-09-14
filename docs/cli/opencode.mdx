@@ -86,6 +86,24 @@ Profiles are resolved in this order (first match wins):
 
 Global base config registries (`~/.config/opencode/ocx.jsonc`) are **only** used for downloading profiles, never for components. When using a profile, registries come from the profile config. This isolation prevents global registries from injecting components into all projects.
 
+## Prepared Profile Cache
+
+Profile launches retain their merged configuration and OpenCode-managed dependencies under
+`$XDG_CACHE_HOME/ocx/opencode/v1` (default: `~/.cache/ocx/opencode/v1`; relative XDG paths are ignored).
+Unchanged source inputs reuse the same installation directory. Changes to effective files,
+visibility policies, project identity, or the OpenCode executable/version select a new generation.
+OCX continues resolving launch settings into `OPENCODE_CONFIG_CONTENT` each time.
+
+Concurrent sessions lease separate persistent slots within a generation, so dependency installation
+cannot race in a shared directory. Exiting releases the slot and retains its manifest, lockfiles,
+and `node_modules`. OCX never installs these dependencies itself or copies source `node_modules`.
+Profile symlinks are snapshotted after overlay validation so generated files cannot write through
+them into the source profile.
+
+Inactive slots unused for 30 days are pruned when that profile/project identity is prepared again;
+active leases are retained. Interrupted launcher leases are conservatively left unavailable until
+pruning. Cache contents are rebuildable and can be removed while no launches are using them.
+
 ## Custom OpenCode Binary
 
 To use a custom OpenCode binary, set the `bin` option in your profile's `ocx.jsonc`:

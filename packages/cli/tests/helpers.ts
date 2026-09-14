@@ -46,6 +46,7 @@ export function createIsolatedEnv(
 		PATH: process.env.PATH ?? "",
 		TMPDIR: process.env.TMPDIR ?? "/tmp",
 		HOME: process.env.HOME ?? testDir, // Keep real HOME for bun version management
+		XDG_CACHE_HOME: join(testDir, "cache"),
 		TERM: "dumb",
 		NO_COLOR: "1",
 		FORCE_COLOR: "0",

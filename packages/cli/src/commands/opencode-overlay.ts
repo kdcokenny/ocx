@@ -4,7 +4,6 @@ import {
 	cp,
 	lstat,
 	mkdir,
-	mkdtemp,
 	readdir,
 	readFile,
 	realpath,
@@ -12,7 +11,6 @@ import {
 	rm,
 	unlink,
 } from "node:fs/promises"
-import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative } from "node:path"
 import { Glob } from "bun"
 import { type ParseError, parse as parseJsonc } from "jsonc-parser"
@@ -21,6 +19,7 @@ import { findLocalConfigDir, OCX_CONFIG_FILE } from "../profile/paths"
 import { ConfigError } from "../utils/errors"
 import { formatJsoncParseError } from "../utils/jsonc"
 import { validatePath } from "../utils/path-security"
+import { createCacheStaging, mergedCacheRoot, publishMergedConfig } from "./opencode-cache"
 
 export const OPENCODE_OVERLAY_SOURCE_SCOPES = [
 	"agent",
@@ -32,7 +31,6 @@ export const OPENCODE_OVERLAY_SOURCE_SCOPES = [
 	"tool",
 	"tools",
 ] as const
-export const OPENCODE_MERGED_DIR_PREFIX = "ocx-oc-merged-"
 export const OVERLAY_TRANSACTION_MANIFEST_VERSION = 1
 
 const OVERLAY_NATIVE_HELPER_REQUIRED_MESSAGE =
@@ -863,7 +861,12 @@ async function copyProfileBaseToMergedDir(
 		const destinationPath = join(mergedConfigDir, entryName)
 
 		try {
-			await cp(sourcePath, destinationPath, { recursive: true, force: true, errorOnExist: false })
+			await cp(sourcePath, destinationPath, {
+				recursive: true,
+				force: true,
+				errorOnExist: false,
+				filter: (source) => basename(source) !== "node_modules",
+			})
 		} catch (error) {
 			throw createOpencodeOcError(
 				"copy",
@@ -991,6 +994,8 @@ export interface OverlayPrepareSeams {
 }
 
 interface PrepareMergedConfigDirOptions {
+	openCodeIdentity?: string
+	cacheRoot?: string
 	projectDir: string
 	profileDir: string
 	profileVisibilityPolicy: ProjectOverlayPolicy
@@ -1056,7 +1061,10 @@ export async function prepareMergedConfigDirForProfile(
 	let mergedConfigDir: string | null = null
 
 	try {
-		mergedConfigDir = await mkdtemp(join(tmpdir(), OPENCODE_MERGED_DIR_PREFIX))
+		const cacheRoot = options.cacheRoot ?? mergedCacheRoot()
+		mergedConfigDir = await createCacheStaging(cacheRoot)
+		let overlayPolicy: ProjectOverlayPolicy = { include: [], exclude: [] }
+		let configRoot: string | null = null
 
 		await copyProfileBaseToMergedDir(options.profileDir, mergedConfigDir)
 
@@ -1065,6 +1073,8 @@ export async function prepareMergedConfigDirForProfile(
 		if (localConfigDir) {
 			const projectOverlayConfigDir = await resolveProjectOverlayConfigDir(localConfigDir)
 			const policy = await loadProjectOverlayPolicy(projectOverlayConfigDir)
+			overlayPolicy = policy
+			configRoot = projectOverlayConfigDir
 			const rawCandidates = await collectOverlayCandidates(
 				projectOverlayConfigDir,
 				options.seams?.collection,
@@ -1084,12 +1094,28 @@ export async function prepareMergedConfigDirForProfile(
 			})
 		}
 
-		const preparedPath = mergedConfigDir
-		return {
-			path: preparedPath,
-			cleanup: () => cleanupMergedConfigDir(preparedPath),
-			hardeningLevel,
+		const prepared = await publishMergedConfig({
+			stagedConfig: mergedConfigDir,
+			cacheRoot,
+			identity: [
+				await realpath(options.profileDir),
+				await realpath(options.projectDir),
+				configRoot,
+			],
+			inputs: [
+				options.openCodeIdentity ?? "unspecified",
+				options.profileVisibilityPolicy,
+				overlayPolicy,
+				hardeningLevel,
+			],
+		})
+		try {
+			await cleanupMergedConfigDir(mergedConfigDir)
+		} catch (error) {
+			await prepared.cleanup()
+			throw error
 		}
+		return { ...prepared, hardeningLevel }
 	} catch (error) {
 		const primaryError = toPrimaryPrepareError(error)
 
