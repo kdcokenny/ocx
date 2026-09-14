@@ -13,7 +13,7 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { type Plugin, type ToolContext, tool } from "@opencode-ai/plugin"
-import type { Event, Message, Part, TextPart } from "@opencode-ai/sdk"
+import type { Event, EventTuiToastShow, Message, Part, TextPart } from "@opencode-ai/sdk"
 import { adjectives, animals, colors, uniqueNamesGenerator } from "unique-names-generator"
 import { getProjectId } from "./kdco-primitives/get-project-id"
 import type { OpencodeClient } from "./kdco-primitives/types"
@@ -39,6 +39,8 @@ interface GeneratedMetadata {
 	title: string
 	description: string
 }
+
+type TuiToastOptions = EventTuiToastShow["properties"]
 
 /**
  * Generate title and description from result content using small_model
@@ -384,6 +386,54 @@ function isActiveStatus(status: DelegationStatus): boolean {
 
 function normalizeId(value: string): string {
 	return value.trim()
+}
+
+/**
+ * Escapes a value destined for plain notification text (title, error): HTML
+ * entities so it can sit inside a Markdown document, then Markdown's own
+ * control characters so a generated title or error message displays as
+ * literal text instead of restructuring the notification (a title of
+ * `[x](evil)` becoming a link, `**y**` becoming bold, and so on). The
+ * `description` field is the one intentional Markdown channel and goes
+ * through {@link escapeNotificationMarkdown} instead, never this function.
+ */
+function escapeNotificationText(value: string): string {
+	return value
+		.replace(/\r?\n/g, " ")
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/[\\`*_[\]{}()#+\-.!|~]/g, "\\$&")
+}
+
+function plainNotificationText(value: string): string {
+	return value.replace(/\r?\n/g, " ").trim()
+}
+
+function escapeNotificationXml(value: string): string {
+	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+/**
+ * Wraps a value in a Markdown inline code span, escaped the way code spans
+ * actually work: backslashes are not special inside one, so escaping a
+ * backtick with `\` only doubles literal backslashes (breaking Windows
+ * paths) without stopping the backtick from closing the span early. The
+ * correct escape is a fence longer than the longest run of backticks the
+ * value itself contains, padded with a single space on each side when the
+ * value starts or ends with a backtick, so the fence characters never touch
+ * the content's own backticks.
+ */
+function markdownCodeSpan(value: string): string {
+	const collapsed = value.replace(/\r?\n/g, " ")
+	const longestBacktickRun = Math.max(0, ...(collapsed.match(/`+/g) ?? []).map((run) => run.length))
+	const fence = "`".repeat(longestBacktickRun + 1)
+	const needsPadding = collapsed.startsWith("`") || collapsed.endsWith("`")
+	return needsPadding ? `${fence} ${collapsed} ${fence}` : `${fence}${collapsed}${fence}`
+}
+
+function escapeNotificationMarkdown(value: string): string {
+	return value.replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
 function parsePersistedStatus(raw: string | undefined): DelegationStatus {
@@ -744,11 +794,15 @@ class DelegationManager {
 		if (!this.areCycleTerminalNotificationsComplete(parentSessionID, cycleToken)) return
 		if (state.allCompleteNotifiedCycleToken === cycleToken) return
 
+		const tuiToastDelivered = await this.publishTuiToast(this.buildAllCompleteNotificationToast())
+
 		const deliveryStatus = await this.sendParentNotification(
 			parentSessionID,
 			parentAgent,
 			this.buildAllCompleteNotification(parentSessionID, cycle, cycleToken),
 			false,
+			this.buildAllCompleteNotificationDisplay(parentSessionID, cycle, cycleToken),
+			tuiToastDelivered,
 		)
 
 		if (state.allCompleteCycleToken !== cycleToken) return
@@ -775,6 +829,8 @@ class DelegationManager {
 		parentAgent: string,
 		notification: string,
 		noReply: boolean,
+		displayText: string = notification,
+		tuiToastDelivered = true,
 	): Promise<"sent" | "queued" | "timed-out"> {
 		const session = this.client.session
 		let timeout: ReturnType<typeof setTimeout> | undefined
@@ -793,7 +849,11 @@ class DelegationManager {
 						body: {
 							noReply,
 							agent: parentAgent,
-							parts: [{ type: "text", text: notification }],
+							parts: [
+								tuiToastDelivered
+									? { type: "text", text: notification, synthetic: true }
+									: { type: "text", text: displayText },
+							],
 						},
 					})
 					.then(() => "sent" as const),
@@ -810,7 +870,7 @@ class DelegationManager {
 
 			return result
 		} catch (error) {
-			this.queuePendingNotification(parentSessionID, notification)
+			this.queuePendingNotification(parentSessionID, displayText)
 			await this.debugLog(
 				`parent notification queued for ${parentSessionID}: ${
 					error instanceof Error ? error.message : "Unknown error"
@@ -909,21 +969,87 @@ class DelegationManager {
 	}
 
 	private buildTerminalNotification(delegation: DelegationRecord, remainingCount: number): string {
+		const id = escapeNotificationXml(delegation.id)
+		const status = escapeNotificationXml(delegation.status)
+		const title = escapeNotificationXml(delegation.title || delegation.id)
+		const description = delegation.description ? escapeNotificationXml(delegation.description) : ""
+		const error = delegation.error ? escapeNotificationXml(delegation.error) : ""
+		const artifact = escapeNotificationXml(delegation.artifact.filePath)
 		const lines = [
 			"<task-notification>",
-			`<task-id>${delegation.id}</task-id>`,
-			`<status>${delegation.status}</status>`,
-			`<summary>Background agent ${delegation.status}: ${delegation.title || delegation.id}</summary>`,
-			delegation.title ? `<title>${delegation.title}</title>` : "",
-			delegation.description ? `<description>${delegation.description}</description>` : "",
-			delegation.error ? `<error>${delegation.error}</error>` : "",
-			`<artifact>${delegation.artifact.filePath}</artifact>`,
-			`<retrieval>Use delegation_read("${delegation.id}") for full output.</retrieval>`,
+			`<task-id>${id}</task-id>`,
+			`<status>${status}</status>`,
+			`<summary>Background agent ${status}: ${title}</summary>`,
+			delegation.title ? `<title>${title}</title>` : "",
+			delegation.description ? `<description>${description}</description>` : "",
+			delegation.error ? `<error>${error}</error>` : "",
+			`<artifact>${artifact}</artifact>`,
+			`<retrieval>Use delegation_read("${id}") for full output.</retrieval>`,
 			remainingCount > 0 ? `<remaining>${remainingCount}</remaining>` : "",
 			"</task-notification>",
 		]
 
 		return lines.filter((line) => line.length > 0).join("\n")
+	}
+
+	private buildTerminalNotificationDisplay(
+		delegation: DelegationRecord,
+		remainingCount: number,
+	): string {
+		const title = escapeNotificationText(delegation.title || delegation.id)
+		const lines = [
+			`### Background agent ${escapeNotificationText(delegation.status)}: ${title}`,
+			"",
+			`- **Task ID:** ${markdownCodeSpan(delegation.id)}`,
+			`- **Status:** ${markdownCodeSpan(delegation.status)}`,
+			`- **Artifact:** ${markdownCodeSpan(delegation.artifact.filePath)}`,
+			`- **Retrieve:** ${markdownCodeSpan(`delegation_read("${delegation.id}")`)}`,
+		]
+
+		if (delegation.description?.trim()) {
+			lines.push(
+				"",
+				"**Description:**",
+				"",
+				escapeNotificationMarkdown(delegation.description.trim()),
+			)
+		}
+		if (delegation.error) {
+			lines.push(`- **Error:** ${escapeNotificationText(delegation.error)}`)
+		}
+		if (remainingCount > 0) lines.push(`- **Remaining:** ${remainingCount}`)
+
+		return lines.join("\n")
+	}
+
+	private buildTerminalNotificationToast(
+		delegation: DelegationRecord,
+		remainingCount: number,
+	): TuiToastOptions {
+		const status = plainNotificationText(delegation.status)
+		const title = plainNotificationText(delegation.title || delegation.id)
+		const message = [
+			`Status: ${status}`,
+			`Task ID: ${plainNotificationText(delegation.id)}`,
+			`Artifact: ${plainNotificationText(delegation.artifact.filePath)}`,
+			`Retrieve: delegation_read("${plainNotificationText(delegation.id)}")`,
+		]
+
+		if (delegation.error) message.push(`Error: ${plainNotificationText(delegation.error)}`)
+		if (remainingCount > 0) message.push(`Remaining: ${remainingCount}`)
+
+		return {
+			title: `Background agent ${status}: ${title}`,
+			message: message.join("\n"),
+			variant:
+				status === "complete"
+					? "success"
+					: status === "cancelled"
+						? "info"
+						: status === "timeout"
+							? "warning"
+							: "error",
+		}
 	}
 
 	private buildAllCompleteNotification(
@@ -939,11 +1065,53 @@ class DelegationManager {
 			"<type>all-complete</type>",
 			"<status>completed</status>",
 			"<summary>All delegations complete.</summary>",
-			`<parent-session-id>${parentSessionID}</parent-session-id>`,
+			`<parent-session-id>${escapeNotificationXml(parentSessionID)}</parent-session-id>`,
 			`<cycle>${cycle}</cycle>`,
-			`<cycle-token>${cycleToken}</cycle-token>`,
+			`<cycle-token>${escapeNotificationXml(cycleToken)}</cycle-token>`,
 			"</task-notification>",
 		].join("\n")
+	}
+
+	private buildAllCompleteNotificationDisplay(
+		parentSessionID: string,
+		cycle: number,
+		cycleToken: string,
+	): string {
+		return [
+			"### All delegations complete",
+			"",
+			`- **Parent session:** ${markdownCodeSpan(parentSessionID)}`,
+			`- **Cycle:** ${cycle}`,
+			`- **Cycle token:** ${markdownCodeSpan(cycleToken)}`,
+		].join("\n")
+	}
+
+	private buildAllCompleteNotificationToast(): TuiToastOptions {
+		return {
+			title: "Background agents",
+			message: "All delegations complete.",
+			variant: "success",
+		}
+	}
+
+	private async publishTuiToast(toast: TuiToastOptions): Promise<boolean> {
+		try {
+			const tui = this.client.tui
+			if (!tui || typeof tui.publish !== "function") return false
+
+			await tui.publish({
+				body: {
+					type: "tui.toast.show",
+					properties: toast,
+				},
+			})
+			return true
+		} catch (error) {
+			await this.debugLog(
+				`tui toast failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+			)
+			return false
+		}
 	}
 
 	private buildDeterministicTerminalReadResponse(delegation: DelegationRecord): string {
@@ -1044,11 +1212,17 @@ class DelegationManager {
 			const remainingCount = this.getPendingCount(delegation.parentSessionID)
 			const terminalNotification = this.buildTerminalNotification(delegation, remainingCount)
 
+			const tuiToastDelivered = await this.publishTuiToast(
+				this.buildTerminalNotificationToast(delegation, remainingCount),
+			)
+
 			const deliveryStatus = await this.sendParentNotification(
 				delegation.parentSessionID,
 				delegation.parentAgent,
 				terminalNotification,
 				true,
+				this.buildTerminalNotificationDisplay(delegation, remainingCount),
+				tuiToastDelivered,
 			)
 
 			this.markNotified(delegation.id)
@@ -1370,7 +1544,7 @@ ${description}
 			return this.buildDeterministicTerminalReadResponse(delegation)
 		}
 
-		return `Delegation "${delegation.id}" is still running. You will receive a <task-notification> when it reaches a terminal state.`
+		return `Delegation "${delegation.id}" is still running. You will receive a rendered background-agent notification when it reaches a terminal state.`
 	}
 
 	/**
@@ -1714,7 +1888,7 @@ Agents route based on their permissions:
 ## Critical Constraints
 
 **NEVER poll \`delegation_list\` to check completion.**
-You WILL be notified via \`<task-notification>\`. Polling wastes tokens.
+You WILL be notified in a rendered background-agent notification. Polling wastes tokens.
 
 **NEVER wait idle.** Always have productive work while delegations run.
 
@@ -1771,7 +1945,7 @@ function formatDelegationContext(
 
 		// Only include reminder when there ARE running delegations
 		sections.push(
-			"> **Note:** You WILL be notified via `<task-notification>` when delegations complete.",
+			"> **Note:** You WILL be notified in a rendered background-agent notification when delegations complete.",
 		)
 		sections.push("> Do NOT poll `delegation_list` - continue productive work.")
 		sections.push("")
@@ -1977,6 +2151,9 @@ const BackgroundAgentsPluginWithInternals = Object.assign(BackgroundAgentsPlugin
 	testInternals: {
 		DelegationManager,
 		formatDelegationContext,
+		escapeNotificationText,
+		escapeNotificationXml,
+		markdownCodeSpan,
 	},
 } as const)
 
