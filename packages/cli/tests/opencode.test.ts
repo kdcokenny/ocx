@@ -856,18 +856,12 @@ describe("oc command CLI contract", () => {
 		try {
 			await createProfile(testDir, "work")
 
-			const exitScript = join(testDir, "exit-one.ts")
-			await Bun.write(exitScript, "process.exit(1)")
-			const result = await runCLIIsolated(
-				["oc", "--no-rename", "--profile", "work", exitScript],
-				testDir,
-				{
-					OCX_PROFILE: "missing",
-					OPENCODE_BIN: "bun",
-				},
-			)
+			const result = await runCLIIsolated(["oc", "--no-rename", "--profile", "work"], testDir, {
+				OCX_PROFILE: "missing",
+				OPENCODE_BIN: "false",
+			})
 
-			// The child exits 1, proving launch proceeded with the valid CLI profile.
+			// /usr/bin/false proves that version-probe failures still allow the real launch.
 			expect(result.exitCode).toBe(1)
 			expect(result.output).toContain("Using profile: work")
 			expect(result.output).not.toContain('Profile "missing" not found')

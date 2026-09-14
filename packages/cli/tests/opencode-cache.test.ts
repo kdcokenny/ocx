@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import {
+	chmod,
 	lstat,
 	mkdir,
 	mkdtemp,
@@ -53,6 +54,11 @@ async function prepare(
 	return result
 }
 
+async function expirePruneStamp(config: string) {
+	const old = new Date(Date.now() - 2 * 86400000)
+	await utimes(join(dirname(dirname(dirname(config))), ".pruned-at"), old, old)
+}
+
 describe("persistent merged profile cache", () => {
 	it("uses absolute XDG cache homes and falls back for empty or relative values", () => {
 		expect(mergedCacheRoot("/custom")).toBe("/custom/ocx/opencode/v1")
@@ -77,7 +83,7 @@ describe("persistent merged profile cache", () => {
 		const plugin = await import(join(second.path, "plugins", "local.ts"))
 		expect(plugin.plugin()).toBe("initialized")
 		await first.cleanup()
-		expect(await Bun.file(join(dirname(second.path), "lease")).exists()).toBe(true)
+		expect((await lstat(join(dirname(second.path), "lease"))).isDirectory()).toBe(true)
 	})
 	it.each([
 		"plugins/local.ts",
@@ -149,6 +155,49 @@ describe("persistent merged profile cache", () => {
 		expect(concurrent.map((item) => item.path)).toContain(next.path)
 		expect((await readdir(cacheRoot)).some((name) => name.startsWith(".staging"))).toBe(false)
 	})
+	it("keeps dependency writes exclusive during repeated lease contention", async () => {
+		const results = await Promise.allSettled(
+			Array.from({ length: 8 }, async (_, worker) => {
+				for (let turn = 0; turn < 10; turn++) {
+					const current = await prepare()
+					try {
+						const marker = join(current.path, "installer-owner")
+						const token = `${worker}:${turn}`
+						await writeFile(marker, token)
+						await Bun.sleep(1)
+						expect(await readFile(marker, "utf8")).toBe(token)
+					} finally {
+						await current.cleanup()
+					}
+				}
+			}),
+		)
+		for (const result of results) expect(result.status).toBe("fulfilled")
+	})
+	it("prepares and reuses installations when hard-link operations are unavailable", async () => {
+		const modulePath = join(import.meta.dir, "../src/commands/opencode-overlay.ts")
+		const script = `
+import { mock } from "bun:test"
+import * as fs from "node:fs/promises"
+const original = { ...fs }
+mock.module("node:fs/promises", () => ({ ...original, link: async () => { throw Object.assign(new Error("unsupported hard link"), { code: "ENOSYS" }) } }))
+const { prepareMergedConfigDirForProfile } = await import(${JSON.stringify(modulePath)})
+const options = ${JSON.stringify({ profileDir, projectDir, cacheRoot, openCodeIdentity: "test", profileVisibilityPolicy: { include: [], exclude: [] } })}
+const first = await prepareMergedConfigDirForProfile(options)
+await first.cleanup()
+const second = await prepareMergedConfigDirForProfile(options)
+if (first.path !== second.path) throw new Error("installation was not reused")
+await second.cleanup()
+`
+		const proc = Bun.spawn([process.execPath, "--eval", script], {
+			cwd: root,
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+		expect({ code, stderr }).toEqual({ code: 0, stderr: "" })
+	})
+
 	it("preserves interrupted installer state without claiming dependencies are ready", async () => {
 		const first = await prepare()
 		await mkdir(join(first.path, "node_modules"))
@@ -167,6 +216,7 @@ describe("persistent merged profile cache", () => {
 		const old = new Date(Date.now() - 31 * 86400000)
 		for (const item of [active, inactive])
 			await utimes(join(dirname(item.path), "metadata.json"), old, old)
+		await expirePruneStamp(active.path)
 		await prepare({ openCodeIdentity: "new" })
 		expect(await Bun.file(join(active.path, "package.json")).exists()).toBe(true)
 		expect(await Bun.file(join(inactive.path, "package.json")).exists()).toBe(false)
@@ -213,6 +263,7 @@ describe("persistent merged profile cache", () => {
 		expect(next.path).not.toBe(abandoned.path)
 		const old = new Date(Date.now() - 31 * 86400000)
 		await utimes(join(dirname(abandoned.path), "metadata.json"), old, old)
+		await expirePruneStamp(abandoned.path)
 		await Promise.all(Array.from({ length: 6 }, () => prepare()))
 		expect(await Bun.file(join(abandoned.path, "package.json")).exists()).toBe(false)
 		expect(await Bun.file(join(next.path, "package.json")).exists()).toBe(true)
@@ -242,6 +293,42 @@ describe("persistent merged profile cache", () => {
 		await expect(prepare()).rejects.toThrow("real directory")
 		expect(await readdir(outside)).toEqual([])
 	})
+
+	it("skips pruning until the daily interval expires", async () => {
+		const inactive = await prepare()
+		await inactive.cleanup()
+		const old = new Date(Date.now() - 31 * 86400000)
+		await utimes(join(dirname(inactive.path), "metadata.json"), old, old)
+		await prepare({ openCodeIdentity: "different" })
+		expect(await Bun.file(join(inactive.path, "package.json")).exists()).toBe(true)
+		await expirePruneStamp(inactive.path)
+		await prepare({ openCodeIdentity: "third" })
+		expect(await Bun.file(join(inactive.path, "package.json")).exists()).toBe(false)
+	})
+	it.each([
+		"process.exit(2)",
+		"process.exit(0)",
+	])("isolates unversioned launchers: %s", async (body) => {
+		const wrapper = join(root, "wrapper")
+		await writeFile(wrapper, `#!${process.execPath}\n${body}\n`)
+		await chmod(wrapper, 0o755)
+		const first = await identifyOpenCode(wrapper)
+		const second = await identifyOpenCode(wrapper)
+		expect(JSON.parse(first)[2]).toBeNull()
+		expect(first).not.toBe(second)
+		const initial = await prepare({ openCodeIdentity: first })
+		await initial.cleanup()
+		expect((await prepare({ openCodeIdentity: second })).path).not.toBe(initial.path)
+	})
+	it("bounds version probing even if the wrapper ignores SIGTERM", async () => {
+		const wrapper = join(root, "slow-wrapper")
+		await writeFile(
+			wrapper,
+			`#!${process.execPath}\nprocess.on("SIGTERM", () => {}); setInterval(() => {}, 1000)\n`,
+		)
+		await chmod(wrapper, 0o755)
+		expect(JSON.parse(await identifyOpenCode(wrapper))[2]).toBeNull()
+	}, 10000)
 
 	it("identifies executable contents and version", async () => {
 		const identity = await identifyOpenCode(process.execPath)

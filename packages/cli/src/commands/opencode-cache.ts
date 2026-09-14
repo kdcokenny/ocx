@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto"
 import {
 	chmod,
 	cp,
-	link,
 	lstat,
 	mkdir,
 	readdir,
@@ -15,6 +14,7 @@ import {
 import { homedir } from "node:os"
 import { isAbsolute, join } from "node:path"
 
+const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 export function mergedCacheRoot(cacheHome = process.env.XDG_CACHE_HOME): string {
@@ -25,18 +25,25 @@ export function mergedCacheRoot(cacheHome = process.env.XDG_CACHE_HOME): string 
 export async function identifyOpenCode(executable: string): Promise<string> {
 	const resolved = await realpath(executable)
 	const bytes = await readFile(resolved)
-	const proc = Bun.spawn([resolved, "--version"], {
-		stdout: "pipe",
-		stderr: "ignore",
-		timeout: 5000,
-	})
-	const version = await new Response(proc.stdout).text()
-	if ((await proc.exited) !== 0) throw new Error(`Unable to identify OpenCode version: ${resolved}`)
-	return JSON.stringify([
-		resolved,
-		createHash("sha256").update(bytes).digest("hex"),
-		version.trim(),
-	])
+	const digest = createHash("sha256").update(bytes).digest("hex")
+	try {
+		const proc = Bun.spawn([resolved, "--version"], {
+			stdin: "ignore",
+			stdout: "pipe",
+			stderr: "ignore",
+			timeout: 5000,
+			killSignal: "SIGKILL",
+		})
+		const version = (await new Response(proc.stdout).text()).trim()
+		if ((await proc.exited) === 0 && version) {
+			return JSON.stringify([resolved, digest, version])
+		}
+	} catch {
+		// Custom launchers need not implement --version. The real launch determines success.
+	}
+	// Without a version, an unchanged wrapper may select a different OpenCode install.
+	// Allow the launch, but avoid reusing potentially incompatible dependency outputs.
+	return JSON.stringify([resolved, digest, null, randomUUID()])
 }
 
 // Profile links are trusted inputs, but cached outputs must never write through them.
@@ -86,18 +93,82 @@ async function fingerprintTree(root: string): Promise<string> {
 
 async function claim(slot: string): Promise<boolean> {
 	const owner = join(slot, `.owner-${randomUUID()}`)
+	const lease = join(slot, "lease")
 	try {
-		await writeFile(owner, String(process.pid), { mode: 0o600, flag: "wx" })
-		// A hard link publishes the owner atomically on POSIX and Windows.
-		await link(owner, join(slot, "lease"))
+		await mkdir(owner, { mode: 0o700 })
+		await writeFile(join(owner, "pid"), String(process.pid), { mode: 0o600, flag: "wx" })
+		// Publishing a nonempty directory is atomic and cannot replace another lease.
+		// Unlike hard links, directory rename also works on FAT/exFAT filesystems.
+		await rename(owner, lease)
 		return true
 	} catch (error) {
 		const code = (error as NodeJS.ErrnoException).code
-		if (code === "EEXIST" || code === "ENOENT") return false
+		if (
+			code === "EEXIST" ||
+			code === "ENOTEMPTY" ||
+			code === "ENOENT" ||
+			code === "ENOTDIR" ||
+			code === "EISDIR"
+		)
+			return false
+		// Windows can report EPERM for an existing destination. Old cache leases
+		// were regular files, which some platforms report as ENOTDIR/EISDIR.
+		if (code === "EPERM") {
+			try {
+				await lstat(lease)
+				return false
+			} catch (inspectError) {
+				if ((inspectError as NodeJS.ErrnoException).code !== "ENOENT") throw inspectError
+			}
+		}
 		throw error
 	} finally {
-		await rm(owner, { force: true })
+		await rm(owner, { recursive: true, force: true })
 	}
+}
+
+async function createLeasedSlot(generation: string): Promise<string> {
+	const id = randomUUID()
+	const pending = join(generation, `.slot-${id}`)
+	const published = join(generation, `slot-${id}`)
+	await mkdir(pending, { mode: 0o700 })
+	try {
+		if (!(await claim(pending))) throw new Error("Unable to claim a new cache slot")
+		// Other launchers must not see a new slot until its creator holds the lease.
+		await rename(pending, published)
+		return published
+	} catch (error) {
+		await rm(pending, { recursive: true, force: true })
+		throw error
+	}
+}
+
+async function releaseLease(slot: string): Promise<void> {
+	const retired = join(slot, `.owner-${randomUUID()}`)
+	// Unpublish the entire lease before removing pid; otherwise another claimant
+	// could replace the briefly empty directory midway through recursive removal.
+	await rename(join(slot, "lease"), retired)
+	await rm(retired, { recursive: true, force: true })
+}
+
+async function readLeasePid(slot: string): Promise<number> {
+	const lease = join(slot, "lease")
+	const stats = await lstat(lease)
+	const ownerFile = stats.isDirectory() ? join(lease, "pid") : lease
+	return Number(await readFile(ownerFile, "utf8"))
+}
+
+async function pruneIfDue(identityRoot: string): Promise<void> {
+	const stamp = join(identityRoot, ".pruned-at")
+	try {
+		if (Date.now() - (await lstat(stamp)).mtimeMs < PRUNE_INTERVAL_MS) return
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+	}
+	// Simultaneous cold launches may both prune. Slot claims and atomic removal
+	// coordinate them; a crashed sweep leaves no stamp and is retried next launch.
+	await prune(identityRoot)
+	await writeFile(stamp, "", { mode: 0o600 })
 }
 
 async function prune(identityRoot: string): Promise<void> {
@@ -109,7 +180,7 @@ async function prune(identityRoot: string): Promise<void> {
 				await rm(join(generationPath, name), { recursive: true, force: true })
 				continue
 			}
-			if (!name.startsWith("slot-")) continue
+			if (!name.startsWith("slot-") && !name.startsWith(".slot-")) continue
 			const slot = join(generationPath, name)
 			const metadata = join(slot, "metadata.json")
 			try {
@@ -127,7 +198,7 @@ async function prune(identityRoot: string): Promise<void> {
 				}
 				if (Date.now() - modified < RETENTION_MS) continue
 				if (!(await claim(slot))) {
-					const pid = Number(await readFile(join(slot, "lease"), "utf8"))
+					const pid = await readLeasePid(slot)
 					if (!Number.isInteger(pid) || pid <= 0) continue
 					try {
 						process.kill(pid, 0)
@@ -170,15 +241,19 @@ export async function publishMergedConfig(options: {
 	const identityRoot = join(options.cacheRoot, identity)
 	const generation = join(identityRoot, fingerprint)
 	await mkdir(generation, { recursive: true, mode: 0o700 })
-	await prune(identityRoot)
+	await pruneIfDue(identityRoot)
 	const freshSlot = `slot-${randomUUID()}`
 	const candidates = (await readdir(generation)).filter((name) => name.startsWith("slot-")).sort()
 	candidates.push(freshSlot)
 	for (const name of candidates) {
-		const slot = join(generation, name)
-		// Never recreate a pruned slot: concurrent pruners may still refer to its old path.
-		if (name === freshSlot) await mkdir(slot, { mode: 0o700 })
-		if (!(await claim(slot))) continue
+		let slot: string
+		if (name === freshSlot) {
+			slot = await createLeasedSlot(generation)
+		} else {
+			slot = join(generation, name)
+			// Never recreate a pruned slot: concurrent pruners may still refer to its old path.
+			if (!(await claim(slot))) continue
+		}
 		const config = join(slot, "config")
 		try {
 			try {
@@ -199,11 +274,11 @@ export async function publishMergedConfig(options: {
 				cleanup: async () => {
 					if (released) return
 					released = true
-					await rm(join(slot, "lease"), { force: true })
+					await releaseLease(slot)
 				},
 			}
 		} catch (error) {
-			await rm(join(slot, "lease"), { force: true })
+			await releaseLease(slot)
 			throw error
 		}
 	}

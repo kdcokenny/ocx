@@ -208,8 +208,12 @@ async function readPromptCapturePayload(payloadPath: string): Promise<PromptCapt
 	return JSON.parse(text) as PromptCapturePayload
 }
 
-async function listUnreleasedCacheEntries(tmpRoot: string): Promise<string[]> {
+async function listUnreleasedCacheEntries(
+	tmpRoot: string,
+	cacheWasPrepared = true,
+): Promise<string[]> {
 	const cacheRoot = join(dirname(tmpRoot), "cache", "ocx", "opencode", "v1")
+	if (cacheWasPrepared) expect((await lstat(cacheRoot)).isDirectory()).toBe(true)
 	const leftovers: string[] = []
 	async function visit(directory: string): Promise<void> {
 		let entries: string[]
@@ -1457,7 +1461,7 @@ describe("ocx oc profile overlay integration", () => {
 			expect(result.exitCode).toBe(EXIT_CODES.CONFIG)
 			expect(result.output).toContain("ocx oc spawn error")
 
-			const leftovers = await listUnreleasedCacheEntries(tmpRoot)
+			const leftovers = await listUnreleasedCacheEntries(tmpRoot, false)
 			expect(leftovers).toEqual([])
 		} finally {
 			await cleanupTempDir(testDir)

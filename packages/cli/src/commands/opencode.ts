@@ -673,7 +673,8 @@ function createOpenCodeShutdownSupervisor() {
 	}
 }
 
-async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
+/** @internal Launch lifecycle, exported for integration tests. */
+export async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
 	// Resolve project directory
 	const projectDir = process.cwd()
 
@@ -765,12 +766,17 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 		})
 
 		const hasProfileLaunchContext = Boolean(config.profileName)
-		const resolvedOpenCodeLaunchBin = hasProfileLaunchContext
-			? resolveStableOpenCodeLauncherPath({
-					configuredBin,
-					cwd: projectDir,
-				})
-			: configuredBin
+		let resolvedOpenCodeLaunchBin: string
+		try {
+			resolvedOpenCodeLaunchBin = hasProfileLaunchContext
+				? resolveStableOpenCodeLauncherPath({ configuredBin, cwd: projectDir })
+				: configuredBin
+		} catch (error) {
+			throw createOpencodeOcError(
+				"spawn",
+				`Failed to resolve OpenCode binary "${configuredBin}": ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
 		const resolvedOcxBin = hasProfileLaunchContext
 			? resolveStableOcxExecutablePath({
 					cwd: projectDir,
