@@ -18,6 +18,7 @@ const notifyMock = mock((payload: Record<string, unknown>) => {
 	notificationPayloads.push(payload)
 })
 const readActualFile = fsPromises.readFile
+const originalPlatform = process.platform
 
 function pushAlerterNotificationPayload(command: string[]): void {
 	if (!command[0]?.includes("alerter")) return
@@ -107,6 +108,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+	Object.defineProperty(process, "platform", { value: originalPlatform })
 	mock.restore()
 })
 
@@ -449,7 +451,24 @@ describe("notify plugin event compatibility and dedupe", () => {
 		])
 	})
 
-	it("suppresses focus-gated notifications but keeps question prompt notifications", async () => {
+	it.each([
+		{
+			platform: "darwin",
+			expectedTitles: ["Question for you"],
+		},
+		{
+			platform: "linux",
+			expectedTitles: ["Waiting for you", "Ready for review", "Question for you"],
+		},
+		{
+			platform: "win32",
+			expectedTitles: ["Waiting for you", "Ready for review", "Question for you"],
+		},
+	] as const)("applies the $platform focus contract while keeping question notifications", async ({
+		platform,
+		expectedTitles,
+	}) => {
+		Object.defineProperty(process, "platform", { value: platform })
 		mockFocusedTerminal()
 
 		const { hooks } = await createPlugin({
@@ -487,8 +506,7 @@ describe("notify plugin event compatibility and dedupe", () => {
 			},
 		})
 
-		expect(notificationPayloads).toHaveLength(1)
-		expect(notificationPayloads[0]?.title).toBe("Question for you")
+		expect(notificationPayloads.map((payload) => payload.title)).toEqual(expectedTitles)
 	})
 
 	it("suppresses notifications during quiet hours for legacy and new event aliases", async () => {
