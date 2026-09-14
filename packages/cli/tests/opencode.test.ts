@@ -861,7 +861,7 @@ describe("oc command CLI contract", () => {
 				OPENCODE_BIN: "false",
 			})
 
-			// /usr/bin/false exits 1, proving launch proceeded with the valid CLI profile.
+			// /usr/bin/false proves that version-probe failures still allow the real launch.
 			expect(result.exitCode).toBe(1)
 			expect(result.output).toContain("Using profile: work")
 			expect(result.output).not.toContain('Profile "missing" not found')

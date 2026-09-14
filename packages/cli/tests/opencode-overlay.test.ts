@@ -15,7 +15,6 @@ import { dirname, join } from "node:path"
 import {
 	applyOverlayCopyOperations,
 	loadProjectOverlayPolicy,
-	OPENCODE_MERGED_DIR_PREFIX,
 	planOverlayCopyOperations,
 	prepareMergedConfigDirForProfile,
 } from "../src/commands/opencode-overlay"
@@ -209,9 +208,31 @@ async function readPromptCapturePayload(payloadPath: string): Promise<PromptCapt
 	return JSON.parse(text) as PromptCapturePayload
 }
 
-async function listMergedDirs(tmpRoot: string): Promise<string[]> {
-	const entries = await readdir(tmpRoot)
-	return entries.filter((entry) => entry.startsWith(OPENCODE_MERGED_DIR_PREFIX))
+async function listUnreleasedCacheEntries(
+	tmpRoot: string,
+	cacheWasPrepared = true,
+): Promise<string[]> {
+	const cacheRoot = join(dirname(tmpRoot), "cache", "ocx", "opencode", "v1")
+	if (cacheWasPrepared) expect((await lstat(cacheRoot)).isDirectory()).toBe(true)
+	const leftovers: string[] = []
+	async function visit(directory: string): Promise<void> {
+		let entries: string[]
+		try {
+			entries = await readdir(directory)
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+			throw error
+		}
+		for (const name of entries) {
+			if (name === "config") continue
+			const entry = join(directory, name)
+			if (name.startsWith(".staging-") || name.startsWith(".owner-") || name === "lease")
+				leftovers.push(entry)
+			else if ((await lstat(entry)).isDirectory()) await visit(entry)
+		}
+	}
+	await visit(cacheRoot)
+	return leftovers
 }
 
 describe("opencode overlay planner", () => {
@@ -539,6 +560,7 @@ describe("opencode overlay planner", () => {
 
 			await expect(
 				prepareMergedConfigDirForProfile({
+					cacheRoot: join(testDir, "cache"),
 					projectDir: testDir,
 					profileDir,
 					profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
@@ -563,6 +585,7 @@ describe("opencode overlay planner", () => {
 			)
 
 			prepared = await prepareMergedConfigDirForProfile({
+				cacheRoot: join(testDir, "cache"),
 				projectDir: testDir,
 				profileDir,
 				profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
@@ -594,6 +617,7 @@ describe("opencode overlay planner", () => {
 			const helperCalls: Array<{ sourceRelativePath: string; destinationRelativePath: string }> = []
 
 			const prepared = await prepareMergedConfigDirForProfile({
+				cacheRoot: join(testDir, "cache"),
 				projectDir: testDir,
 				profileDir,
 				profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
@@ -657,6 +681,7 @@ describe("opencode overlay planner", () => {
 			let didSwapRoot = false
 			await expect(
 				prepareMergedConfigDirForProfile({
+					cacheRoot: join(testDir, "cache"),
 					projectDir: testDir,
 					profileDir,
 					profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
@@ -703,6 +728,7 @@ describe("opencode overlay planner", () => {
 			let didSwapAncestor = false
 			await expect(
 				prepareMergedConfigDirForProfile({
+					cacheRoot: join(testDir, "cache"),
 					projectDir: testDir,
 					profileDir,
 					profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
@@ -751,6 +777,7 @@ describe("opencode overlay planner", () => {
 			let didSwapSource = false
 			await expect(
 				prepareMergedConfigDirForProfile({
+					cacheRoot: join(testDir, "cache"),
 					projectDir: testDir,
 					profileDir,
 					profileVisibilityPolicy: ALLOW_ALL_PROFILE_VISIBILITY_POLICY,
@@ -913,6 +940,7 @@ describe("opencode overlay planner", () => {
 			await writeFile(join(localConfigDir, "agents", "shared.md"), "project-agent")
 
 			prepared = await prepareMergedConfigDirForProfile({
+				cacheRoot: join(testDir, "cache"),
 				projectDir: testDir,
 				profileDir,
 				profileVisibilityPolicy: {
@@ -949,6 +977,7 @@ describe("opencode overlay planner", () => {
 			await writeFile(join(localConfigDir, "skills", "drop.md"), "drop")
 
 			prepared = await prepareMergedConfigDirForProfile({
+				cacheRoot: join(testDir, "cache"),
 				projectDir: testDir,
 				profileDir,
 				profileVisibilityPolicy: {
@@ -1244,7 +1273,7 @@ describe("ocx oc profile overlay integration", () => {
 			expect(result.output).toContain(join(profileDir, "prompts", "missing-planner.md"))
 			expect(result.output).not.toContain(join(testDir, "prompts", "missing-planner.md"))
 
-			const leftovers = await listMergedDirs(tmpRoot)
+			const leftovers = await listUnreleasedCacheEntries(tmpRoot)
 			expect(leftovers).toEqual([])
 		} finally {
 			await cleanupTempDir(testDir)
@@ -1404,7 +1433,7 @@ describe("ocx oc profile overlay integration", () => {
 		}
 	})
 
-	it("cleans merged temp dir when spawn fails", async () => {
+	it("releases cache bookkeeping when spawn fails", async () => {
 		const testDir = await createTempDir("oc-overlay-spawn-cleanup")
 		try {
 			await createProfile(testDir, "work")
@@ -1432,14 +1461,14 @@ describe("ocx oc profile overlay integration", () => {
 			expect(result.exitCode).toBe(EXIT_CODES.CONFIG)
 			expect(result.output).toContain("ocx oc spawn error")
 
-			const leftovers = await listMergedDirs(tmpRoot)
+			const leftovers = await listUnreleasedCacheEntries(tmpRoot, false)
 			expect(leftovers).toEqual([])
 		} finally {
 			await cleanupTempDir(testDir)
 		}
 	})
 
-	it("cleans merged temp dir when copy fails before spawn", async () => {
+	it("releases cache bookkeeping when copy fails before spawn", async () => {
 		const testDir = await createTempDir("oc-overlay-copy-cleanup")
 		try {
 			const profileDir = await createProfile(testDir, "work")
@@ -1472,14 +1501,14 @@ describe("ocx oc profile overlay integration", () => {
 			expect(result.exitCode).toBe(EXIT_CODES.CONFIG)
 			expect(result.output).toContain("ocx oc copy error")
 
-			const leftovers = await listMergedDirs(tmpRoot)
+			const leftovers = await listUnreleasedCacheEntries(tmpRoot)
 			expect(leftovers).toEqual([])
 		} finally {
 			await cleanupTempDir(testDir)
 		}
 	})
 
-	it("cleans merged temp dir when destination symlink validation fails", async () => {
+	it("releases cache bookkeeping when destination symlink validation fails", async () => {
 		const testDir = await createTempDir("oc-overlay-destination-symlink-cleanup")
 		try {
 			const profileDir = await createProfile(testDir, "work")
@@ -1518,14 +1547,14 @@ describe("ocx oc profile overlay integration", () => {
 			expect(result.output).not.toContain("ocx oc copy error")
 			expect(await readFile(outsideTargetPath, "utf8")).toBe("outside-before")
 
-			const leftovers = await listMergedDirs(tmpRoot)
+			const leftovers = await listUnreleasedCacheEntries(tmpRoot)
 			expect(leftovers).toEqual([])
 		} finally {
 			await cleanupTempDir(testDir)
 		}
 	})
 
-	it("cleans merged temp dir when pre-spawn setup fails", async () => {
+	it("releases cache bookkeeping when pre-spawn setup fails", async () => {
 		const testDir = await createTempDir("oc-overlay-pre-spawn-cleanup")
 		try {
 			await createProfile(testDir, "work")
@@ -1560,7 +1589,7 @@ describe("ocx oc profile overlay integration", () => {
 
 			expect(result.exitCode).not.toBe(0)
 
-			const leftovers = await listMergedDirs(tmpRoot)
+			const leftovers = await listUnreleasedCacheEntries(tmpRoot)
 			expect(leftovers).toEqual([])
 		} finally {
 			await cleanupTempDir(testDir)

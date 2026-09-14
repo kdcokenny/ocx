@@ -34,6 +34,7 @@ import {
 	setTerminalName,
 } from "../utils/terminal-title"
 import { isPlainObject } from "../utils/type-guards"
+import { identifyOpenCode } from "./opencode-cache"
 import {
 	createOpencodeOcError,
 	type PreparedMergedConfigDir,
@@ -672,7 +673,8 @@ function createOpenCodeShutdownSupervisor() {
 	}
 }
 
-async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
+/** @internal Launch lifecycle, exported for integration tests. */
+export async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
 	// Resolve project directory
 	const projectDir = process.cwd()
 
@@ -757,6 +759,31 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 			return
 		}
 
+		// Determine OpenCode binary
+		const configuredBin = resolveOpenCodeBinary({
+			configBin: ocxConfig?.bin,
+			envBin: process.env.OPENCODE_BIN,
+		})
+
+		const hasProfileLaunchContext = Boolean(config.profileName)
+		let resolvedOpenCodeLaunchBin: string
+		try {
+			resolvedOpenCodeLaunchBin = hasProfileLaunchContext
+				? resolveStableOpenCodeLauncherPath({ configuredBin, cwd: projectDir })
+				: configuredBin
+		} catch (error) {
+			throw createOpencodeOcError(
+				"spawn",
+				`Failed to resolve OpenCode binary "${configuredBin}": ${error instanceof Error ? error.message : String(error)}`,
+			)
+		}
+		const resolvedOcxBin = hasProfileLaunchContext
+			? resolveStableOcxExecutablePath({
+					cwd: projectDir,
+					inheritedOcxBin: process.env.OCX_BIN,
+				})
+			: undefined
+
 		if (config.profileName) {
 			if (!profile) {
 				throw createOpencodeOcError(
@@ -765,7 +792,17 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 				)
 			}
 
+			let openCodeIdentity: string
+			try {
+				openCodeIdentity = await identifyOpenCode(resolvedOpenCodeLaunchBin)
+			} catch (error) {
+				throw createOpencodeOcError(
+					"spawn",
+					`Failed to identify OpenCode binary "${configuredBin}": ${error instanceof Error ? error.message : String(error)}`,
+				)
+			}
 			mergedConfig = await prepareMergedConfigDirForProfile({
+				openCodeIdentity,
 				projectDir,
 				profileDir: getProfileDir(config.profileName),
 				profileVisibilityPolicy: {
@@ -802,26 +839,6 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 			childExitCode = shutdownSupervisor.getRememberedSignalExitCode()
 			return
 		}
-
-		// Determine OpenCode binary
-		const configuredBin = resolveOpenCodeBinary({
-			configBin: ocxConfig?.bin,
-			envBin: process.env.OPENCODE_BIN,
-		})
-
-		const hasProfileLaunchContext = Boolean(config.profileName)
-		const resolvedOpenCodeLaunchBin = hasProfileLaunchContext
-			? resolveStableOpenCodeLauncherPath({
-					configuredBin,
-					cwd: projectDir,
-				})
-			: configuredBin
-		const resolvedOcxBin = hasProfileLaunchContext
-			? resolveStableOcxExecutablePath({
-					cwd: projectDir,
-					inheritedOcxBin: process.env.OCX_BIN,
-				})
-			: undefined
 
 		// Spawn OpenCode directly in the project directory with config via environment
 		const configContent = configToPass ? JSON.stringify(configToPass) : undefined
@@ -889,7 +906,7 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 							? cleanupError
 							: createOpencodeOcError(
 									"cleanup",
-									`Failed to remove temporary merged config directory: ${String(cleanupError)}`,
+									`Failed to release merged config cache lease: ${String(cleanupError)}`,
 								)
 					primaryFailure = cleanupFailure
 				}
