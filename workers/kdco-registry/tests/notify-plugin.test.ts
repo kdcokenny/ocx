@@ -18,7 +18,6 @@ const notifyMock = mock((payload: Record<string, unknown>) => {
 	notificationPayloads.push(payload)
 })
 const readActualFile = fsPromises.readFile
-const originalPlatform = process.platform
 
 function pushAlerterNotificationPayload(command: string[]): void {
 	if (!command[0]?.includes("alerter")) return
@@ -108,7 +107,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-	Object.defineProperty(process, "platform", { value: originalPlatform })
 	mock.restore()
 })
 
@@ -468,45 +466,52 @@ describe("notify plugin event compatibility and dedupe", () => {
 		platform,
 		expectedTitles,
 	}) => {
-		Object.defineProperty(process, "platform", { value: platform })
-		mockFocusedTerminal()
+		const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform")
+		if (!originalPlatformDescriptor) throw new Error("process.platform descriptor is missing")
 
-		const { hooks } = await createPlugin({
-			"session-a": { title: "Session A" },
-		})
+		try {
+			Object.defineProperty(process, "platform", { value: platform })
+			mockFocusedTerminal()
 
-		await emitEvent(hooks, {
-			type: "permission.asked",
-			properties: {
-				id: "perm-1",
-				sessionID: "session-a",
-				permission: "bash",
-				patterns: [],
-				metadata: {},
-				always: [],
-			},
-		})
+			const { hooks } = await createPlugin({
+				"session-a": { title: "Session A" },
+			})
 
-		await emitEvent(hooks, {
-			type: "session.status",
-			properties: {
-				sessionID: "session-a",
-				status: {
-					type: "idle",
+			await emitEvent(hooks, {
+				type: "permission.asked",
+				properties: {
+					id: "perm-1",
+					sessionID: "session-a",
+					permission: "bash",
+					patterns: [],
+					metadata: {},
+					always: [],
 				},
-			},
-		})
+			})
 
-		await emitEvent(hooks, {
-			type: "question.asked",
-			properties: {
-				id: "question-1",
-				sessionID: "session-a",
-				questions: [],
-			},
-		})
+			await emitEvent(hooks, {
+				type: "session.status",
+				properties: {
+					sessionID: "session-a",
+					status: {
+						type: "idle",
+					},
+				},
+			})
 
-		expect(notificationPayloads.map((payload) => payload.title)).toEqual(expectedTitles)
+			await emitEvent(hooks, {
+				type: "question.asked",
+				properties: {
+					id: "question-1",
+					sessionID: "session-a",
+					questions: [],
+				},
+			})
+
+			expect(notificationPayloads.map((payload) => payload.title)).toEqual(expectedTitles)
+		} finally {
+			Object.defineProperty(process, "platform", originalPlatformDescriptor)
+		}
 	})
 
 	it("suppresses notifications during quiet hours for legacy and new event aliases", async () => {
