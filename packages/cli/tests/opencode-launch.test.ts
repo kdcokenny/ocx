@@ -10,6 +10,7 @@ import { createIsolatedEnv } from "./helpers"
 let root: string
 let previousCwd: string
 let previousEnv: NodeJS.ProcessEnv
+const LAUNCH_READY_TIMEOUT_MS = 10_000
 const exitRequested = new Error("test intercepted process.exit")
 let exitCode: number | undefined
 let exitSpy: ReturnType<typeof spyOn>
@@ -96,10 +97,12 @@ await Bun.write(${JSON.stringify(capture)}, JSON.stringify({ dir: process.env.OP
 		await expect(launch()).rejects.toMatchObject({ exitCode: 78 })
 		expect(process.listenerCount("SIGINT")).toBe(before)
 	})
-	it("forwards termination, preserves the signal exit code, and releases the lease", async () => {
+	it.each([
+		0, 2500,
+	])("forwards termination and releases the lease after a %dms version probe", async (versionDelayMs) => {
 		const ready = join(root, "ready")
 		await wrapper(`
-if (process.argv[2] === "--version") { console.log("1.2.3"); process.exit(0) }
+if (process.argv[2] === "--version") { await Bun.sleep(${versionDelayMs}); console.log("1.2.3"); process.exit(0) }
 process.on("SIGTERM", () => process.exit(0))
 await Bun.write(${JSON.stringify(ready)}, process.env.OPENCODE_CONFIG_DIR!)
 setInterval(() => {}, 1000)
@@ -107,7 +110,8 @@ setInterval(() => {}, 1000)
 		const handlers = process.listeners("SIGTERM")
 		const running = launch()
 		try {
-			for (let attempt = 0; attempt < 200 && !(await Bun.file(ready).exists()); attempt++)
+			const readyDeadline = performance.now() + LAUNCH_READY_TIMEOUT_MS
+			while (!(await Bun.file(ready).exists()) && performance.now() < readyDeadline)
 				await Bun.sleep(10)
 			expect(await Bun.file(ready).exists()).toBe(true)
 		} finally {
@@ -120,7 +124,7 @@ setInterval(() => {}, 1000)
 		const config = await readFile(ready, "utf8")
 		expect(await readdir(dirname(config))).not.toContain("lease")
 		expect(process.listeners("SIGTERM")).toEqual(handlers)
-	})
+	}, 20_000)
 	it("maps a non-executable launcher's spawn failure and releases its cache lease", async () => {
 		await wrapper('console.log("unused")')
 		await chmod(process.env.OPENCODE_BIN as string, 0o600)

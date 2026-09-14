@@ -119,6 +119,8 @@ async function claim(slot: string): Promise<boolean> {
 				return false
 			} catch (inspectError) {
 				if ((inspectError as NodeJS.ErrnoException).code !== "ENOENT") throw inspectError
+				// The owner may have released the lease after our rename failed.
+				return false
 			}
 		}
 		throw error

@@ -198,6 +198,69 @@ await second.cleanup()
 		expect({ code, stderr }).toEqual({ code: 0, stderr: "" })
 	})
 
+	it.each([
+		"released",
+		"occupied",
+		"unreadable",
+	])("handles Windows lease contention when the destination is %s", async (scenario) => {
+		const modulePath = join(import.meta.dir, "../src/commands/opencode-overlay.ts")
+		const script = `
+import { mock } from "bun:test"
+import * as fs from "node:fs/promises"
+import { dirname, join } from "node:path"
+const original = { ...fs }
+const scenario = ${JSON.stringify(scenario)}
+let target = ""
+let first
+let injected = false
+mock.module("node:fs/promises", () => ({
+ ...original,
+ rename: async (from, to) => {
+  if (to === target && !injected) {
+   injected = true
+   if (scenario === "released") await first.cleanup()
+   throw Object.assign(new Error("Windows destination contention"), { code: "EPERM" })
+  }
+  return original.rename(from, to)
+ },
+ lstat: async (path, ...args) => {
+  if (path === target && injected && scenario === "unreadable") {
+   throw Object.assign(new Error("lease inspection denied"), { code: "EACCES" })
+  }
+  return original.lstat(path, ...args)
+ }
+}))
+const { prepareMergedConfigDirForProfile } = await import(${JSON.stringify(modulePath)})
+const options = ${JSON.stringify({ profileDir, projectDir, cacheRoot, openCodeIdentity: "test", profileVisibilityPolicy: { include: [], exclude: [] } })}
+first = await prepareMergedConfigDirForProfile(options)
+target = join(dirname(first.path), "lease")
+await original.writeFile(join(first.path, "dependency-state"), "installed")
+try {
+ let second
+ try { second = await prepareMergedConfigDirForProfile(options) } catch (error) {
+  if (scenario !== "unreadable" || !String(error).includes("lease inspection denied")) throw error
+ }
+ if (!injected) throw new Error("contention was not exercised")
+ if (scenario === "unreadable") {
+  if (second) { await second.cleanup(); throw new Error("inspection error was swallowed") }
+ } else {
+  if (!second) throw new Error("launch did not obtain a slot")
+  try {
+   if (first.path === second.path) throw new Error("contested slot was reused")
+   if (await original.readFile(join(first.path, "dependency-state"), "utf8") !== "installed") throw new Error("dependency state was lost")
+  } finally { await second.cleanup() }
+ }
+} finally { await first.cleanup() }
+`
+		const proc = Bun.spawn([process.execPath, "--eval", script], {
+			cwd: root,
+			stdout: "ignore",
+			stderr: "pipe",
+		})
+		const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
+		expect({ code, stderr }).toEqual({ code: 0, stderr: "" })
+	})
+
 	it("preserves interrupted installer state without claiming dependencies are ready", async () => {
 		const first = await prepare()
 		await mkdir(join(first.path, "node_modules"))
