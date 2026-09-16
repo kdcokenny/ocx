@@ -65,6 +65,8 @@ All commands below used temporary XDG roots. The user's installed OpenCode V1 bi
 
 The maintained `test:native` and `test:legacy` commands reproduce the native and frozen-client probes. The actual release, public deployment, and paid provider integrations were not exercised; this change prepares a preview, not a production rollout. Linux was exercised locally. PR CI also passed macOS and Windows binary smoke checks against the built artifacts.
 
+The deployed PR worker previews were checked over HTTPS: all **61 legacy files** matched the hashes recorded before retirement. The published OCX preview installed the new minimal profile from the preview catalog, verified it, updated it, and launched native API health successfully. Fixture: `/tmp/ocx-live-catalog-09rn5iat`. The V2 overview and profile pages also rendered correctly on the Mintlify preview.
+
 ## Facade retirement
 
 Final notices were published before synchronization was disabled and repositories were archived on 2026-09-16:
@@ -82,8 +84,4 @@ GitHub readback confirmed the `Sync Facades` workflow is `disabled_manually` and
 
 The commit-specific PR preview package was installed using npm into an isolated prefix. Profile creation/default selection, native version, and API health passed through its published executable. Fixture: `/tmp/ocx-preview-journey-jwi2_2mu`.
 
-## Remaining delivery work
-
-- Complete Cubic review and confirm CI on the final revision.
-
-No tagged release or manual worker deployment was performed. Existing PR automation published package, documentation, and worker previews. Final review results will be recorded here before completion.
+No tagged release or manual worker deployment was performed. The GitHub Actions preview workflow published the CLI package. Separately, the installed Mintlify and Cloudflare GitHub integrations published [documentation](https://kdco-kdcokenny-public-mammals-tease-i1kbm.mintlify.site/v2/overview), [KDCO registry](https://b3dfb1c8-kdco-registry.kdco.workers.dev/opencode-v2/index.json), and [legacy kit](https://e9371d05-ocx-kit.kdco.workers.dev/index.json) previews. Their successful `Mintlify Deployment` and `Workers Builds` checks are attached to PR #272; these integrations are configured outside `.github/workflows`. Cubic review cycles and checks for the current revision are tracked on [PR #272](https://github.com/kdcokenny/ocx/pull/272).
