@@ -18,6 +18,26 @@ describe("registry add conflict matrix", () => {
 		await cleanupTempDir(testDir)
 	})
 
+	it("quiet suppresses normal and dry-run output while explicit JSON takes precedence", async () => {
+		for (const json of [false, true]) {
+			for (const args of [
+				["add", registry.url, "--name", "team", "--dry-run"],
+				["add", registry.url, "--name", "team"],
+				["list"],
+				["remove", "team"],
+			]) {
+				const result = await runCLI(
+					["registry", ...args, "--project", "--quiet", ...(json ? ["--json"] : [])],
+					testDir,
+				)
+				expect(result.exitCode).toBe(0)
+				expect(result.stderr).toBe("")
+				if (json) expect(JSON.parse(result.stdout)).toBeObject()
+				else expect(result.stdout).toBe("")
+			}
+		}
+	})
+
 	// Rule 1: New name + new URL => add (covered by "should add a registry" above)
 
 	// Rule 2: Same name + same normalized URL => idempotent no-op

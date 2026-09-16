@@ -64,10 +64,10 @@ export async function publishDirectory(
 			const candidate = join(stage, "candidate")
 			let journaled = false
 			try {
-				await mkdir(candidate)
-				await populate(candidate)
 				await atomicWrite(journal, { stage })
 				journaled = true
+				await mkdir(candidate)
+				await populate(candidate)
 				if (await exists(out)) await rename(out, join(stage, "previous"))
 				await afterBackup?.()
 				await rename(candidate, out)

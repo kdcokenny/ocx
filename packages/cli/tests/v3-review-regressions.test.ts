@@ -122,12 +122,15 @@ test("direct transactions refuse symlink roots and metadata", async () => {
 	expect(await readdir(real)).toEqual([])
 })
 
-test("publication restores the old output after a process exits between renames", async () => {
+test.each([
+	"populate",
+	"backup",
+])("publication recovers a process exit during %s", async (phase) => {
 	const out = join(root, "dist")
 	await mkdir(out)
 	await writeFile(join(out, "old"), "preserved")
 	const module = resolve(import.meta.dir, "../src/utils/publish-directory.ts")
-	const script = `import {publishDirectory} from ${JSON.stringify(module)}; await publishDirectory(${JSON.stringify(out)}, async candidate => { await Bun.write(candidate + '/new', 'new') }, async () => { process.exit(42) })`
+	const script = `import {publishDirectory} from ${JSON.stringify(module)}; await publishDirectory(${JSON.stringify(out)}, async candidate => { await Bun.write(candidate + '/new', 'new'); if (${JSON.stringify(phase)} === 'populate') process.exit(42) }, async () => { process.exit(42) })`
 	const child = Bun.spawn([process.execPath, "--eval", script], { stdout: "pipe", stderr: "pipe" })
 	expect(await child.exited).toBe(42)
 	await expect(

@@ -42,14 +42,20 @@ async function run(args: string[]) {
 		stderr: "pipe",
 		stdin: "ignore",
 	})
-	const timer = setTimeout(() => child.kill("SIGKILL"), 30_000)
+	let timedOut = false
+	const timer = setTimeout(() => {
+		timedOut = true
+		child.kill("SIGKILL")
+	}, 30_000)
 	try {
 		const [code, stdout, stderr] = await Promise.all([
 			child.exited,
 			new Response(child.stdout).text(),
 			new Response(child.stderr).text(),
 		])
-		await writeFile(join(root, `command-${++commandNumber}.log`), stdout + stderr)
+		const timeout = timedOut ? `Timed out after 30000ms: ${args.join(" ")}\n` : ""
+		await writeFile(join(root, `command-${++commandNumber}.log`), timeout + stdout + stderr)
+		assert(!timedOut, `${timeout}Fixture: ${root}`)
 		assert.equal(code, 0, `${args.join(" ")}: ${stdout} ${stderr}`)
 	} finally {
 		clearTimeout(timer)
