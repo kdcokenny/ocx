@@ -34,7 +34,7 @@ Used a local OpenAI-compatible mock endpoint, real V2 model requests, and a real
 ## Implementation and automated checks
 
 - Thin named profiles, explicit destinations, protocol-3 file ownership, importer, static catalog, preview-channel release safeguards, and separate V2 documentation are implemented in the working branch.
-- `bun test tests` in `packages/cli`: 541 passed, zero failures. Six compiled-binary checks ran separately and passed. The remaining skips are network/template-release cases that require an already-published V3 tag or a changed default branch; local template scaffolding and registry building were exercised manually.
+- `bun test tests` in `packages/cli`: 540 passed, zero failures. Six compiled-binary checks ran separately and passed. The remaining skips are network/template-release cases that require an already-published V3 tag or a changed default branch; local template scaffolding and registry building were exercised manually.
 - `bun run check` passed all four packages after updating the frozen worker's type environment. `bun run build` passed all three build tasks.
 - Compiled Linux x64 binary: build and six version/help smoke checks passed. Worker routing tests: 29 passed, including all four separate V3 schemas and unchanged legacy schema defaults.
 - The maintained `test:native` probes launched the **built OCX CLI** against official OpenCode 2.0.3. Three simultaneous profile servers and both instruction-discovery modes passed. The mock model made two local requests per instruction scenario. Final fixtures: `/tmp/ocx-native-probe-zBQWgC`, `/tmp/ocx-instruction-probe-ggzxEo`. Catalog assertions cover agents, commands, skills, model config, permission rules, and project discovery.
@@ -55,7 +55,7 @@ All commands below used temporary XDG roots. The user's installed OpenCode V1 bi
 
 - Built CLI journey: install the minimal profile from a local protocol-3 catalog; show/verify/update/dry-run; clone/rename/remove/default selection; native version, paths, and API health. Project source registration, search, install, local edit, failed verification, unchanged upstream update, rejected removal, forced repair, verification and removal. Fixture: `/tmp/ocx-manual-journeys-y8x4bliy`.
 - Import: preview decisions, reject unresolved apply, import with explicit decisions, inspect the new profile, and compare original file hashes. Source files remained unchanged and retired plugins were omitted.
-- Registry authoring: validate and build the updated starter, including binary assets in dedicated registry tests.
+- Registry authoring: scaffold from the local updated template with a custom namespace/author, validate, and build with the compiled binary. Fixture: `/tmp/ocx-starter-manual-p2ppz7w1`. Binary assets are covered by dedicated registry tests.
 - Existing native service: start the normal service with a marker config, launch OCX profile API calls, confirm the marker is absent, inspect authentication/session/path commands, and stop the fixture service. Fixture: `/tmp/ocx-native-extra-6pTRoi`.
 - Headless resume: `oc run --session` resumed sessions created by the native API while a separate server for that profile was still running. Both project discovery modes passed against the local mock model.
 - ACP: initialize through the built OCX launcher, receive protocol 1 and OpenCode 2.0.3 identity, close stdin, observe exit 0. Fixture: `/tmp/ocx-native-extra-8ONavF`.
@@ -63,7 +63,7 @@ All commands below used temporary XDG roots. The user's installed OpenCode V1 bi
 - Compiled install lifecycle: copy Linux binary into a path with spaces, initialize, create/list profiles, preview uninstall, execute uninstall, and verify the copied binary and OCX root are removed while the V1 root remains. Fixture: `/tmp/ocx-binary-uninstall-it26ytor`.
 - Published legacy client: isolated OCX 2.0.15 installed frozen workspace dependencies and both legacy profile recipes from restored artifacts served over local HTTP. 59 local requests; files verified. Fixture: `/tmp/ocx-legacy-install-RFXHn3`.
 
-The maintained `test:native` and `test:legacy` commands reproduce the native and frozen-client probes. The actual release, public deployment, and paid provider integrations were not exercised; this change prepares a preview, not a production rollout. Linux was exercised locally; macOS/Windows binary smoke coverage runs in PR CI.
+The maintained `test:native` and `test:legacy` commands reproduce the native and frozen-client probes. The actual release, public deployment, and paid provider integrations were not exercised; this change prepares a preview, not a production rollout. Linux was exercised locally. PR CI also passed macOS and Windows binary smoke checks against the built artifacts.
 
 ## Facade retirement
 
@@ -76,8 +76,14 @@ Final notices were published before synchronization was disabled and repositorie
 
 GitHub readback confirmed the `Sync Facades` workflow is `disabled_manually` and all four repositories are archived. Tags, releases, package publications, and history were preserved. The workflow and sync map are removed from this PR. The shared credential was not revoked because its other consumers are unknown.
 
+## PR review and CI
+
+[PR #272](https://github.com/kdcokenny/ocx/pull/272) is open. The first CI pass found an obsolete assertion requiring the deleted facade sync workflow. That assertion was removed; the other workflow checks remain, and the full CLI suite passes again.
+
+The commit-specific PR preview package was installed using npm into an isolated prefix. Profile creation/default selection, native version, and API health passed through its published executable. Fixture: `/tmp/ocx-preview-journey-jwi2_2mu`.
+
 ## Remaining delivery work
 
-- Open the PR, inspect supported-platform CI, request Cubic review, resolve actionable feedback, and retest.
+- Complete Cubic review and confirm CI on the final revision.
 
-No release or worker has been deployed. PR review and CI results will be recorded here before completion.
+No tagged release or manual worker deployment was performed. Existing PR automation published package, documentation, and worker previews. Final review results will be recorded here before completion.
