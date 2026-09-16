@@ -60,8 +60,7 @@ ocx profile use --clear
 
 ```sh
 ocx profile move work team
-# Alias:
-ocx profile mv team work
+# Equivalent alias: ocx profile mv work team
 ```
 
 Renaming moves the directory and updates the global default if necessary. It refuses an existing destination. If your shell's `OCX_PROFILE` names the old profile, update or unset that variable yourself; a child process cannot change its parent shell.
@@ -78,7 +77,7 @@ ocx profile remove scratch
 
 This removes the **whole profile directory**, including edits and unowned supporting files. It has no dry-run or force option. Back up a profile you want to retain before removing it. This differs from component removal, which checks owned-file edits.
 
-A configured default cannot be removed until you select another default or clear it. Running OpenCode sessions are not closed by changing the default.
+Removal also refuses an unfinished file transaction or pending profile-move journal; [complete recovery](/v2/troubleshooting) first. A configured default cannot be removed until you select another default or clear it. Running OpenCode sessions are not closed by changing the default.
 
 ## Names
 

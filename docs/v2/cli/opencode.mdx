@@ -40,10 +40,10 @@ These routes are tested against OpenCode 2.0.3:
 
 In the tested release, these commands lack the routing needed for the profile launcher and are refused:
 
-- `debug config` and `debug agents`.
+- Native `agent` administration, `debug config`, and `debug agents`.
 - `plugin list`, `plugin check`, and `plugin update`.
 - `mcp list`, `mcp auth`, and `mcp logout`.
-- User-wide service, pair, upgrade, and uninstall commands.
+- User-wide `service`, `pair`, `upgrade`, `update`, and `uninstall` commands.
 
 Use `ocx oc --profile work api ...` for supported profile API operations, or the native CLI directly for user-wide operations. Running a refused command directly does not make it profile-specific.
 

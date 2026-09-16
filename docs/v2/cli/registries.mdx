@@ -34,7 +34,7 @@ ocx registry remove team --project
 # Alias: ocx registry rm team --project
 ```
 
-Removing a source changes metadata, not installed files. Receipts retain their original registry URLs. Changing an alias's URL is not a way to silently move installed components to a new publisher; an installation whose source differs from its receipt is refused.
+Removing a source changes metadata, not installed files. Updates continue fetching from the origins recorded in the receipt, even if an alias is removed or configured with another URL. An explicit `add` from a different origin is refused for an already owned component; changing metadata does not transfer ownership to a new publisher.
 
 Registry commands accept `--cwd <directory>`, `--json`, and `-q, --quiet` as well as their required scope. Only `registry add` supports `--dry-run`. Global/project metadata with `lockRegistries: true` refuses source mutations.
 

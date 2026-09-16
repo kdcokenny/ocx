@@ -16,7 +16,7 @@ Profiles live at `$XDG_CONFIG_HOME/ocx/profiles/<name>`, normally `~/.config/ocx
 ├── agents/                    # Native Markdown agent definitions
 ├── commands/                  # Native Markdown command templates
 ├── skills/                    # Skills with supporting scripts and references
-└── .ocx/receipt.jsonc          # Generated component ownership, when installed
+└── .ocx/receipt.jsonc          # Component ownership (receipt format 1)
 ```
 
 Creating an empty profile writes the first three files. Add the other files as needed. Each profile is a portable configuration directory you can inspect, back up, or version with Git. Keep credentials and machine-specific generated state outside shared recipes.
@@ -87,6 +87,6 @@ If a project needs its own agents or commands, install them with `--project` and
 
 Copy the complete profile, including supporting skill assets and `.ocx/` receipts, when you want to preserve installed-file ownership. Clone with `ocx profile add backup --clone work` for a local working copy; use an external backup or version control for durable history.
 
-`profile remove` deletes the whole directory, including unowned files and local edits. Unlike component removal, it does not perform per-file edit protection. Select another default or clear it before removing the current default.
+`profile remove` deletes the whole directory, including unowned files and local edits. It refuses an unfinished file transaction or pending profile-move journal, so [complete recovery](/v2/troubleshooting) first. Unlike component removal, it does not perform per-file edit protection. Select another default or clear it before removing the current default.
 
 See the [profile command reference](/v2/cli/profiles) for flags, aliases, naming rules, and recipe creation, and [configuration](/v2/configuration) for all metadata fields.

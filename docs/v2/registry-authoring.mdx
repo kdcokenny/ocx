@@ -178,6 +178,27 @@ The template scripts assume the published OCX 3 preview. Before publication, con
 
 Serve JSON and assets at their exact generated paths. Disable HTML fallback behavior for missing registry files. For a subpath such as `/opencode-v2`, update discovery metadata to point at `/opencode-v2/index.json` and test that base URL.
 
+For a subpath deployment, make that rewrite part of **every build**. For example, create `scripts/set-registry-base.ts` in your registry:
+
+```ts
+await Bun.write(
+  new URL("../dist/.well-known/ocx.json", import.meta.url),
+  JSON.stringify({ registry: "/opencode-v2/index.json" }),
+)
+```
+
+Then append it to the registry's package build script:
+
+```json
+{
+  "scripts": {
+    "build": "bunx ocx@next build . --out dist && bun scripts/set-registry-base.ts"
+  }
+}
+```
+
+Keep the other package scripts and settings. During source-preview testing, run `ocx build . --out dist`, followed by `bun scripts/set-registry-base.ts`. Adjust the script's output path if you use a different `--out`. Root-hosted registries can keep the builder's default discovery metadata.
+
 Repeat a fresh install, dependency fetch, and verification against the deployment URL. Publishing a valid index alone is not enough if component assets are missing.
 
 ## Maintain compatibility

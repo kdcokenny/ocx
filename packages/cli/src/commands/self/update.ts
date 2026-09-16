@@ -12,7 +12,7 @@ export function registerSelfUpdateCommand(parent: Command): void {
 		.command("update")
 		.description("Update OCX to the latest version")
 		.option("-f, --force", "Reinstall even if already up to date")
-		.option("--method <method>", "Override install method detection (curl|npm|pnpm|bun)")
+		.option("--method <method>", "Override install method detection (curl|npm|yarn|pnpm|bun)")
 		.option("--json", "Output as JSON")
 		.action(async (options: UpdateOptions) => {
 			try {
