@@ -41,6 +41,10 @@ jobs:
             ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
       - run: bun run check
+      - name: Verify generated V3 schemas
+        run: |
+          bun run --cwd packages/cli schemas:generate
+          git diff --exit-code -- docs/schemas/v3
 
   test:
     name: Test

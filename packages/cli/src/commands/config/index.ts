@@ -1,6 +1,12 @@
 import type { Command } from "commander"
-import { resolveMetadata, type ScopeOptions, withMetadataLock } from "../../config/scope"
+import {
+	metadataPath,
+	resolveMetadata,
+	type ScopeOptions,
+	withMetadataLock,
+} from "../../config/scope"
 import { editorCommand } from "../../utils/editor-command"
+import { ConfigError } from "../../utils/errors"
 import { handleError } from "../../utils/handle-error"
 import { outputJson } from "../../utils/json-output"
 
@@ -22,19 +28,24 @@ export function registerConfigCommand(program: Command): void {
 			.action(async (options: ScopeOptions & { json?: boolean }) => {
 				try {
 					if (action === "show") {
-						outputJson(await resolveMetadata(options))
+						const target = await resolveMetadata(options)
+						if (options.json) outputJson(target)
+						else console.log(`${target.path}\n${JSON.stringify(target.config, null, 2)}`)
 						return
 					}
 					const editor = process.env.VISUAL || process.env.EDITOR || "vi"
 					await withMetadataLock(options, async () => {
-						const target = await resolveMetadata(options)
-						const child = Bun.spawn([...editorCommand(editor), target.path], {
+						const path = metadataPath(options)
+						if (!(await Bun.file(path).exists()))
+							throw new ConfigError(`No OCX metadata at ${path}. Initialize this scope first.`)
+						const child = Bun.spawn([...editorCommand(editor), path], {
 							stdin: "inherit",
-							stdout: "inherit",
+							stdout: options.json ? 2 : "inherit",
 							stderr: "inherit",
 						})
 						const code = await child.exited
 						if (code !== 0) throw new Error(`Editor exited with code ${code}`)
+						if (options.json) outputJson({ success: true, path })
 					})
 				} catch (error) {
 					handleError(error, { json: options.json })

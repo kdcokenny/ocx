@@ -348,3 +348,26 @@ test("a stale canonical reference cannot remove a replaced installation", async 
 	await expect(removeComponents([oldId], provider, {})).rejects.toThrow("not installed")
 	expect(await readFile(join(root, "skills/guide/SKILL.md"), "utf8")).toBe("second")
 })
+
+test("ephemeral installation updates use the receipt origin despite a configured alias", async () => {
+	await publish([{ name: "guide", files: { "skills/guide/SKILL.md": "old" } }])
+	const origin = pathToFileURL(registry).href
+	provider.getRegistries = () => ({
+		team: { url: "https://unrelated.invalid", headers: { Authorization: "private" } },
+	})
+	await installComponents(["team/guide"], provider, { mode: "add", from: origin })
+	await publish([{ name: "guide", files: { "skills/guide/SKILL.md": "new" } }])
+	await installComponents(["team/guide"], provider, { mode: "update" })
+	expect(await readFile(join(root, "skills/guide/SKILL.md"), "utf8")).toBe("new")
+})
+
+test("remove dry-run reports edited files without deleting them", async () => {
+	await publish([{ name: "guide", files: { "skills/guide/SKILL.md": "original" } }])
+	await installComponents(["team/guide"], provider, { mode: "add" })
+	await writeFile(join(root, "skills/guide/SKILL.md"), "edited")
+	const preview = await removeComponents(["team/guide"], provider, { dryRun: true })
+	expect(preview.changes).toContainEqual({ path: "skills/guide/SKILL.md", action: "delete" })
+	expect(preview.warnings?.[0]).toContain("requires --force")
+	expect(await readFile(join(root, "skills/guide/SKILL.md"), "utf8")).toBe("edited")
+	await expect(removeComponents(["team/guide"], provider, {})).rejects.toThrow("local edits")
+})

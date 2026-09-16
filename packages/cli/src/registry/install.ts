@@ -34,6 +34,7 @@ export interface InstallationResult {
 	components: string[]
 	changes: { path: string; action: "add" | "update" | "delete" }[]
 	dryRun: boolean
+	warnings?: string[]
 }
 
 function qualified(entry: InstalledComponent): string {
@@ -63,12 +64,26 @@ function registrySources(
 	provider: ConfigProvider,
 	receipt: Receipt,
 	references: string[],
+	mode: InstallOptions["mode"],
 	from?: string,
 ): Record<string, RegistryConfig> {
 	const sources = { ...provider.getRegistries() }
-	// Ephemeral installs retain their origin in the receipt so updates can find it.
-	for (const entry of Object.values(receipt.installed))
-		sources[entry.registryName] ??= { url: entry.registryUrl }
+	const origins = new Map<string, string>()
+	for (const entry of Object.values(receipt.installed)) {
+		const origin = normalizeRegistryUrl(entry.registryUrl)
+		const previous = origins.get(entry.registryName)
+		if (previous && previous !== origin)
+			throw new ConflictError(
+				`Installed alias ${entry.registryName} has mixed registry origins. Remove or separate these installations before updating.`,
+			)
+		origins.set(entry.registryName, origin)
+	}
+	for (const [alias, origin] of origins) {
+		const configured = sources[alias]
+		// Receipt origins win for updates, without forwarding another endpoint's credentials.
+		if (!configured || (mode === "update" && normalizeRegistryUrl(configured.url) !== origin))
+			sources[alias] = { url: origin }
+	}
 	if (!from) return sources
 	const aliases = new Set(references.map((ref) => parseQualifiedComponent(ref).namespace))
 	if (aliases.size !== 1)
@@ -131,7 +146,7 @@ async function prepareInstallation(
 			if (!previous.has(reference))
 				throw new NotFoundError(`Component ${reference} is not installed`)
 	}
-	const sources = registrySources(provider, receipt, references, options.from)
+	const sources = registrySources(provider, receipt, references, options.mode, options.from)
 	const resolved = await resolveDependencies(sources, references)
 	const next: Receipt = { version: 1, installed: { ...receipt.installed } }
 	const incoming = new Map<string, { owner: string; content: Buffer }>()
@@ -281,6 +296,7 @@ export async function removeComponents(
 				)
 		}
 		const changes: FileChange[] = []
+		const warnings: string[] = []
 		for (const reference of selected) {
 			const found = previous.get(reference)
 			if (!found) throw new NotFoundError(`Component ${reference} is not installed`)
@@ -288,17 +304,21 @@ export async function removeComponents(
 				const current = await readManagedFile(provider.cwd, file.path)
 				if (current === null) continue
 				const hash = hashContent(current)
-				if (hash !== file.hash && !options.force)
-					throw new IntegrityError(
-						`Owned file ${file.path} has local edits. Use --force --dry-run to preview deletion.`,
-					)
+				if (hash !== file.hash && !options.force) {
+					const warning = `Owned file ${file.path} has local edits. Deletion requires --force.`
+					if (!options.dryRun) throw new IntegrityError(warning)
+					warnings.push(warning)
+				}
 				changes.push({ path: file.path, content: null, beforeHash: hash })
 			}
 			delete receipt.installed[found.id]
 		}
 		changes.push(await receiptChange(provider.cwd, receipt))
 		if (!options.dryRun) await applyFileChanges(provider.cwd, changes, options.beforeWrite)
-		return summarize([...selected], changes, options.dryRun)
+		return {
+			...summarize([...selected], changes, options.dryRun),
+			...(warnings.length && { warnings }),
+		}
 	}
 	return options.dryRun ? run() : withInstallLock(provider.cwd, run)
 }

@@ -1,21 +1,11 @@
-import {
-	copyFile,
-	lstat,
-	mkdir,
-	mkdtemp,
-	readdir,
-	rename,
-	rm,
-	stat,
-	writeFile,
-} from "node:fs/promises"
+import { copyFile, lstat, mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { readGlobalConfig, readJsoncObject } from "../config/files"
 import { readReceipt, writeReceipt } from "../schemas/config"
 import { type ProfileOcxConfig, profileOcxConfigSchema } from "../schemas/ocx"
 import { ConfigError, ProfileExistsError, ProfileNotFoundError } from "../utils/errors"
 import { assertNoInterruptedTransaction, withInstallLock } from "../utils/file-transaction"
-import { withProfileLock } from "./lock"
+import { assertProfileRoots, realDirectoryExists, withProfileLock } from "./lock"
 
 export { withProfileLock } from "./lock"
 
@@ -54,12 +44,8 @@ export class ProfileManager {
 		return new ProfileManager()
 	}
 	async isInitialized(): Promise<boolean> {
-		try {
-			return (await stat(getProfilesDir())).isDirectory()
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
-			throw error
-		}
+		await assertProfileRoots()
+		return realDirectoryExists(getProfilesDir())
 	}
 	async list(): Promise<string[]> {
 		if (!(await this.isInitialized())) return []
@@ -67,18 +53,13 @@ export class ProfileManager {
 		const names: string[] = []
 		for (const entry of entries) {
 			if (!profileNameSchema.safeParse(entry.name).success) continue
-			if ((entry.isDirectory() || entry.isSymbolicLink()) && (await this.exists(entry.name)))
-				names.push(entry.name)
+			if (entry.isDirectory() && (await this.exists(entry.name))) names.push(entry.name)
 		}
 		return names.sort()
 	}
 	async exists(name: string): Promise<boolean> {
-		try {
-			return (await stat(getProfileDir(name))).isDirectory()
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
-			throw error
-		}
+		await assertProfileRoots()
+		return realDirectoryExists(getProfileDir(name))
 	}
 	async get(name: string): Promise<Profile> {
 		if (!(await this.exists(name))) throw new ProfileNotFoundError(name)

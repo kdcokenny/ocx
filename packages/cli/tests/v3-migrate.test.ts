@@ -135,3 +135,20 @@ test("external instruction references and retired-tool guidance need explicit de
 		).code,
 	).not.toBe(0)
 })
+
+test("nested skill package manifests remain supporting files rather than root runtime state", async () => {
+	await mkdir(join(source, "skills/example/scripts"), { recursive: true })
+	const manifest = '{"scripts":{"check":"node check.js"}}'
+	await writeFile(join(source, "skills/example/scripts/package.json"), manifest)
+	await writeFile(join(source, "skills/example/auth.json"), '{"credential":"fixture"}')
+	await writeFile(join(source, "skills/example/service.json"), "{}")
+	await writeFile(join(source, "package.json"), '{"dependencies":{"old-runtime":"*"}}')
+	const result = await migrate(["--apply", "--project-config", "ignore"])
+	expect(result.code, result.stderr).toBe(0)
+	expect(await Bun.file(join(destination, "skills/example/scripts/package.json")).text()).toBe(
+		manifest,
+	)
+	expect(await Bun.file(join(destination, "package.json")).exists()).toBe(false)
+	expect(await Bun.file(join(destination, "skills/example/auth.json")).exists()).toBe(false)
+	expect(await Bun.file(join(destination, "skills/example/service.json")).exists()).toBe(false)
+})

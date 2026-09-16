@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { buildOpenCodeArgs, buildOpenCodeEnv } from "../src/commands/opencode"
+import { getProfileDir } from "../src/profile/paths"
 
 let fixture: string
 let project: string
@@ -144,6 +145,7 @@ test("launcher removes inherited config overlays and sets native project mode", 
 		profileName: "work",
 		projectConfig: "inherit",
 	})
+	expect(actual.OPENCODE_CONFIG_DIR).toBe(getProfileDir("work"))
 	expect(actual.OPENCODE_CONFIG).toBeUndefined()
 	expect(actual.OPENCODE_CONFIG_CONTENT).toBeUndefined()
 	expect(actual.OPENCODE_DISABLE_PROJECT_CONFIG).toBeUndefined()
@@ -209,4 +211,56 @@ test.each([
 	["run", "--standalone=false"],
 ])("rejects disabling the private server: %s", (...args) => {
 	expect(() => buildOpenCodeArgs(args)).toThrow("private server")
+})
+
+test("profile roots and individual profiles cannot escape through symlinks", async () => {
+	const external = join(fixture, "external")
+	await mkdir(external)
+	await mkdir(join(fixture, "config/ocx"), { recursive: true })
+	await symlink(external, join(fixture, "config/ocx/profiles"))
+	const add = await run(["profile", "add", "work"])
+	expect(add.code).not.toBe(0)
+	expect(add.stderr).toContain("real directory")
+	expect(await Bun.file(join(external, "work/ocx.jsonc")).exists()).toBe(false)
+	await rm(join(fixture, "config/ocx/profiles"))
+	await run(["profile", "add", "real"])
+	await symlink(profile("real"), profile("linked"))
+	expect(JSON.parse((await run(["profile", "list", "--json"])).stdout).profiles).toEqual(["real"])
+	for (const args of [
+		["profile", "show", "linked"],
+		["oc", "-p", "linked", "--version"],
+		["profile", "remove", "linked"],
+	]) {
+		const result = await run(args)
+		expect(result.code).not.toBe(0)
+		expect(result.stderr).toContain("real directory")
+	}
+	expect(await Bun.file(join(profile("real"), "ocx.jsonc")).exists()).toBe(true)
+})
+
+test("config edit repairs malformed metadata and reports JSON success", async () => {
+	await run(["profile", "add", "work"])
+	await writeFile(join(profile("work"), "ocx.jsonc"), "{ broken")
+	const editor = join(fixture, "repair.ts")
+	await writeFile(
+		editor,
+		"console.log('editor output'); await Bun.write(process.argv.at(-1), '{}\\n')",
+	)
+	const result = await run(["config", "edit", "-p", "work", "--json"], {
+		VISUAL: `"${process.execPath}" "${editor}"`,
+	})
+	expect(result.code, result.stderr).toBe(0)
+	expect(JSON.parse(result.stdout)).toEqual({
+		success: true,
+		path: join(profile("work"), "ocx.jsonc"),
+	})
+	expect((await run(["config", "show", "-p", "work"])).stdout).toContain(profile("work"))
+})
+
+test("explicit external servers cannot override a profile's private server", () => {
+	for (const args of [
+		["--server", "http://localhost"],
+		["run", "--server=http://localhost"],
+	])
+		expect(() => buildOpenCodeArgs(args)).toThrow("do not supply --server")
 })

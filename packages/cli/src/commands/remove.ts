@@ -22,7 +22,7 @@ export function registerRemoveCommand(program: Command): void {
 		.description("Remove owned component files")
 		.option("-p, --profile <name>", "Remove profile files")
 		.option("--project", "Remove project files")
-		.option("--force", "Delete edited owned files")
+		.option("-f, --force", "Delete edited owned files")
 		.option("--dry-run", "Preview without deleting files")
 	addCommonOptions(command)
 	addVerboseOption(command)

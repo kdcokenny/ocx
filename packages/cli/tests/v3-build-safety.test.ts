@@ -74,3 +74,10 @@ test("output cannot overlap source files, including an ancestor symlink", async 
 	)
 	expect(await readFile(join(source, "files/skills/data.bin"))).toEqual(Buffer.from([0, 255, 128]))
 })
+
+test("the default dist directory may be inside the source without replacing source inputs", async () => {
+	await buildRegistry({ source, out: join(source, "dist") })
+	expect(await Bun.file(join(source, "dist/index.json")).exists()).toBe(true)
+	expect(await Bun.file(join(source, "registry.jsonc")).json()).toEqual(manifest)
+	expect(await readFile(join(source, "files/skills/data.bin"))).toEqual(Buffer.from([0, 255, 128]))
+})

@@ -16,7 +16,7 @@ export function outputInstallation(
 					action: change.action,
 					target: change.path,
 				})),
-				validation: { passed: true },
+				validation: { passed: !result.warnings?.length, warnings: result.warnings },
 				summary: `${result.components.length} component(s), ${result.changes.length} file change(s)`,
 			},
 			options,

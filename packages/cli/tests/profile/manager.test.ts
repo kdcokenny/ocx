@@ -175,7 +175,7 @@ describe("ProfileManager.list", () => {
 		expect(profiles).not.toContain(".hidden")
 	})
 
-	it("should include symlinks that resolve to directories", async () => {
+	it("should exclude symlinks that resolve to directories", async () => {
 		const manager = ProfileManager.create()
 		await manager.initialize()
 		await manager.add("zebra")
@@ -186,7 +186,7 @@ describe("ProfileManager.list", () => {
 
 		const profiles = await manager.list()
 
-		expect(profiles).toEqual(["alpha-link", "default", "zebra"])
+		expect(profiles).toEqual(["default", "zebra"])
 	})
 
 	it("should exclude broken symlinks", async () => {

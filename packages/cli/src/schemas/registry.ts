@@ -21,7 +21,7 @@ export const aliasSchema = openCodeNameSchema
 export const namespaceSchema = aliasSchema
 export const qualifiedComponentSchema = string()
 	.regex(
-		/^[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/,
+		/^(?=[^/]{1,64}\/)(?=.{1,129}$)[a-z0-9]+(-[a-z0-9]+)*\/(?=[^/]{1,64}$)[a-z0-9]+(-[a-z0-9]+)*$/,
 		'Use "alias/component" (for example "team/reviewer")',
 	)
 	.refine(

@@ -17,7 +17,7 @@ Executed against three simultaneous V2 servers with shared temporary data/state 
 
 - Profile agents, commands, skills, model settings, and permission rules loaded from the selected root.
 - One profile's marker definitions were absent from the other profiles.
-- Project definitions/config were excluded with `OPENCODE_CONFIG_PROJECT_DISABLE=1` and included with `0`.
+- Project definitions/config were excluded with `OPENCODE_CONFIG_PROJECT_DISABLE=true` and included with `false`.
 - Built-in plugin activation must finish before observing effective catalogs; initial catalog reads alone can race activation.
 - Private servers exited when their stdio lease closed.
 - Native CLI `--standalone` is command-specific, not global. `run` and `api` accept it; `debug config` and `plugin add` do not declare it.
@@ -34,7 +34,7 @@ Used a local OpenAI-compatible mock endpoint, real V2 model requests, and a real
 ## Implementation and automated checks
 
 - Thin named profiles, explicit destinations, protocol-3 file ownership, importer, static catalog, preview-channel release safeguards, and separate V2 documentation are implemented in the working branch.
-- `bun test tests` in `packages/cli`: 553 passed, zero failures. Six compiled-binary checks ran separately and passed. The remaining skips are network/template-release cases that require an already-published V3 tag or a changed default branch; local template scaffolding and registry building were exercised manually.
+- `bun test tests` in `packages/cli`: 560 passed, zero failures. Six compiled-binary checks ran separately and passed. The remaining skips are network/template-release cases that require an already-published V3 tag or a changed default branch; local template scaffolding and registry building were exercised manually.
 - `bun run check` passed all four packages after updating the frozen worker's type environment. `bun run build` passed all three build tasks.
 - Compiled Linux x64 binary: build and six version/help smoke checks passed. Worker routing tests: 29 passed, including all four separate V3 schemas and unchanged legacy schema defaults.
 - The maintained `test:native` probes launched the **built OCX CLI** against official OpenCode 2.0.3. Three simultaneous profile servers and both instruction-discovery modes passed. The mock model made two local requests per instruction scenario. Final fixtures: `/tmp/ocx-native-probe-zBQWgC`, `/tmp/ocx-instruction-probe-ggzxEo`. Catalog assertions cover agents, commands, skills, model config, permission rules, and project discovery.
@@ -91,3 +91,5 @@ No tagged release or manual worker deployment was performed. The GitHub Actions 
 The full source review prompted fixes for credential forwarding during alias conflicts, overlapping source/build paths, journaled publication and profile moves, lock ownership, concurrent edits during rollback, destination identity checks, metadata editor locking/arguments, canonical removal resolution, schema input defaults and path patterns, preview deployment commands, and conformance cleanup. Recovery and credential regressions now have executable checks. The frozen-client probe restores fresh archives itself and runs in CI.
 
 The built CLI manual journeys passed again after these fixes (`/tmp/ocx-manual-journeys-ofm2lvyx`). A separate manual editor check covered command arguments, a quoted path containing spaces, preservation of the default selection, and exclusion of a concurrent metadata writer (`/tmp/ocx-editor-manual-gdnhbq5a`). Native conformance passed again with the released 2.0.3 binary (`/tmp/ocx-native-probe-ZVcw9k`, `/tmp/ocx-instruction-probe-RsjkvI`), and the restored legacy-client probe passed (`/tmp/ocx-legacy-install-SnRNVk`). Findings about bare dependency qualification, fresh import directory creation, boolean environment values, and lock deadlocks were checked against existing code and successful probes rather than accepted automatically.
+
+The second review added real-directory checks for managed profile roots, dead-owner publication lock recovery, receipt-origin updates, repairable metadata editing, and removal-preview warnings. Generated schema consistency now runs in CI. Native profile probes use unique model and permission markers with request deadlines. The full CLI suite passed 560 tests; native V2 and frozen V1 probes passed again. Direct built-CLI verification covered ephemeral-source updates despite a conflicting configured alias, edited-file removal preview and `-f`, quiet registry output, malformed metadata repair with JSON output, and symlink/external-server rejection (`/tmp/ocx-round2-manual-95mmvbo_`). The broad manual journeys also passed again (`/tmp/ocx-manual-journeys-n3d4p9hw`).

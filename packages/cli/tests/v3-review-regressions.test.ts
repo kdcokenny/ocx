@@ -130,7 +130,6 @@ test("publication restores the old output after a process exits between renames"
 	const script = `import {publishDirectory} from ${JSON.stringify(module)}; await publishDirectory(${JSON.stringify(out)}, async candidate => { await Bun.write(candidate + '/new', 'new') }, async () => { process.exit(42) })`
 	const child = Bun.spawn([process.execPath, "--eval", script], { stdout: "pipe", stderr: "pipe" })
 	expect(await child.exited).toBe(42)
-	await rm(`${out}.ocx-publication.lock`, { recursive: true })
 	await expect(
 		publishDirectory(out, async () => {
 			throw new Error("invalid next build")

@@ -52,7 +52,7 @@ async function start(name: string, inherit: boolean) {
 		JSON.stringify({
 			model: `opencode/${name}-marker`,
 			commands: { [`${name}command`]: { template: name } },
-			permissions: [{ action: "edit", resource: "*", effect: "deny" }],
+			permissions: [{ action: "edit", resource: `${name}-only/*`, effect: "deny" }],
 		}),
 	)
 	await writeFile(join(profile, "AGENTS.md"), `${name.toUpperCase()}_INSTRUCTION_MARKER\n`)
@@ -108,12 +108,13 @@ try {
 		const server = await start(name, inherit)
 		servers.push(server)
 		const location = { directory: project }
-		const health = await server.client.health.get()
-		await server.client.plugin.awaitActivation({ location })
-		const configs = await server.client.config.get({ location })
-		const agents = await server.client.agent.list({ location })
-		const commands = await server.client.command.list({ location })
-		const skills = await server.client.skill.list({ location })
+		const request = { signal: AbortSignal.timeout(30_000) }
+		const health = await server.client.health.get(request)
+		await server.client.plugin.awaitActivation({ location }, request)
+		const configs = await server.client.config.get({ location }, request)
+		const agents = await server.client.agent.list({ location }, request)
+		const commands = await server.client.command.list({ location }, request)
+		const skills = await server.client.skill.list({ location }, request)
 		await writeFile(
 			join(root, `${name}-observed.json`),
 			JSON.stringify({ health, configs, agents, commands, skills }, null, 2),
@@ -126,7 +127,8 @@ try {
 		assert(
 			agents.data.some((agent) =>
 				agent.permissions.some(
-					(rule) => rule.action === "edit" && rule.resource === "*" && rule.effect === "deny",
+					(rule) =>
+						rule.action === "edit" && rule.resource === `${name}-only/*` && rule.effect === "deny",
 				),
 			),
 			"profile permission missing",
@@ -138,7 +140,9 @@ try {
 			assert(
 				!text.includes(`${other}agent`) &&
 					!text.includes(`${other}skill`) &&
-					!text.includes(`${other}command`),
+					!text.includes(`${other}command`) &&
+					!text.includes(`${other}-marker`) &&
+					!text.includes(`${other}-only/*`),
 				"other profile leaked",
 			)
 	}
@@ -149,7 +153,7 @@ try {
 	for (const server of servers) {
 		server.process.stdin.end()
 		await server.reader.cancel()
-		const timer = setTimeout(() => server.process.kill(), 5000)
+		const timer = setTimeout(() => server.process.kill("SIGKILL"), 5000)
 		await server.process.exited
 		clearTimeout(timer)
 	}

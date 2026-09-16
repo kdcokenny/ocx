@@ -244,6 +244,7 @@ export function registerRegistryCommand(program: Command): void {
 			.option("--project", "Use project sources")
 			.option("--cwd <directory>", "Project directory", process.cwd())
 			.option("--json", "Output JSON")
+			.option("-q, --quiet", "Suppress normal output")
 		if (action === "add")
 			command
 				.requiredOption("--name <alias>", "Registry alias")
@@ -277,8 +278,9 @@ export function registerRegistryCommand(program: Command): void {
 							: action === "remove"
 								? await runRegistryRemoveCore(value as string, callbacks)
 								: runRegistryListCore(callbacks)
-					if ("dryRun" in result) outputDryRun(result, { json: options.json })
+					if ("dryRun" in result) outputDryRun(result, { json: options.json, quiet: options.quiet })
 					else if (options.json) outputJson({ success: true, ...result })
+					else if (options.quiet) return
 					else if ("registries" in result)
 						console.log(
 							result.registries.map((entry) => `${entry.name}\t${entry.url}`).join("\n") ||

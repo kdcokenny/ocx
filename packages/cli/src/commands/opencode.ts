@@ -59,6 +59,8 @@ export function buildOpenCodeEnv(options: {
 
 /** V2.0.3 has command-specific server flags, not a global standalone flag. */
 export function buildOpenCodeArgs(args: string[]): string[] {
+	if (args.some((arg) => arg === "--server" || arg.startsWith("--server=")))
+		throw new ConfigError("OCX profiles require a private server; do not supply --server.")
 	if (
 		args.some(
 			(arg, index) =>

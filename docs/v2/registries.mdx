@@ -64,7 +64,7 @@ An update preserves a local edit when that upstream file has not changed. If ups
 ocx update --all --profile work --dry-run
 ocx update --all --profile work --force --dry-run
 ocx verify --profile work
-ocx remove team/review --profile work
+ocx remove kdco/code-review --project
 ```
 
 Keep profile config in version control if you want diffs and history. Receipts detect changed bytes; they are not a registry signature or proof of publisher identity.
@@ -82,4 +82,4 @@ First check that the operation is no longer running and copy the entire destinat
 
 An incomplete rollback also preserves backups and reports their location. Do not blindly delete transaction directories to suppress the error. This is recoverable file ownership, not a promise of atomicity across power loss.
 
-Build output is staged before publication. An interrupted replacement retains an adjacent `.ocx-publication.json` journal and the previous directory. Confirm the old builder has stopped, remove only its reported stale publication lock, and rerun the build to recover. Builds are not a live-serving deployment mechanism: publish their completed output through your static host so readers use an immutable deployment.
+Build output is staged before publication. An interrupted replacement retains an adjacent `.ocx-publication.json` journal and the previous directory. Rerunning the build reclaims a lock whose recorded local owner has exited and recovers the journal. Unknown owners or a reused process ID require checking that the builder has stopped and removing only its reported stale lock. Builds are not a live-serving deployment mechanism: publish their completed output through your static host so readers use an immutable deployment.

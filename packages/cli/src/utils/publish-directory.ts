@@ -86,5 +86,6 @@ export async function publishDirectory(
 				throw error
 			}
 		},
+		{ recoverDeadOwner: true },
 	)
 }

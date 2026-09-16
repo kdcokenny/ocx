@@ -48,6 +48,7 @@ async function run(args: string[], nativeCommand = false) {
 		clearTimeout(timer)
 	}
 }
+let failed = false
 try {
 	console.log("START SERVICE", await run(["service", "start"], true))
 	console.log("SERVICE STATUS", await run(["service", "status"], true))
@@ -59,7 +60,15 @@ try {
 	console.log("AUTH", await run(["oc", "-p", "ocx-dev", "auth", "list"]))
 	console.log("SESSIONS", await run(["oc", "-p", "ocx-dev", "session", "list"]))
 	console.log("PATHS", await run(["oc", "-p", "ocx-dev", "debug", "paths"]))
+} catch (error) {
+	failed = true
+	throw error
 } finally {
-	console.log("STOP SERVICE", await run(["service", "stop"], true))
+	try {
+		console.log("STOP SERVICE", await run(["service", "stop"], true))
+	} catch (error) {
+		console.error("Service cleanup failed:", error)
+		if (!failed) process.exitCode = 1
+	}
 	console.log("Fixture:", root)
 }

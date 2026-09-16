@@ -45,12 +45,8 @@ const OMIT_FILES = new Set([
 	"bun.lockb",
 	"pnpm-lock.yaml",
 	"yarn.lock",
-	"ocx.lock",
-	"auth.json",
-	"service.json",
-	"tui.json",
-	"tui.jsonc",
 ])
+const OMIT_STATE_FILES = new Set(["ocx.lock", "auth.json", "service.json", "tui.json", "tui.jsonc"])
 const RETIRED_PACKAGES = new Set([
 	"opencode-background-agents",
 	"opencode-notify",
@@ -180,7 +176,12 @@ export async function importLegacy(options: MigrateOptions): Promise<ImportRepor
 			const bytes = await readManagedFile(source, path)
 			if (!bytes) throw new ValidationError(`Source file disappeared during import: ${path}`)
 			const sha256 = hashContent(bytes)
-			if (OMIT_FILES.has(path) || entry.name === ".env" || entry.name.startsWith(".env.")) {
+			if (
+				OMIT_FILES.has(path) ||
+				OMIT_STATE_FILES.has(entry.name) ||
+				entry.name === ".env" ||
+				entry.name.startsWith(".env.")
+			) {
 				report.items.push({
 					path,
 					action: "omit",
