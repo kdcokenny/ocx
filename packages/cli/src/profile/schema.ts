@@ -2,22 +2,9 @@ import type { infer as ZodInfer } from "zod"
 import { boolean, object, record, string, unknown } from "zod"
 import { profileOcxConfigSchema } from "../schemas/ocx"
 
-/**
- * Profile name validation schema.
- * - Must start with a letter
- * - Can contain alphanumeric, dots, underscores, hyphens
- * - 1-32 characters
- * Based on CCS variant-service.ts pattern.
- */
-export const profileNameSchema = string()
-	.min(1, "Profile name is required")
-	.max(32, "Profile name must be 32 characters or less")
-	.regex(
-		/^[a-zA-Z][a-zA-Z0-9._-]*$/,
-		"Profile name must start with a letter and contain only alphanumeric characters, dots, underscores, or hyphens",
-	)
+export { type ProfileName, profileNameSchema } from "./paths"
 
-export type ProfileName = ZodInfer<typeof profileNameSchema>
+import { profileNameSchema } from "./paths"
 
 /**
  * Represents a loaded profile with all its data.

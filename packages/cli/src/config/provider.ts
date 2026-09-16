@@ -1,134 +1,72 @@
-/**
- * ConfigProvider Interface
- *
- * Abstract configuration provider pattern following the 5 Laws of Elegant Defense:
- * - Parse at boundary (async factory), sync getters (trusted internal state)
- * - Early exit via guard clauses in factories
- * - Fail fast with descriptive errors
- *
- * Implementations parse config at construction; getters are sync and pure.
- */
+import { lstat } from "node:fs/promises"
+import { join, resolve } from "node:path"
+import { ProfileManager } from "../profile/manager"
+import { getGlobalOcxRoot, getProfileDir } from "../profile/paths"
+import { ocxConfigSchema, type RegistryConfig } from "../schemas/config"
+import { ConfigError, ConflictError } from "../utils/errors"
+import { readGlobalConfig, readJsoncObject } from "./files"
 
-import { type OcxConfig, type RegistryConfig, readOcxConfig } from "../schemas/config"
-import { ConfigError } from "../utils/errors"
-import { getGlobalConfigPath, globalDirectoryExists } from "../utils/paths"
-
-// =============================================================================
-// INTERFACE
-// =============================================================================
-
-/**
- * Abstract configuration provider interface.
- * Implementations parse config at construction (boundary), getters are sync and pure.
- */
 export interface ConfigProvider {
-	/** Working directory for this config context */
+	/** Configuration root; both files and receipts are relative to this directory. */
 	readonly cwd: string
-
-	/** Get registries for this scope (sync - data already parsed at construction) */
 	getRegistries(): Record<string, RegistryConfig>
-
-	/** Get component installation path */
 	getComponentPath(): string
+	assertCurrent?(): Promise<void>
 }
 
-// =============================================================================
-// LOCAL CONFIG PROVIDER
-// =============================================================================
-
-/**
- * Provides configuration from local project (ocx.jsonc).
- *
- * Use this when operating on a project with an ocx.jsonc file.
- */
-export class LocalConfigProvider implements ConfigProvider {
-	readonly cwd: string
-	private readonly config: OcxConfig // immutable, parsed at construction
-
-	private constructor(cwd: string, config: OcxConfig) {
-		this.cwd = cwd
-		this.config = config
-	}
-
-	/**
-	 * Require an initialized local config, throwing if not found.
-	 * Use this in commands that require a local ocx.jsonc to exist.
-	 *
-	 * @throws ConfigError if ocx.jsonc doesn't exist or is invalid
-	 * @returns LocalConfigProvider instance guaranteed to have valid config
-	 */
-	static async requireInitialized(cwd: string): Promise<LocalConfigProvider> {
-		const config = await readOcxConfig(cwd)
-
-		// Guard: No config file (Law 1: Early Exit)
-		if (!config) {
-			throw new ConfigError(
-				"No ocx.jsonc found in .opencode/ or project root. Run 'ocx init' first.",
-			)
-		}
-
-		return new LocalConfigProvider(cwd, config)
-	}
-
+class FileConfigProvider implements ConfigProvider {
+	constructor(
+		readonly cwd: string,
+		private readonly registries: Record<string, RegistryConfig>,
+		readonly assertCurrent?: () => Promise<void>,
+	) {}
 	getRegistries(): Record<string, RegistryConfig> {
-		return this.config.registries
+		return this.registries
 	}
-
-	getComponentPath(): string {
-		// Default to .opencode directory for local projects
-		return ".opencode"
-	}
-}
-
-// =============================================================================
-// GLOBAL CONFIG PROVIDER
-// =============================================================================
-
-/**
- * Config provider for global OpenCode installations.
- * Installs to ~/.config/opencode/ without .opencode prefix.
- */
-export class GlobalConfigProvider implements ConfigProvider {
-	readonly cwd: string
-	private readonly config: OcxConfig | null
-
-	private constructor(basePath: string, config: OcxConfig | null) {
-		this.cwd = basePath
-		this.config = config
-	}
-
-	/**
-	 * Require an initialized global config, throwing if not found.
-	 * Use this in commands that require global OpenCode config to exist.
-	 *
-	 * @throws ConfigError if OpenCode hasn't been initialized globally
-	 * @returns GlobalConfigProvider instance guaranteed to have valid config
-	 */
-	static async requireInitialized(): Promise<GlobalConfigProvider> {
-		const basePath = getGlobalConfigPath()
-
-		// Guard: Global directory must exist (Law 1: Early Exit)
-		if (!(await globalDirectoryExists())) {
-			throw new ConfigError("Global config not found. Run 'ocx init --global' first.")
-		}
-
-		// Load ocx.jsonc if it exists (returns null if not found)
-		const config = await readOcxConfig(basePath)
-		if (!config) {
-			throw new ConfigError("Global config not found. Run 'ocx init --global' first.")
-		}
-
-		return new GlobalConfigProvider(basePath, config)
-	}
-
-	getRegistries(): Record<string, RegistryConfig> {
-		return this.config?.registries ?? {}
-	}
-
-	/**
-	 * Returns empty string - global installs have no .opencode prefix.
-	 */
 	getComponentPath(): string {
 		return ""
 	}
+}
+
+export const LocalConfigProvider = {
+	async requireInitialized(cwd: string): Promise<ConfigProvider> {
+		const root = join(resolve(cwd), ".opencode")
+		const configPath = join(root, "ocx.jsonc")
+		if (!(await Bun.file(configPath).exists()))
+			throw new ConfigError("Run 'ocx init --project' in this project first.")
+		const config = ocxConfigSchema.parse(await readJsoncObject(configPath))
+		return new FileConfigProvider(root, config.registries)
+	},
+}
+
+/** Global sources are used for browsing and creating profiles, never as an install target. */
+export const GlobalConfigProvider = {
+	async requireInitialized(): Promise<ConfigProvider> {
+		return new FileConfigProvider(getGlobalOcxRoot(), (await readGlobalConfig()).registries)
+	},
+}
+
+export interface DestinationOptions {
+	profile?: string
+	project?: boolean
+	cwd?: string
+}
+
+export async function resolveDestination(options: DestinationOptions): Promise<ConfigProvider> {
+	if ((options.profile !== undefined) === Boolean(options.project)) {
+		throw new ConfigError("Choose exactly one destination: --profile <name> or --project.")
+	}
+	if (options.profile !== undefined) {
+		const profile = await ProfileManager.create().get(options.profile)
+		const root = getProfileDir(profile.name)
+		const original = await lstat(root)
+		return new FileConfigProvider(root, profile.ocx.registries, async () => {
+			const current = await lstat(root)
+			if (current.dev !== original.dev || current.ino !== original.ino)
+				throw new ConflictError(
+					`Profile "${profile.name}" changed while preparing the operation; retry it`,
+				)
+		})
+	}
+	return LocalConfigProvider.requireInitialized(options.cwd ?? process.cwd())
 }

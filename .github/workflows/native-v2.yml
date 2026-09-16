@@ -1,0 +1,84 @@
+name: OpenCode V2 Conformance
+
+on:
+  pull_request:
+    paths:
+      - "packages/cli/**"
+      - "bun.lock"
+      - "legacy/**"
+      - ".github/workflows/native-v2.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/cli/**"
+      - "bun.lock"
+      - "legacy/**"
+      - ".github/workflows/native-v2.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "31 8 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: ${{ github.event_name == 'schedule' && 'Latest V2 compatibility' || 'Pinned V2 conformance' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OPENCODE_TEST_VERSION: ${{ github.event_name == 'schedule' && 'latest' || '2.0.3' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.bun/install/cache
+            ~/.npm
+            .turbo
+          key: ${{ runner.os }}-native-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-native-bun-
+      - run: bun install --frozen-lockfile
+      - name: Install isolated native binary
+        run: |
+          npm install --prefix "$RUNNER_TEMP/opencode-v2" --ignore-scripts --no-audit --no-fund "@opencode/cli@$OPENCODE_TEST_VERSION"
+          node "$RUNNER_TEMP/opencode-v2/node_modules/@opencode/cli/postinstall.mjs"
+      - name: Exercise built OCX with native servers and a local mock model
+        run: |
+          export OPENCODE_V2_BIN="$RUNNER_TEMP/opencode-v2/node_modules/.bin/opencode"
+          "$OPENCODE_V2_BIN" --version
+          bun run --cwd packages/cli test:native
+
+  legacy:
+    name: Frozen V1 compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.bun/install/cache
+            ~/.npm
+            .turbo
+          key: ${{ runner.os }}-native-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-native-bun-
+      - run: bun install --frozen-lockfile
+      - name: Install pinned legacy client in isolation
+        run: npm install --prefix "$RUNNER_TEMP/ocx-v1" --ignore-scripts --no-audit --no-fund ocx@2.0.15
+      - name: Verify restored snapshots with the published V1 client
+        run: |
+          export OCX_V1_ENTRYPOINT="$RUNNER_TEMP/ocx-v1/node_modules/ocx/dist/index.js"
+          bun run --cwd packages/cli test:legacy

@@ -1,0 +1,93 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"version": {
+			"type": "number",
+			"const": 1
+		},
+		"root": {
+			"type": "string"
+		},
+		"installed": {
+			"default": {},
+			"type": "object",
+			"propertyNames": {
+				"type": "string"
+			},
+			"additionalProperties": {
+				"type": "object",
+				"properties": {
+					"registryUrl": {
+						"type": "string"
+					},
+					"registryName": {
+						"type": "string"
+					},
+					"name": {
+						"type": "string"
+					},
+					"revision": {
+						"type": "string"
+					},
+					"hash": {
+						"type": "string"
+					},
+					"files": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"path": {
+									"type": "string"
+								},
+								"hash": {
+									"type": "string"
+								}
+							},
+							"required": ["path", "hash"]
+						}
+					},
+					"installedAt": {
+						"type": "string"
+					},
+					"updatedAt": {
+						"type": "string"
+					},
+					"owner": {
+						"type": "object",
+						"properties": {
+							"type": {
+								"type": "string",
+								"enum": ["user", "profile", "system"]
+							},
+							"id": {
+								"type": "string"
+							}
+						},
+						"required": ["type"]
+					},
+					"dependencies": {
+						"default": [],
+						"type": "array",
+						"items": {
+							"type": "string",
+							"pattern": "^(?=[^/]{1,64}\\/)(?=.{1,129}$)[a-z0-9]+(-[a-z0-9]+)*\\/(?=[^/]{1,64}$)[a-z0-9]+(-[a-z0-9]+)*$"
+						}
+					}
+				},
+				"required": [
+					"registryUrl",
+					"registryName",
+					"name",
+					"revision",
+					"hash",
+					"files",
+					"installedAt"
+				]
+			}
+		}
+	},
+	"required": ["version"],
+	"$id": "https://ocx.kdco.dev/schemas/v3/receipt.json"
+}

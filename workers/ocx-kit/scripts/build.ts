@@ -1,8 +1,5 @@
-import { buildRegistry } from "ocx"
+import { join } from "node:path"
+import { restoreLegacyRegistry } from "../../../legacy/restore"
 
-const result = await buildRegistry({
-	source: ".",
-	out: "dist",
-})
-
-console.log(`✓ Built ${result.componentsCount} components`)
+await restoreLegacyRegistry("ocx-kit", join(import.meta.dir, "..", "dist"))
+console.log("Restored frozen OpenCode V1 preset registry")

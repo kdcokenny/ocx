@@ -23,6 +23,8 @@ import { createSpinner } from "../../utils/spinner"
 import type { UpdateOptions } from "./update"
 
 const UPDATE_ERROR_MESSAGES: Record<CheckFailure["reason"], string> = {
+	"incompatible-major":
+		"The update channel points to another OCX major. Automatic cross-major updates are disabled; review the migration guide before changing versions.",
 	"dev-version":
 		"Cannot check for updates in development mode. Install via npm for update support.",
 	timeout: "Update check timed out after 10s. Try again or check your network.",
@@ -172,9 +174,9 @@ async function updateViaPackageManager(
 			case "unknown": {
 				throw new SelfUpdateError(
 					"Could not detect install method. Update manually with one of:\n" +
-						"  npm install -g ocx@latest\n" +
-						"  pnpm install -g ocx@latest\n" +
-						"  bun install -g ocx@latest",
+						`  npm install -g ocx@${targetVersion}\n` +
+						`  pnpm install -g ocx@${targetVersion}\n` +
+						`  bun install -g ocx@${targetVersion}`,
 				)
 			}
 		}

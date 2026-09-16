@@ -1,0 +1,86 @@
+---
+title: Profile commands
+description: Create, copy, inspect, select, rename, and remove profiles
+---
+
+The command group is `ocx profile`, with alias `ocx p`. All profile subcommands support `--json` and operate in the global OCX profile store; they do not take `--global` or `--project`.
+
+## Create
+
+```sh
+ocx profile add work
+ocx profile add personal --clone work
+ocx profile add team --source kdco/minimal --from https://registry.kdco.dev/opencode-v2
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--clone <name>` | Copy an existing profile into a new name. |
+| `--source <alias/component>` | Create from a registry component whose type is `profile`. |
+| `--from <url>` | Override the source registry for this creation; requires `--source`. |
+| `--json` | Return the result as JSON. |
+
+Use `--clone` or `--source`, not both. With neither, OCX writes starter `ocx.jsonc`, `opencode.jsonc`, and `AGENTS.md` files. Creation fails if the destination name already exists.
+
+A recipe resolves sources from global metadata. Without `--from`, configure its alias first:
+
+```sh
+ocx registry add https://registry.kdco.dev/opencode-v2 --name kdco --global
+ocx profile add team --source kdco/minimal
+```
+
+Use a local or preview registry URL until the new public catalog is deployed. OCX stages a recipe and its dependencies before publishing the new profile. The recipe's root config files become owned files, so future updates protect local edits.
+
+Cloning includes ordinary files, supporting assets, native terminal configuration, and receipts. It excludes generated `node_modules`, `.git`, `.cache`, and `.locks` directories and rejects symlinks or special files. It does not establish ongoing synchronization between profiles.
+
+## List and inspect
+
+```sh
+ocx profile list
+ocx profile ls --json
+ocx profile show work
+ocx profile show
+```
+
+`list` reports profile names and the configured default. `show` returns JSON containing the name, OCX metadata, native config if present, and whether `AGENTS.md` exists. It does not report a fully resolved OpenCode configuration.
+
+With no name, `show` uses the same selection as launch: `OCX_PROFILE`, then the configured global default. An unknown or unset selection is an error.
+
+## Select a default
+
+```sh
+ocx profile use work
+ocx oc
+ocx profile use --clear
+```
+
+`use` records an explicit default in global OCX metadata. An explicit launch option or `OCX_PROFILE` takes precedence. Clearing the default leaves those other selection methods available.
+
+## Rename
+
+```sh
+ocx profile move work team
+# Equivalent alias: ocx profile mv work team
+```
+
+Renaming moves the directory and updates the global default if necessary. It refuses an existing destination. If your shell's `OCX_PROFILE` names the old profile, update or unset that variable yourself; a child process cannot change its parent shell.
+
+See [interrupted rename recovery](/v2/troubleshooting#interrupted-profile-rename) if a process exits between the directory move and default update.
+
+## Remove
+
+```sh
+ocx profile use --clear
+ocx profile remove scratch
+# Alias: ocx profile rm scratch
+```
+
+This removes the **whole profile directory**, including edits and unowned supporting files. It has no dry-run or force option. Back up a profile you want to retain before removing it. This differs from component removal, which checks owned-file edits.
+
+Removal also refuses an unfinished file transaction or pending profile-move journal; [complete recovery](/v2/troubleshooting) first. A configured default cannot be removed until you select another default or clear it. Running OpenCode sessions are not closed by changing the default.
+
+## Names
+
+Names are 1–32 characters, start with a letter, and contain only letters, digits, dots, underscores, or hyphens. They cannot end in a dot or use reserved Windows device names. A profile is a real directory; symlink roots are not managed destinations.
+
+See [profiles](/v2/profiles) for layout, project discovery, and native storage behavior.

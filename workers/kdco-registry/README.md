@@ -1,152 +1,141 @@
 # KDCO Registry
 
-> Curated OpenCode extensions for enhanced AI-assisted development.
+Editable OpenCode components, served as static files by a Cloudflare Worker.
 
-## Quick Start
+| Catalog | Client | Registry base URL |
+| --- | --- | --- |
+| OpenCode V2 | OCX 3 | `https://registry.kdco.dev/opencode-v2` after this branch is deployed |
+| Frozen OpenCode V1 | OCX 2.0.15 | `https://registry.kdco.dev` |
 
-```bash
-# One-time local setup
-ocx init
+The V2 catalog is maintained in [`catalog/`](catalog/registry.jsonc). The V1 catalog is restored byte-for-byte from a [verified archive](../../legacy/README.md). The two protocols have separate URLs.
 
-# Install component directly from registry
-ocx add kdco/workspace --from https://registry.kdco.dev
+## OpenCode V2 quick start
+
+With the OCX 3 preview and OpenCode 2.0.3 or newer within V2 installed:
+
+```sh
+ocx registry add https://registry.kdco.dev/opencode-v2 --name kdco --global
+ocx profile add work --source kdco/minimal
+ocx verify --profile work
+ocx oc --profile work
 ```
 
-Or install a profile:
+Before public deployment, use the local worker URL below or the PR's worker preview with `/opencode-v2` appended.
 
-```bash
-# One-time global setup
-ocx init --global
+### Available V2 components
 
-ocx profile add ws --source kit/ws --from https://ocx-kit.kdco.dev --global
+| Component | Type | Contents |
+| --- | --- | --- |
+| `kdco/minimal` | Profile | OCX metadata, native OpenCode config, working instructions, and the code-review skill. |
+| `kdco/code-review` | Skill | Review methodology, severity guidance, evidence requirements, and reporting checklist. |
+
+Install the skill into an existing profile:
+
+```sh
+ocx add kdco/code-review --from https://registry.kdco.dev/opencode-v2 --profile work
+ocx update --all --profile work --dry-run
 ```
 
-Browse available components:
+Or install into a project:
 
-```bash
-# With a profile that includes the registry
-ocx search kdco/ -p ws
-
-# Or add the registry first, then search
-ocx registry add https://registry.kdco.dev --name kdco
-ocx search kdco/
+```sh
+ocx init --project
+ocx add kdco/code-review --from https://registry.kdco.dev/opencode-v2 --project
+ocx verify --project
 ```
 
-## Bundles
+Do not add the skill separately when the minimal profile already installed it as a dependency. Global registry sources are used for profile creation and browsing; a profile's sources are configured separately.
 
-| Name | Description | Command |
-|------|-------------|---------|
-| workspace | Full KDCO experience | `ocx add kdco/workspace --from https://registry.kdco.dev` |
-| philosophy | Code quality philosophies | `ocx add kdco/philosophy --from https://registry.kdco.dev` |
+## Build and develop
 
-## Components
+Run from the repository root. Bun and `tar` are required; Wrangler is a workspace dependency.
 
-Install individually if you don't want the full bundle.
-
-### Agents
-
-| Name | Description | Command |
-|------|-------------|---------|
-| researcher | External research via MCP | `ocx add kdco/researcher --from https://registry.kdco.dev` |
-| scribe | Documentation specialist | `ocx add kdco/scribe --from https://registry.kdco.dev` |
-| coder | Code implementation | `ocx add kdco/coder --from https://registry.kdco.dev` |
-
-### Plugins
-
-| Name | Description | Command |
-|------|-------------|---------|
-| background-agents | Async task execution | `ocx add kdco/background-agents --from https://registry.kdco.dev` |
-| notify | OS notifications | `ocx add kdco/notify --from https://registry.kdco.dev` |
-| workspace-plugin | Plan management | `ocx add kdco/workspace-plugin --from https://registry.kdco.dev` |
-| worktree | Auto-manages Git worktrees for isolated AI sessions with seamless terminal spawning | `ocx add kdco/worktree --from https://registry.kdco.dev` |
-
-### Skills
-
-| Name | Description | Command |
-|------|-------------|---------|
-| plan-protocol | Implementation plan guidelines | `ocx add kdco/plan-protocol --from https://registry.kdco.dev` |
-| code-philosophy | The 5 Laws of Elegant Defense | `ocx add kdco/code-philosophy --from https://registry.kdco.dev` |
-| frontend-philosophy | The 5 Pillars of Intentional UI | `ocx add kdco/frontend-philosophy --from https://registry.kdco.dev` |
-
-## Web Search Setup
-
-The researcher agent uses **Exa** by default (free, no auth required).
-
-### Adding Custom Search Engines
-
-You can integrate any MCP-compatible search server. The pattern involves:
-
-1. **Configure the MCP server** with command and environment
-2. **Store secrets securely** using file-based or environment variables
-3. **Enable tools** for the researcher agent using a glob pattern
-
-#### Security Best Practices
-
-**Preferred: File-based secrets** — keeps API keys out of config files:
-
-```bash
-mkdir -p ~/.secrets && chmod 700 ~/.secrets
-echo "your-api-key" > ~/.secrets/service-api-key
-chmod 600 ~/.secrets/service-api-key
+```sh
+bun install --frozen-lockfile
+bun run --cwd packages/cli build
+bun run --cwd workers/kdco-registry build
+bun run --cwd workers/kdco-registry dev
 ```
 
-Reference in config with `{file:~/.secrets/service-api-key}`.
+The worker normally runs at `http://localhost:8787`. Its V2 registry base is `http://localhost:8787/opencode-v2`:
 
-**Alternative: Environment variables** — useful for CI/CD:
-
-```jsonc
-"environment": { "API_KEY": "{env:SERVICE_API_KEY}" }
+```sh
+bun packages/cli/dist/index.js profile add registry-test \
+  --source kdco/minimal --from http://localhost:8787/opencode-v2
+bun packages/cli/dist/index.js verify --profile registry-test
 ```
 
-#### Example: Kagi
+`dev` builds once before starting Wrangler. Rebuild after editing catalog files. The build restores and verifies the frozen root first, builds the V2 catalog in a staging directory, sets subpath-aware discovery metadata, and publishes the completed output.
 
-[Kagi](https://kagi.com) provides privacy-focused search (requires paid subscription).
+## Project structure
 
-1. **Get your session token** from Kagi's settings
-
-2. **Create a secret file** (requires Node.js 22+):
-   ```bash
-   mkdir -p ~/.secrets && chmod 700 ~/.secrets
-   echo "YOUR_KAGI_SESSION_TOKEN" > ~/.secrets/kagi-session-token
-   chmod 600 ~/.secrets/kagi-session-token
-   ```
-
-3. **Add the MCP server** to your `opencode.jsonc`:
-   ```jsonc
-   {
-     "mcp": {
-       "kagi": {
-         "type": "local",
-         "command": ["npx", "-y", "github:czottmann/kagi-ken-mcp"],
-         "environment": {
-           "KAGI_SESSION_TOKEN": "{file:~/.secrets/kagi-session-token}"
-         }
-       }
-     },
-     "agent": {
-       "researcher": {
-         "tools": { "kagi_*": true }
-       }
-     }
-    }
-    ```
-
-#### Enabling Tools
-
-Use glob patterns to grant the researcher agent access to MCP tools:
-
-```jsonc
-{
-  "agent": {
-    "researcher": {
-      "tools": { "prefix_*": true }
-    }
-  }
-}
+```text
+workers/kdco-registry/
+├── catalog/
+│   ├── registry.jsonc             # Active protocol-3 manifest
+│   └── files/
+│       ├── minimal/              # Complete profile config and instructions
+│       └── skills/code-review/   # Native skill
+├── scripts/build.ts              # Restore V1 + build V2 atomically
+├── wrangler.jsonc                # Serve dist as static assets
+└── dist/                         # Generated; do not edit
+    ├── index.json                # Frozen V1 index
+    ├── components/               # Frozen V1 manifests and files
+    └── opencode-v2/               # New catalog, assets, and discovery metadata
 ```
 
-Replace `prefix_*` with the tool prefix for your search engine (e.g., `kagi_*`, `tavily_*`).
+## Add or update a V2 component
 
-## Creating Your Own Registry
+1. Create files under `catalog/files/` and list every published asset in `catalog/registry.jsonc`.
+2. Use root-relative targets such as `skills/review/SKILL.md`, without `.opencode/`.
+3. Reserve complete root configuration files for `type: "profile"` recipes. Ordinary components never patch native configuration or install npm dependencies.
+4. Declare shared components as dependencies so only one component owns each file.
+5. Validate, rebuild, and install from the local worker into a disposable destination.
 
-See [Creating OCX Registries](../../docs/registries/create.mdx) for how to build and distribute your own component registry.
+```sh
+bun packages/cli/dist/index.js validate workers/kdco-registry/catalog
+bun run --cwd workers/kdco-registry build
+bun run --cwd workers/kdco-registry check
+```
+
+Test an update from the previous component revision as well as a fresh install. Keep changes to the frozen archives out of normal catalog updates. See the [authoring guide](../../examples/registry-starter/AGENTS.md) and [protocol reference](../../docs/v2/registry-protocol.mdx).
+
+## Deploy and verify
+
+From the repository root, with Cloudflare credentials configured:
+
+```sh
+bun run --cwd workers/kdco-registry deploy
+```
+
+Deployments include both catalogs. Before promoting a deployment, check the root V1 index and files against `legacy/manifest.json`, then test a fresh OCX 3 installation from the deployed `/opencode-v2` path. The build itself checks the archive and every restored file hash.
+
+An interrupted directory publication leaves a recovery journal beside the output. Rerun the build to recover; retain its previous-output directory until recovery succeeds. See [recovery guidance](../../docs/v2/troubleshooting.mdx).
+
+## Frozen V1 components
+
+The original root endpoint continues to serve these historical components:
+
+| Group | Components |
+| --- | --- |
+| Workspace | `workspace`, `workspace-plugin`, `kdco-primitives` |
+| Agents | `coder`, `researcher`, `reviewer`, `scribe` |
+| Plugins | `background-agents`, `notify`, `worktree` |
+| Skills | `code-philosophy`, `frontend-philosophy`, `code-review`, `plan-protocol`, `plan-review` |
+| Other definitions | `review`, `philosophy` |
+
+Use the frozen OCX client and an OpenCode V1 executable for them. For example, from a disposable legacy project:
+
+```sh
+bunx ocx@2.0.15 init
+bunx ocx@2.0.15 add kdco/workspace --from https://registry.kdco.dev
+```
+
+The complete [old registry README](https://github.com/kdcokenny/ocx/blob/e79df6f/workers/kdco-registry/README.md) includes its original researcher/MCP setup instructions. The [readable V1 documentation archive](../../legacy/docs/README.md) preserves agent bodies, skills, commands, and profile notes. These documents describe the frozen V1 product; the new minimal profile does not install the former workspace harness.
+
+## Further reading
+
+- [Using file registries](../../docs/v2/registries.mdx)
+- [Create your own registry](../../examples/registry-starter/README.md)
+- [V1 import and plugin retirement](../../docs/v2/migration.mdx)
+- [Native conformance and release validation](../../docs/maintainers/opencode-v2-validation.md)

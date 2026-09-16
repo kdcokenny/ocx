@@ -1,0 +1,26 @@
+{
+	"$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
+	"name": "KDCO for OpenCode V2",
+	"version": "3.0.0",
+	"author": "kdcokenny",
+	"opencode": "2.0.3",
+	"components": [
+		{
+			"name": "minimal",
+			"type": "profile",
+			"description": "Native OpenCode V2 profile with ordinary review guidance",
+			"files": [
+				{ "path": "minimal/ocx.jsonc", "target": "ocx.jsonc" },
+				{ "path": "minimal/opencode.jsonc", "target": "opencode.jsonc" },
+				{ "path": "minimal/AGENTS.md", "target": "AGENTS.md" }
+			],
+			"dependencies": ["code-review"]
+		},
+		{
+			"name": "code-review",
+			"type": "skill",
+			"description": "Review changes for concrete regressions and actionable findings",
+			"files": ["skills/code-review/SKILL.md"]
+		}
+	]
+}

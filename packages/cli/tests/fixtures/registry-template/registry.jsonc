@@ -2,18 +2,17 @@
 	// OCX Registry Starter Template
 	// Use this as a starting point for creating your own component registry
 	//
-	// Schema reference: https://ocx.kdco.dev/schemas/v2/registry.json
+	// Schema reference: https://ocx.kdco.dev/schemas/v3/registry.json
 	// Documentation: https://github.com/kdcokenny/ocx
 
-	"$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
+	"$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
 	"name": "My Registry",
-	"namespace": "my-registry",
 	"version": "0.0.1",
 	"author": "Your Name",
 
 	// Compatibility versions
-	"opencode": "1.0.0", // Minimum OpenCode version required
-	"ocx": "1.0.16", // Minimum OCX CLI version required
+	"opencode": "2.0.3", // Minimum OpenCode version required
+	"ocx": "3.0.0-alpha.1", // Minimum OCX CLI version required
 
 	"components": [
 		// Add your components here

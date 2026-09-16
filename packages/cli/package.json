@@ -1,7 +1,7 @@
 {
 	"name": "ocx",
-	"version": "2.0.15",
-	"description": "OCX CLI - OpenCode extension manager with portable, isolated profiles. Your setup, anywhere.",
+	"version": "3.0.0-alpha.1",
+	"description": "Portable named profiles and editable file registries for OpenCode V2",
 	"author": "kdcokenny",
 	"license": "MIT",
 	"type": "module",
@@ -13,7 +13,8 @@
 		"dist/index.js"
 	],
 	"publishConfig": {
-		"access": "public"
+		"access": "public",
+		"tag": "next"
 	},
 	"repository": {
 		"type": "git",
@@ -48,7 +49,10 @@
 		"dev": "bun run src/index.ts",
 		"prepublishOnly": "bun run build",
 		"test": "bun test",
-		"test:binary-smoke": "OCX_DIST_TESTS=1 bun test tests/binary-smoke.test.ts"
+		"test:binary-smoke": "OCX_DIST_TESTS=1 bun test tests/binary-smoke.test.ts",
+		"test:native": "bun run build && bun scripts/conformance/probe.ts && bun scripts/conformance/instruction-probe.ts && bun scripts/conformance/service.ts",
+		"test:legacy": "bun scripts/conformance/legacy.ts",
+		"schemas:generate": "bun scripts/generate-v3-schemas.ts && biome format --write ../../docs/schemas/v3"
 	},
 	"dependencies": {
 		"commander": "^14.0.3",
@@ -60,6 +64,7 @@
 		"zod": "^4.3.6"
 	},
 	"devDependencies": {
+		"@opencode/client": "2.0.3",
 		"@types/bun": "^1.3.11"
 	}
 }

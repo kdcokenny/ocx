@@ -1,0 +1,92 @@
+---
+title: Profiles and project discovery
+description: Select ordinary configuration directories without merging them
+---
+
+Profiles live at `$XDG_CONFIG_HOME/ocx/profiles/<name>`, normally `~/.config/ocx/profiles/<name>`. OCX 2's `opencode/profiles/` directory stays separate.
+
+## Profile layout
+
+```text
+~/.config/ocx/profiles/work/
+├── ocx.jsonc                  # OCX sources, project policy, optional binary
+├── opencode.jsonc             # Native model, provider, permissions, MCP, etc.
+├── AGENTS.md                  # Your working instructions
+├── cli.json                   # Optional native terminal preferences
+├── agents/                    # Native Markdown agent definitions
+├── commands/                  # Native Markdown command templates
+├── skills/                    # Skills with supporting scripts and references
+└── .ocx/receipt.jsonc          # Component ownership (receipt format 1)
+```
+
+Creating an empty profile writes the first three files. Add the other files as needed. Each profile is a portable configuration directory you can inspect, back up, or version with Git. Keep credentials and machine-specific generated state outside shared recipes.
+
+## Create and manage profiles
+
+```sh
+ocx profile add work
+ocx profile add copy --clone work
+ocx profile list
+ocx profile show work
+ocx profile use work
+ocx oc
+ocx profile move work team
+ocx profile use --clear
+ocx profile remove team
+```
+
+Renaming the default updates its selection. Removing the default requires selecting another profile or clearing the selection first. Cloning copies editable files, supporting assets, terminal settings, and receipts; it excludes generated dependencies and rejects symlinks inside the copied tree. Profile names cannot contain path separators. File mutations require a real profile directory; symlink roots are not managed destinations.
+
+If a process exits during a rename, OCX preserves `.ocx/profile-move.json` under the global OCX root. After confirming the process is stopped, clear only its reported stale locks and rerun the same `profile move <old> <new>` command. It repairs the default selection before accepting the move. Do not delete the moved directory while recovering.
+
+Launch selection is `--profile`, then `OCX_PROFILE`, then the default explicitly set by `profile use`. No selection produces an error. Project metadata never selects a profile. Component commands still require an explicit destination.
+
+## Metadata and native files
+
+```json
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v3/profile.json",
+  "projectConfig": "ignore",
+  "registries": {},
+  "bin": "/absolute/path/to/opencode-v2"
+}
+```
+
+`bin` is optional and overrides `OPENCODE_BIN`, then `opencode` on PATH. Relative executable paths resolve from the launch working directory.
+
+OpenCode reads `opencode.json(c)`, `AGENTS.md`, `cli.json`, `agents/`, `commands/`, and `skills/` directly from the profile. OCX checks JSONC syntax when inspecting files but does not mirror native settings or rewrite file/environment references. Relative references retain native semantics; prefer automatically discovered profile `skills/` over cwd-relative extra paths.
+
+## The two project modes
+
+| Setting | Native startup behavior |
+| --- | --- |
+| `ignore` (default) | Disables project configuration, project definitions, and initial ambient project instructions. |
+| `inherit` | Loads project configuration and instructions using OpenCode's precedence. |
+
+This setting is a startup discovery policy, not complete instruction exclusion. For example, your profile can say “use Bun,” while `src/AGENTS.md` says “use tabs.” When OpenCode reads `src/app.ts`, it can receive that nearby guidance too. That was already possible in OpenCode V1.
+
+The agent may therefore follow repository-specific instructions after reading files even in `ignore` mode. The profile does not change, and this does not install or activate a different profile. Native home-level compatibility skill sources also remain available.
+
+Profiles share OpenCode credentials, session history, and other native data storage. They do not provide account separation or a security sandbox.
+
+## Server routing
+
+OCX launches the terminal, `run`, `mini`, `api`, `models`, `stats`, supported `auth` subcommands, and supported `session` subcommands with a private native server. `serve` runs a foreground profile server; `acp` uses native standalone behavior. OCX does not maintain a daemon pool.
+
+OpenCode 2.0.3 has some commands that only address its shared service. OCX rejects those through the profile launcher rather than inspecting the wrong profile. Use `ocx oc api` for profile API operations and the native command directly for user-wide service administration. See the [CLI reference](/v2/cli).
+
+## Use profiles across projects
+
+Run `ocx oc --profile work` from any repository. Its working directory stays that repository while its native configuration directory comes from the profile. Another terminal can launch `personal` at the same time without changing the default selection for either running process.
+
+For a team setup, publish a profile recipe and create each person's local copy with `profile add --source`. Installed files remain editable; the receipt records their original hashes and protects edits during updates. Cloning a profile also makes an independent copy, not a live link.
+
+If a project needs its own agents or commands, install them with `--project` and set the profile to `inherit`. OCX source metadata remains scoped independently: inheriting native project config does not merge the project's registry aliases into the profile.
+
+## Back up and remove
+
+Copy the complete profile, including supporting skill assets and `.ocx/` receipts, when you want to preserve installed-file ownership. Clone with `ocx profile add backup --clone work` for a local working copy; use an external backup or version control for durable history.
+
+`profile remove` deletes the whole directory, including unowned files and local edits. It refuses an unfinished file transaction or pending profile-move journal, so [complete recovery](/v2/troubleshooting) first. Unlike component removal, it does not perform per-file edit protection. Select another default or clear it before removing the current default.
+
+See the [profile command reference](/v2/cli/profiles) for flags, aliases, naming rules, and recipe creation, and [configuration](/v2/configuration) for all metadata fields.

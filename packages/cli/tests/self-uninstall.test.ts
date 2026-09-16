@@ -40,7 +40,7 @@ function createMockGlobalConfig(testDir: string): {
 	defaultProfile: string
 	ocxConfig: string
 } {
-	const root = join(testDir, "opencode")
+	const root = join(testDir, "ocx")
 	const profilesDir = join(root, "profiles")
 	const defaultProfile = join(profilesDir, "default")
 	const ocxConfig = join(root, "ocx.jsonc")
@@ -130,7 +130,7 @@ describe("ocx self uninstall --dry-run", () => {
 
 		expect(exitCode).toBe(0)
 		// Root is shown with "deleteIfEmpty: true" note
-		expect(stdout).toContain("opencode")
+		expect(stdout).toContain("ocx")
 		expect(stdout).toContain("deleteIfEmpty: true")
 	})
 })
@@ -262,7 +262,7 @@ describe("ocx self uninstall (missing paths)", () => {
 	})
 
 	it("handles partially missing files gracefully (only profiles/)", async () => {
-		const root = join(testDir, "opencode")
+		const root = join(testDir, "ocx")
 		const profilesDir = join(root, "profiles", "default")
 		mkdirSync(profilesDir, { recursive: true })
 		writeFileSync(join(profilesDir, "ocx.jsonc"), "{}")
@@ -278,7 +278,7 @@ describe("ocx self uninstall (missing paths)", () => {
 	})
 
 	it("handles partially missing files gracefully (only ocx.jsonc)", async () => {
-		const root = join(testDir, "opencode")
+		const root = join(testDir, "ocx")
 		mkdirSync(root, { recursive: true })
 		const ocxConfig = join(root, "ocx.jsonc")
 		writeFileSync(ocxConfig, JSON.stringify({ registries: {} }))
@@ -294,7 +294,7 @@ describe("ocx self uninstall (missing paths)", () => {
 	})
 
 	it("exits 0 and removes empty root directory", async () => {
-		const root = join(testDir, "opencode")
+		const root = join(testDir, "ocx")
 		mkdirSync(root, { recursive: true })
 		// Empty root - nothing inside
 
@@ -329,12 +329,12 @@ describe("ocx self uninstall (safety checks)", () => {
 
 	it("rejects symlink as root directory and exits with code 2", async () => {
 		// Create real config directory elsewhere
-		const realConfigDir = join(testDir, "real-opencode")
+		const realConfigDir = join(testDir, "real-ocx")
 		mkdirSync(realConfigDir, { recursive: true })
 		writeFileSync(join(realConfigDir, "ocx.jsonc"), "{}")
 
 		// Create symlink where config root would be
-		const symlinkRoot = join(testDir, "opencode")
+		const symlinkRoot = join(testDir, "ocx")
 		symlinkSync(realConfigDir, symlinkRoot)
 
 		const { exitCode, output } = await runCLI(["self", "uninstall"], testDir, {
@@ -352,12 +352,12 @@ describe("ocx self uninstall (safety checks)", () => {
 
 	it("rejects symlink root in dry-run mode too", async () => {
 		// Create real config directory elsewhere
-		const realConfigDir = join(testDir, "real-opencode")
+		const realConfigDir = join(testDir, "real-ocx")
 		mkdirSync(realConfigDir, { recursive: true })
 		writeFileSync(join(realConfigDir, "ocx.jsonc"), "{}")
 
 		// Create symlink where config root would be
-		const symlinkRoot = join(testDir, "opencode")
+		const symlinkRoot = join(testDir, "ocx")
 		symlinkSync(realConfigDir, symlinkRoot)
 
 		const { exitCode, output } = await runCLI(["self", "uninstall", "--dry-run"], testDir, {
@@ -499,7 +499,7 @@ describe("ocx self uninstall (output messages)", () => {
 
 		// In test environment XDG_CONFIG_HOME is set to testDir,
 		// so paths won't have ~ but should be present
-		expect(output).toContain("opencode")
+		expect(output).toContain("ocx")
 		expect(output).toContain("profiles")
 	})
 })
@@ -632,7 +632,7 @@ describe("ocx self uninstall (exit codes)", () => {
 	it("exits 2 on safety error (symlink root)", async () => {
 		const realDir = join(testDir, "real")
 		mkdirSync(realDir, { recursive: true })
-		symlinkSync(realDir, join(testDir, "opencode"))
+		symlinkSync(realDir, join(testDir, "ocx"))
 
 		const { exitCode } = await runCLIIsolated(["self", "uninstall"], testDir)
 

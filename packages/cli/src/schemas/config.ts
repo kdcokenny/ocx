@@ -1,18 +1,20 @@
 /**
- * Config & Lockfile Schemas
+ * OCX metadata and ownership receipts
  *
- * Schemas for ocx.jsonc (user config) and ocx.lock (auto-generated lockfile).
+ * Schemas for OCX metadata and owned files; native configuration belongs to OpenCode.
  * Includes Bun-specific I/O helpers.
  */
 
 import { existsSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
-import { parse as parseJsonc } from "jsonc-parser"
+import { type ParseError, parse as parseJsonc } from "jsonc-parser"
 import type { infer as ZodInfer } from "zod"
-import { array, boolean, literal, object, record, string, unknown, enum as zEnum } from "zod"
+import { array, boolean, literal, object, record, string, enum as zEnum } from "zod"
+import { atomicWrite } from "../profile/atomic"
+import { readManagedFile } from "../utils/file-transaction"
 import { normalizeRegistryUrl } from "../utils/url"
-import { qualifiedComponentSchema } from "./registry"
+import { qualifiedComponentSchema, validateFileTarget } from "./registry"
 
 // =============================================================================
 // OCX CONFIG SCHEMA (ocx.jsonc)
@@ -32,35 +34,23 @@ export const registryConfigSchema = object({
 export type RegistryConfig = ZodInfer<typeof registryConfigSchema>
 
 /**
- * Main OCX config schema (ocx.jsonc)
- * V2: Adds profile field for local profile selection
+ * Global and project OCX metadata (ocx.jsonc)
  */
 export const ocxConfigSchema = object({
 	/** Schema URL for IDE support */
 	$schema: string().optional(),
 
-	/** Profile selection - specifies which global profile to layer with local config */
-	profile: string().optional(),
+	/** Explicit user default for launches; project metadata never selects a profile */
+	defaultProfile: string().optional(),
 
 	/** Configured registries */
 	registries: record(string(), registryConfigSchema).default({}),
 
 	/** Lock registries - prevent adding/removing (enterprise feature) */
 	lockRegistries: boolean().default(false),
-
-	/** Skip version compatibility checks */
-	skipCompatCheck: boolean().default(false),
-})
+}).strict()
 
 export type OcxConfig = ZodInfer<typeof ocxConfigSchema>
-
-export interface ReadOcxConfigOptions {
-	/**
-	 * Emit parse diagnostics directly to stderr.
-	 * Defaults to true to preserve existing human-mode behavior.
-	 */
-	emitParseDiagnostics?: boolean
-}
 
 // =============================================================================
 // RECEIPT SCHEMA (V1: replaces ocx.lock)
@@ -94,7 +84,13 @@ export const installedComponentSchema = object({
 	files: array(
 		object({
 			/** File path relative to install root */
-			path: string(),
+			path: string().superRefine((value, context) => {
+				try {
+					validateFileTarget(value, "profile")
+				} catch (error) {
+					context.addIssue({ code: "custom", message: String(error) })
+				}
+			}),
 			/** SHA-256 hash of this specific file */
 			hash: string(),
 		}),
@@ -114,12 +110,7 @@ export const installedComponentSchema = object({
 		id: string().optional(),
 	}).optional(),
 
-	/**
-	 * OpenCode config provided by this component.
-	 * Stored for runtime instruction path resolution.
-	 * Install-root-relative paths in instructions array are resolved at runtime.
-	 */
-	opencode: record(string(), unknown()).optional(),
+	dependencies: array(qualifiedComponentSchema).default([]),
 })
 
 export type InstalledComponent = ZodInfer<typeof installedComponentSchema>
@@ -143,76 +134,6 @@ export const receiptSchema = object({
 })
 
 export type Receipt = ZodInfer<typeof receiptSchema>
-
-// =============================================================================
-// OCX LOCKFILE SCHEMA (LEGACY - V1 compat)
-// =============================================================================
-
-/**
- * LEGACY V1: Installed component entry in lockfile
- * Key format: "alias/component" (e.g., "kdco/researcher")
- */
-export const legacyInstalledComponentSchema = object({
-	/** Registry alias this was installed from */
-	registry: string(),
-
-	/** Version at time of install */
-	version: string(),
-
-	/** SHA-256 hash of installed files for integrity */
-	hash: string(),
-
-	/** Target files where installed (clean paths, no alias prefix) */
-	files: array(string()),
-
-	/** ISO timestamp of installation */
-	installedAt: string(),
-
-	/** ISO timestamp of last update (optional, only set after update) */
-	updatedAt: string().optional(),
-})
-
-export type LegacyInstalledComponent = ZodInfer<typeof legacyInstalledComponentSchema>
-
-/**
- * Profile source tracking for profiles installed from registries.
- * Optional field in OcxLock - only present for profile installs.
- */
-export const installedFromSchema = object({
-	/** Registry alias this profile was installed from */
-	registry: string(),
-
-	/** Component name in the registry */
-	component: string(),
-
-	/** Registry version at time of install */
-	version: string().optional(),
-
-	/** SHA-256 hash of profile files for integrity */
-	hash: string(),
-
-	/** ISO timestamp of installation */
-	installedAt: string(),
-})
-
-export type InstalledFrom = ZodInfer<typeof installedFromSchema>
-
-/**
- * OCX lockfile schema (ocx.lock)
- * Keys are qualified component refs: "alias/component"
- */
-export const ocxLockSchema = object({
-	/** Lockfile format version */
-	lockVersion: literal(1),
-
-	/** Profile source info (only present for profiles installed from registry) */
-	installedFrom: installedFromSchema.optional(),
-
-	/** Installed components, keyed by "alias/component" */
-	installed: record(qualifiedComponentSchema, legacyInstalledComponentSchema).default({}),
-})
-
-export type OcxLock = ZodInfer<typeof ocxLockSchema>
 
 // =============================================================================
 // RECEIPT FILE HELPERS (V1)
@@ -337,15 +258,11 @@ export function findReceipt(installRoot: string): { path: string; exists: boolea
  * @returns Receipt object or null if not found
  */
 export async function readReceipt(installRoot: string): Promise<Receipt | null> {
-	const { path: receiptPath, exists } = findReceipt(installRoot)
-
-	if (!exists) {
-		return null
-	}
-
-	const file = Bun.file(receiptPath)
-	const content = await file.text()
-	const json = parseJsonc(content, [], { allowTrailingComma: true })
+	const content = await readManagedFile(installRoot, `${RECEIPT_DIR}/${RECEIPT_FILE}`)
+	if (content === null) return null
+	const errors: ParseError[] = []
+	const json = parseJsonc(content.toString("utf8"), errors, { allowTrailingComma: true })
+	if (errors.length > 0) throw new Error("Invalid JSONC in OCX receipt")
 	return receiptSchema.parse(json)
 }
 
@@ -360,165 +277,5 @@ export async function writeReceipt(installRoot: string, receipt: Receipt): Promi
 	// Ensure directory exists
 	await mkdir(path.dirname(receiptPath), { recursive: true })
 
-	const content = JSON.stringify(receipt, null, 2)
-	await Bun.write(receiptPath, content)
-}
-
-// =============================================================================
-// CONFIG FILE HELPERS (Bun-specific I/O)
-// =============================================================================
-
-const CONFIG_FILE = "ocx.jsonc"
-const LOCK_FILE = "ocx.lock"
-const LOCAL_CONFIG_DIR = ".opencode"
-
-/**
- * Find ocx.jsonc config file path.
- * Checks .opencode/ first, then root. Fails if both exist.
- * @returns Object with path and whether it exists, or throws if conflict
- */
-export function findOcxConfig(cwd: string): { path: string; exists: boolean } {
-	const dotOpencodePath = path.join(cwd, LOCAL_CONFIG_DIR, CONFIG_FILE)
-	const rootPath = path.join(cwd, CONFIG_FILE)
-
-	const dotOpencodeExists = existsSync(dotOpencodePath)
-	const rootExists = existsSync(rootPath)
-
-	// Fail if both exist - user needs to consolidate
-	if (dotOpencodeExists && rootExists) {
-		throw new Error(
-			`Found ${CONFIG_FILE} in both .opencode/ and project root. ` +
-				`Please consolidate to one location (recommended: .opencode/${CONFIG_FILE})`,
-		)
-	}
-
-	if (dotOpencodeExists) {
-		return { path: dotOpencodePath, exists: true }
-	}
-
-	if (rootExists) {
-		return { path: rootPath, exists: true }
-	}
-
-	// Neither exists - default to .opencode/ for new files
-	return { path: dotOpencodePath, exists: false }
-}
-
-/**
- * Find ocx.lock lockfile path.
- * Checks .opencode/ first, then root.
- * @param cwd - Working directory
- * @param options - Optional settings for path resolution
- * @returns Object with path and whether it exists
- */
-export function findOcxLock(
-	cwd: string,
-	options?: { isFlattened?: boolean },
-): { path: string; exists: boolean } {
-	const dotOpencodePath = path.join(cwd, LOCAL_CONFIG_DIR, LOCK_FILE)
-	const rootPath = path.join(cwd, LOCK_FILE)
-
-	if (options?.isFlattened) {
-		// Flattened mode (global/profile): prefer root, ignore .opencode/
-		if (existsSync(rootPath)) {
-			return { path: rootPath, exists: true }
-		}
-		return { path: rootPath, exists: false }
-	}
-
-	// Local mode: prefer .opencode/, fallback to root
-	if (existsSync(dotOpencodePath)) {
-		return { path: dotOpencodePath, exists: true }
-	}
-
-	if (existsSync(rootPath)) {
-		return { path: rootPath, exists: true }
-	}
-
-	return { path: dotOpencodePath, exists: false }
-}
-
-/**
- * Read ocx.jsonc config file
- */
-export async function readOcxConfig(
-	cwd: string,
-	options: ReadOcxConfigOptions = {},
-): Promise<OcxConfig | null> {
-	const { path: configPath, exists } = findOcxConfig(cwd)
-
-	if (!exists) {
-		return null
-	}
-
-	const file = Bun.file(configPath)
-	const content = await file.text()
-	try {
-		const json = parseJsonc(content, [], { allowTrailingComma: true })
-		return ocxConfigSchema.parse(json)
-	} catch (error) {
-		if (options.emitParseDiagnostics ?? true) {
-			console.error(`Error parsing ${configPath}:`, error)
-		}
-		throw error
-	}
-}
-
-/**
- * Write ocx.jsonc config file.
- * @param cwd - Working directory
- * @param config - Config to write
- * @param existingPath - If provided, write to this path (for updates). Otherwise use .opencode/
- */
-export async function writeOcxConfig(
-	cwd: string,
-	config: OcxConfig,
-	existingPath?: string,
-): Promise<void> {
-	const configPath = existingPath ?? path.join(cwd, LOCAL_CONFIG_DIR, CONFIG_FILE)
-
-	// Ensure directory exists
-	await mkdir(path.dirname(configPath), { recursive: true })
-
-	const content = JSON.stringify(config, null, 2)
-	await Bun.write(configPath, content)
-}
-
-/**
- * Read ocx.lock lockfile
- */
-export async function readOcxLock(
-	cwd: string,
-	options?: { isFlattened?: boolean },
-): Promise<OcxLock | null> {
-	const { path: lockPath, exists } = findOcxLock(cwd, options)
-
-	if (!exists) {
-		return null
-	}
-
-	const file = Bun.file(lockPath)
-	const content = await file.text()
-	const json = parseJsonc(content, [], { allowTrailingComma: true })
-	return ocxLockSchema.parse(json)
-}
-
-/**
- * Write ocx.lock lockfile.
- * @param cwd - Working directory
- * @param lock - Lock data to write
- * @param existingPath - If provided, write to this path (for updates). Otherwise use .opencode/
- */
-export async function writeOcxLock(
-	cwd: string,
-	lock: OcxLock,
-	existingPath?: string,
-): Promise<void> {
-	const lockPath = existingPath ?? path.join(cwd, LOCAL_CONFIG_DIR, LOCK_FILE)
-
-	// Ensure directory exists
-	await mkdir(path.dirname(lockPath), { recursive: true })
-
-	const content = JSON.stringify(lock, null, 2)
-	await Bun.write(lockPath, content)
+	await atomicWrite(receiptPath, receipt)
 }

@@ -18,9 +18,9 @@ describe("runCompleteValidation", () => {
 	it("should return success for a valid registry", async () => {
 		// Create registry file
 		const registryContent = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -54,7 +54,7 @@ describe("runCompleteValidation", () => {
 	it("should return error for invalid schema", async () => {
 		// Create registry file with missing required field
 		const registryContent = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
 			// Missing 'version' field - required by schema
 			author: "Test Author",

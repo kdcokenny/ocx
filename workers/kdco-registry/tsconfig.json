@@ -3,14 +3,22 @@
 		"target": "ESNext",
 		"module": "ESNext",
 		"moduleResolution": "bundler",
-		"lib": ["ESNext"],
+		"lib": [
+			"ESNext"
+		],
 		"strict": true,
 		"skipLibCheck": true,
 		"noEmit": true,
 		"isolatedModules": true,
 		"allowImportingTsExtensions": true,
 		"resolveJsonModule": true,
-		"types": ["bun", "node"]
+		"types": [
+			"bun",
+			"node"
+		]
 	},
-	"include": ["files/**/*.ts", "scripts/**/*.ts", "types/**/*.d.ts"]
+	"include": [
+		"scripts/**/*.ts",
+		"types/**/*.d.ts"
+	]
 }

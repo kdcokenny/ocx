@@ -1,0 +1,127 @@
+---
+title: Troubleshooting
+description: Resolve profile selection, registry conflicts, imports, and interrupted operations
+---
+
+## Wrong OpenCode version or executable
+
+Check the OCX version, selected profile, and native executable:
+
+```sh
+ocx --version
+ocx profile show work
+ocx oc --profile work --version
+```
+
+OCX 3 requires OpenCode 2.0.3 or newer within V2. Profile `bin` overrides `OPENCODE_BIN`, which overrides `opencode` on PATH. Installing V2 may have replaced the command previously used for V1. Use an absolute binary path when keeping both versions.
+
+## No profile selected
+
+Create one and either select it explicitly or set a default:
+
+```sh
+ocx profile add work
+ocx profile use work
+ocx oc
+```
+
+An existing `OCX_PROFILE` environment value overrides the default. Clear or update it if it names an old profile. Project metadata never selects the launch profile.
+
+## Project definitions are missing
+
+A profile defaults to `projectConfig: "ignore"`. Change it to `inherit` with `ocx config edit --profile work` when you want native project configuration, agents, commands, and skills loaded at startup.
+
+If the missing definition belongs to the profile itself, check its path and native frontmatter. `ocx oc --profile work debug paths` shows the configuration directory. Extra native skill paths retain their native resolution rules; automatically discovered profile `skills/` avoids cwd-relative path surprises.
+
+## Repository instructions appeared in ignore mode
+
+This is expected native behavior when OpenCode reads a file with nearby `AGENTS.md` guidance. The switch controls startup discovery; it does not prohibit later reads from receiving local instructions. It does not mean OCX switched profiles. The [profile guide](/v2/profiles#the-two-project-modes) explains the V1 comparison and practical effect.
+
+## Native command is refused
+
+Some OpenCode 2.0.3 commands address only the shared user service. OCX refuses them through the profile launcher so they do not inspect another configuration. Check the [supported command table](/v2/cli/opencode#supported-routing). Do not supply an external `--server` to bypass profile routing.
+
+## Unknown registry or dependency
+
+List sources in the same scope as the operation:
+
+```sh
+ocx registry list --profile work
+ocx registry list --project
+ocx registry list --global
+```
+
+These are three independent source sets. Configure external dependency aliases where the component will be installed. Profile creation from a recipe uses global sources; subsequent component operations use the created profile's sources and recorded origins.
+
+## Unsupported registry schema
+
+OCX 3 accepts protocol 3 at `https://ocx.kdco.dev/schemas/v3/registry.json`. Use the publisher's V2 endpoint. The original KDCO root and OCX Kit root are intentionally frozen V1 registries.
+
+A publisher must migrate config-patch and npm-dependency components before using protocol 3. Merely changing `$schema` cannot make a V1 registry compatible. Use OCX 2.0.15 with a V1 runtime when you need the old catalog.
+
+## Private registry fails
+
+Check the configured URL and header placeholder names in the correct `ocx.jsonc`. Missing `${ENV_VAR}` values fail before the request. A server may require headers even for `/index.json`; configure the source through `config edit` before testing with `search`.
+
+Check the exact JSON and asset endpoints if a browser loads the hostname successfully but OCX reports invalid JSON. Static-host HTML fallback pages are a common cause.
+
+## Existing files or local edits block an operation
+
+`add` does not take ownership of unrelated existing files. Move or reconcile those files yourself, or choose a fresh destination. Reinstalling the same unchanged component is different from replacing an unmanaged file.
+
+For an installed component, review local changes before deciding whether to replace them:
+
+```sh
+ocx verify --profile work
+ocx update --all --profile work --dry-run
+ocx update --all --profile work --force --dry-run
+```
+
+Run the last operation without `--dry-run` only after reviewing the replacement. A local edit whose upstream file is unchanged is preserved by a normal update, and remains visible to `verify`. See [update behavior](/v2/cli/components#update).
+
+## Import reports unresolved decisions
+
+The importer previews by default. It cannot automatically turn per-file include/exclude filters into one project policy, port unknown V1 plugins, or rewrite all instructions mentioning removed tools.
+
+Review the report, supply the applicable decisions, then repeat with `--apply`. There is no overwrite mode for an existing destination profile. See the [migration checklist](/v2/migration).
+
+## A lock remains after a stopped process
+
+First confirm the reported process has stopped. Copy the affected destination, lock information, and any recovery directory before intervening. A long-running editor or another OCX command can legitimately hold a lock.
+
+Do not delete transaction directories just to unblock a command. Removing a lock does not complete an interrupted file operation. OCX will continue refusing mutations when a transaction still needs recovery.
+
+## Interrupted file installation or removal
+
+An abrupt exit can leave `.ocx/transaction-*/` with `manifest.json` and original-file backups. Ordinary caught errors attempt rollback; an incomplete rollback retains the same recovery evidence.
+
+After stopping the process and backing up the entire destination and recovery directory, inspect every manifest entry:
+
+1. If the named `*.original` backup exists, restore it to that entry's destination path.
+2. If `beforeHash` is `null`, the file did not exist before the operation. Remove the new destination only if its current hash matches `afterHash`; inspect unexpected edits rather than deleting them.
+3. If a previously existing file has no backup, it was not yet moved. Confirm its current hash still matches `beforeHash`.
+4. Apply the same rules to the receipt. After verifying the restored state, remove the recovered transaction directory and stale lock, then run `ocx verify` with the destination.
+
+This is recoverable file ownership, not a guarantee of atomicity through power loss. Keep backups when the evidence does not identify a unique safe recovery.
+
+## Interrupted profile rename
+
+OCX records a pending rename in `.ocx/profile-move.json` under the global OCX root. Once the original process is stopped, clear only the reported stale locks and rerun the **same** command:
+
+```sh
+ocx profile move old-name new-name
+```
+
+The recovery completes the default-profile update if the directory already moved. Do not delete either profile directory or invent a different rename while the journal remains.
+
+## Interrupted registry build
+
+A build stages output beside its destination and retains an adjacent `.ocx-publication.json` journal plus the previous directory during replacement. Rerun the same build to recover. The publisher can reclaim a lock whose recorded local owner has exited; an unknown owner or reused process ID requires checking that the process has stopped before removing only the reported stale lock.
+
+Keep the stage and previous output until recovery completes. Publish the completed output through a static host as one deployment; a local build directory is not a live-serving deployment transaction.
+
+## Report a problem
+
+Include the OCX/OpenCode versions, operating system, command, selected scope, relevant redacted metadata, and the error or JSON report. For a file issue, describe whether it was a fresh install, update, removal, or recovery. Do not include credentials or private instruction contents unnecessarily.
+
+Report OCX issues in the [GitHub issue tracker](https://github.com/kdcokenny/ocx/issues). For supported native V1 config that fails in V2 independently of OCX, follow [OpenCode's troubleshooting guidance](https://opencode.ai/v2/docs/troubleshooting).

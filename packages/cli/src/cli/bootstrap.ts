@@ -13,7 +13,6 @@ import { registerSelfCommand } from "../commands/self/index"
 import { registerUpdateCommand } from "../commands/update"
 import { registerValidateCommand } from "../commands/validate"
 import { registerVerifyCommand } from "../commands/verify"
-import { registerUpdateCheckHook } from "../self-update/hook"
 
 declare const __VERSION__: string
 
@@ -22,7 +21,8 @@ const version = typeof __VERSION__ !== "undefined" ? __VERSION__ : "0.0.0-dev"
 export async function runCli(argv: string[] = process.argv): Promise<void> {
 	const program = new Command()
 		.name("ocx")
-		.description("OpenCode Extensions - Install agents, skills, plugins, and commands")
+		.enablePositionalOptions()
+		.description("Portable profiles and editable file registries for OpenCode V2")
 		.version(version)
 
 	registerInitCommand(program)
@@ -45,9 +45,6 @@ export async function runCli(argv: string[] = process.argv): Promise<void> {
 	registerProfileCommand(program)
 	registerConfigCommand(program)
 	registerOpencodeCommand(program)
-
-	// Register update check hook (runs after each command)
-	registerUpdateCheckHook(program)
 
 	if (argv.length <= 2) {
 		process.stdout.write(program.helpInformation())

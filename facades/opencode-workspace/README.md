@@ -1,5 +1,9 @@
 # opencode-workspace
 
+> **Retired — OpenCode V1 only.** No OpenCode V2 port is planned. Use [OCX 2.0.15](https://github.com/kdcokenny/ocx/releases/tag/v2.0.15) with OpenCode V1 for the legacy installation instructions below. Existing published packages, tags, and registry artifacts remain available.
+>
+> Use OpenCode V2’s native agents, background subagents, planning, compaction, and skills. This bundle’s orchestration hooks, planning reminders, research conventions, and custom tool APIs are not being ported. These are workflow alternatives, not complete replacements for every custom feature. See the [official V2 migration guide](https://opencode.ai/v2/docs/migrate-v1) and [V2 terminal settings](https://opencode.ai/v2/docs/cli/config).
+
 Bundled multi-agent orchestration harness for OpenCode. One install, complete control.
 
 ## Quick Start
@@ -106,20 +110,11 @@ If you don't have OCX installed, install it from the [OCX repository](https://gi
 
 ## Owning Your Code
 
-Every file in this bundle is synced to this repository. Fork it, modify the agents, tune the skills, make it yours. That's the point of OCX.
+This repository preserves a snapshot of the former bundle. Fork it, modify the agents, tune the skills, make it yours. That's the point of OCX.
 
-## Contributing
+## Maintenance
 
-This facade is maintained from the main [OCX monorepo](https://github.com/kdcokenny/ocx).
-
-If you want to update opencode-workspace itself, start here:
-
-- https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/workspace-plugin.ts
-- https://github.com/kdcokenny/ocx/tree/main/workers/kdco-registry/files
-
-- Open issues here: https://github.com/kdcokenny/ocx/issues/new
-- Open pull requests here: https://github.com/kdcokenny/ocx/compare
-- Please do **not** open issues or PRs in this facade repository.
+This V1 code is retired. Source synchronization and active maintenance have ended. Repository history and existing releases remain available for reference and forks.
 
 ## Disclaimer
 

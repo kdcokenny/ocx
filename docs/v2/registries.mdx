@@ -1,0 +1,98 @@
+---
+title: File registries
+description: Static catalogs, explicit ownership, and editable installed files
+---
+
+The V2 product uses **registry protocol 3**. It does not accept legacy component config patches or npm dependency fields. Keep a separate protocol-2 endpoint for OCX 2 users; changing a schema URL does not migrate a registry.
+
+The maintained new catalog is `https://registry.kdco.dev/opencode-v2` after worker deployment. It contains a minimal native profile and a code review skill. The existing `registry.kdco.dev` and `ocx-kit.kdco.dev` endpoints retain their frozen legacy files.
+
+```sh
+ocx registry add https://registry.kdco.dev/opencode-v2 --name kdco --global
+ocx profile add work --source kdco/minimal
+ocx verify --profile work
+
+ocx init --project
+ocx add kdco/code-review --from https://registry.kdco.dev/opencode-v2 --project
+```
+
+Profile recipes own complete root config files. Other components own individual definitions or supporting files. Native V2-compatible plugin code may be distributed as files, but OCX does not install npm packages or interpret plugin hooks. Prefer OpenCode's native plugin package mechanism.
+
+## Author a registry
+
+Follow the [complete authoring tutorial](/v2/registry-authoring) for scaffolding, component examples, local installation tests, and deployment. The [protocol reference](/v2/registry-protocol) specifies every manifest field and endpoint.
+
+```json
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
+  "name": "Team registry",
+  "version": "1.0.0",
+  "author": "Team",
+  "components": [
+    {
+      "name": "review",
+      "type": "skill",
+      "description": "Review code changes",
+      "files": ["skills/review/SKILL.md"],
+      "dependencies": []
+    }
+  ]
+}
+```
+
+Put the example file at `files/skills/review/SKILL.md`. A file can instead specify `{ "path": "source.md", "target": "agents/review.md" }`. Targets are relative to the selected configuration root: the profile directory or the project's `.opencode/`. Do not prefix targets with `.opencode/`. Directory names are preserved; OCX no longer rewrites `command/` into `commands/` or the reverse.
+
+```sh
+ocx validate .
+ocx build . --out dist --dry-run
+ocx build . --out dist
+```
+
+Build validates syntax, source paths, dependencies, cycles, and target collisions before replacing previous output. It stages output in the destination's parent directory and restores the previous build if publication fails. Source symlinks are rejected. Serve the output as static files over HTTPS, HTTP, or use a local `file:` URL.
+
+A build emits `index.json`, `.well-known/ocx.json`, component packuments at `components/<name>.json`, and component assets. A component's optional `version` overrides the registry version for its packument. Same-registry dependencies use bare names; cross-registry dependencies use configured `alias/component` names.
+
+The optional registry `opencode` and `ocx` versions describe the author's intended minimum versions. They are metadata, not an additional runtime compatibility check. OCX enforces protocol 3 and checks OpenCode's supported major/minimum when launching.
+
+## Sources and ownership
+
+Choose the source scope to match the operation:
+
+```sh
+ocx registry add https://registry.kdco.dev/opencode-v2 --name kdco --profile work
+ocx registry list --profile work
+ocx search review --profile work
+ocx add kdco/code-review --profile work --dry-run
+```
+
+Use a local or PR preview URL before the new public catalog is deployed. Global sources are used for browsing and profile creation; profile and project sources are independent. See [source commands](/v2/cli/registries) for every option and authentication setup.
+
+Aliases are chosen by the user. Registry authentication headers can be configured in `ocx.jsonc`, including `${ENV_VAR}` placeholders. Values are resolved for requests without writing the resolved secret into metadata or receipts. Adding the same alias and URL again preserves its existing headers. An ephemeral `--from` source is retained in receipts for updates but is not added to configured sources.
+
+Receipts live at `.ocx/receipt.jsonc` within the destination. They record origin, dependency edges, target paths, and SHA-256 baselines. Profiles and project installs have independent receipts. Binary supporting assets are copied without text conversion.
+
+An update preserves a local edit when that upstream file has not changed. If upstream also changed it, OCX stops. Missing owned files also require an explicit forced repair. Obsolete upstream files are removed unless locally edited. Removal refuses dependencies still needed by other installed components; remove the dependent components explicitly together. Unreferenced dependencies are retained until explicitly removed.
+
+```sh
+ocx update --all --profile work --dry-run
+ocx update --all --profile work --force --dry-run
+ocx verify --profile work
+ocx remove kdco/code-review --project
+```
+
+Keep profile config in version control if you want diffs and history. Receipts detect changed bytes; they are not a registry signature or proof of publisher identity.
+
+## Interrupted operations
+
+Normal errors roll file changes back, including the receipt. Each mutation holds an OCX lock. Abrupt process termination can leave a partial operation, a lock, and `.ocx/transaction-*/` containing `manifest.json` and original files. OCX refuses further mutations while an unfinished transaction remains, even if someone clears its lock.
+
+First check that the operation is no longer running and copy the entire destination and recovery directory before repairing it. For every manifest entry:
+
+1. If the named `*.original` backup exists, restore it to the entry's destination path.
+2. For a previously absent file (`beforeHash: null`), remove the new destination only if its current hash matches `afterHash`. Inspect unexpected edits instead of deleting them.
+3. If a previous file has no backup, it was not yet moved; check that its hash still matches `beforeHash`.
+4. Restore the receipt by the same rules. After verifying the restored files, remove the recovered transaction directory and stale lock, then run `ocx verify` with the destination.
+
+An incomplete rollback also preserves backups and reports their location. Do not blindly delete transaction directories to suppress the error. This is recoverable file ownership, not a promise of atomicity across power loss.
+
+Build output is staged before publication. An interrupted replacement retains an adjacent `.ocx-publication.json` journal and the previous directory. Rerunning the build reclaims a lock whose recorded local owner has exited and recovers the journal. Unknown owners or a reused process ID require checking that the builder has stopped and removing only its reported stale lock. Builds are not a live-serving deployment mechanism: publish their completed output through your static host so readers use an immutable deployment.

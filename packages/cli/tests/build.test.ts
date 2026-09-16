@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { EXIT_CODES } from "../src/utils/errors"
 import { cleanupTempDir, createTempDir, runCLI } from "./helpers"
 
-const REGISTRY_SCHEMA_V2_URL = "https://ocx.kdco.dev/schemas/v2/registry.json"
+const REGISTRY_SCHEMA_V3_URL = "https://ocx.kdco.dev/schemas/v3/registry.json"
 
 describe("ocx build", () => {
 	let testDir: string
@@ -24,9 +24,9 @@ describe("ocx build", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "kdco",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -85,112 +85,14 @@ describe("ocx build", () => {
 		expect(index.components[0].name).toBe("comp-1")
 	})
 
-	it("should preserve valid MCP OAuth fields in built component manifests", async () => {
-		const sourceDir = join(testDir, "registry-mcp-oauth")
-		await mkdir(sourceDir, { recursive: true })
-
-		const oauth = {
-			clientId: "client-id",
-			clientSecret: "client-secret",
-			scope: "files:read files:write",
-			callbackPort: 24567,
-			redirectUri: "http://127.0.0.1:24567/mcp/oauth/callback",
-		}
-		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
-			name: "MCP OAuth Registry",
-			version: "1.0.0",
-			author: "Test Author",
-			components: [
-				{
-					name: "oauth-mcp",
-					type: "bundle",
-					description: "Remote MCP server with OAuth",
-					files: [],
-					dependencies: [],
-					opencode: {
-						mcp: {
-							remote: {
-								type: "remote",
-								url: "https://mcp.example.com/mcp",
-								oauth,
-							},
-						},
-					},
-				},
-			],
-		}
-
-		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
-
-		const outDir = "dist-mcp-oauth"
-		const { exitCode, output } = await runCLI(
-			["build", "registry-mcp-oauth", "--out", outDir],
-			testDir,
-		)
-
-		expect(exitCode).toBe(0)
-		expect(output).toContain("Built 1 component")
-
-		const packument = JSON.parse(
-			await readFile(join(testDir, outDir, "components", "oauth-mcp.json"), "utf-8"),
-		)
-		expect(packument.versions["1.0.0"].opencode.mcp.remote.oauth).toEqual(oauth)
-	})
-
-	it("should reject legacy MCP OAuth fields in v2 registries", async () => {
-		const sourceDir = join(testDir, "registry-legacy-mcp-oauth")
-		await mkdir(sourceDir, { recursive: true })
-
-		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
-			name: "Invalid Legacy MCP OAuth Registry",
-			version: "1.0.0",
-			author: "Test Author",
-			components: [
-				{
-					name: "legacy-oauth-mcp",
-					type: "bundle",
-					description: "MCP server using registry v1 OAuth fields",
-					files: [],
-					dependencies: [],
-					opencode: {
-						mcp: {
-							remote: {
-								type: "remote",
-								url: "https://mcp.example.com/mcp",
-								oauth: {
-									scopes: ["files:read"],
-									authUrl: "https://auth.example.com",
-									tokenUrl: "https://token.example.com",
-								},
-							},
-						},
-					},
-				},
-			],
-		}
-
-		await writeFile(join(sourceDir, "registry.json"), JSON.stringify(registryJson, null, 2))
-
-		const { exitCode, output } = await runCLI(
-			["build", "registry-legacy-mcp-oauth", "--out", "dist-legacy-mcp-oauth"],
-			testDir,
-		)
-
-		expect(exitCode).toBe(EXIT_CODES.GENERAL)
-		expect(output).toContain("components.0.opencode.mcp.remote")
-		expect(existsSync(join(testDir, "dist-legacy-mcp-oauth"))).toBe(false)
-	})
-
 	it("should display validation results when --show-validation is used", async () => {
 		const sourceDir = join(testDir, "registry")
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "kdco",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -238,9 +140,9 @@ describe("ocx build", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry No Validation",
-			namespace: "kdco",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -284,9 +186,9 @@ describe("ocx build", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "JSON Validation Registry",
-			namespace: "kdco",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -346,9 +248,9 @@ describe("ocx build", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Quiet Validation Registry",
-			namespace: "kdco",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -387,9 +289,9 @@ describe("ocx build", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Invalid Registry",
-			namespace: "kdco",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -409,7 +311,7 @@ describe("ocx build", () => {
 
 		expect(exitCode).not.toBe(0)
 		// Match the actual Zod error message for invalid component name
-		expect(output).toContain("Must be lowercase")
+		expect(output).toContain("lowercase")
 	})
 
 	it("should fail on missing dependencies", async () => {
@@ -417,9 +319,9 @@ describe("ocx build", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Missing Dep Registry",
-			namespace: "kdco",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -439,9 +341,7 @@ describe("ocx build", () => {
 
 		expect(exitCode).not.toBe(0)
 		// Match the actual Zod error message
-		expect(output).toContain(
-			"Bare dependencies must reference components that exist in the registry",
-		)
+		expect(output).toContain("Unknown component dependency")
 	})
 
 	it("should build from registry.jsonc with comments", async () => {
@@ -451,9 +351,9 @@ describe("ocx build", () => {
 		// JSONC content with inline and block comments
 		const registryJsonc = `{
 	// This is an inline comment
-	"$schema": "${REGISTRY_SCHEMA_V2_URL}",
+	"$schema": "${REGISTRY_SCHEMA_V3_URL}",
 	"name": "JSONC Registry",
-	"namespace": "test",
+
 	"version": "1.0.0",
 	"author": "Test Author",
 	/*
@@ -503,9 +403,9 @@ describe("ocx build", () => {
 
 		// Create registry.json with one name
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "JSON Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -522,9 +422,9 @@ describe("ocx build", () => {
 		// Create registry.jsonc with a different name
 		const registryJsonc = `{
 	// JSONC should be preferred
-	"$schema": "${REGISTRY_SCHEMA_V2_URL}",
+	"$schema": "${REGISTRY_SCHEMA_V3_URL}",
 	"name": "JSONC Registry Preferred",
-	"namespace": "test",
+
 	"version": "1.0.0",
 	"author": "Test Author",
 	"components": [
@@ -568,7 +468,7 @@ describe("ocx build", () => {
 
 		const registryJson = {
 			name: "Missing Schema Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [],
@@ -580,7 +480,7 @@ describe("ocx build", () => {
 
 		expect(exitCode).not.toBe(0)
 		expect(output).toContain("legacy-schema-v1")
-		expect(output).toContain("v2")
+		expect(output).toContain("v3")
 	})
 
 	it("should fail when schema major is unsupported", async () => {
@@ -588,9 +488,9 @@ describe("ocx build", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v4/registry.json",
 			name: "Unsupported Schema Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [],
@@ -602,7 +502,7 @@ describe("ocx build", () => {
 
 		expect(exitCode).not.toBe(0)
 		expect(output).toContain("unsupported-schema-version")
-		expect(output).toContain("v2")
+		expect(output).toContain("v3")
 	})
 
 	it("should fail when schema URL is non-canonical", async () => {
@@ -612,7 +512,7 @@ describe("ocx build", () => {
 		const registryJson = {
 			$schema: "https://example.com/registry.json",
 			name: "Invalid Schema URL Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [],
@@ -624,7 +524,7 @@ describe("ocx build", () => {
 
 		expect(exitCode).not.toBe(0)
 		expect(output).toContain("invalid-schema-url")
-		expect(output).toContain(REGISTRY_SCHEMA_V2_URL)
+		expect(output).toContain(REGISTRY_SCHEMA_V3_URL)
 	})
 
 	it("should fail when schema URL includes explicit default HTTPS port (:443)", async () => {
@@ -632,9 +532,9 @@ describe("ocx build", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: "https://ocx.kdco.dev:443/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev:443/schemas/v3/registry.json",
 			name: "Invalid Schema URL Port Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [],
@@ -646,6 +546,6 @@ describe("ocx build", () => {
 
 		expect(exitCode).not.toBe(0)
 		expect(output).toContain("invalid-schema-url")
-		expect(output).toContain(REGISTRY_SCHEMA_V2_URL)
+		expect(output).toContain(REGISTRY_SCHEMA_V3_URL)
 	})
 })

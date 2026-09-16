@@ -1,0 +1,140 @@
+---
+title: Registry protocol 3
+description: Source manifests, static endpoints, file targets, and ownership receipts
+---
+
+Protocol 3 describes **files and dependencies**. It deliberately excludes V1 component config patches and npm dependency installation. OCX 3 requires the canonical schema URL `https://ocx.kdco.dev/schemas/v3/registry.json`.
+
+## Source manifest
+
+The source directory contains `registry.jsonc` and `files/`:
+
+```jsonc
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
+  "name": "Team registry",
+  "version": "1.0.0",
+  "author": "Team",
+  "opencode": "2.0.3",
+  "ocx": "3.0.0-alpha.1",
+  "components": [
+    {
+      "name": "review",
+      "type": "skill",
+      "description": "Review code changes",
+      "files": ["skills/review/SKILL.md"],
+      "dependencies": []
+    }
+  ]
+}
+```
+
+| Field | Contract |
+| --- | --- |
+| `$schema` | Required canonical protocol-3 URL. |
+| `name`, `author` | Required nonempty strings. |
+| `version` | Required semantic version, used when a component has no override. |
+| `opencode`, `ocx` | Optional semantic versions describing the publisher's intended minimums. |
+| `components` | Required array of component manifests. |
+
+The optional compatibility versions are metadata, not additional runtime gates. Launch compatibility is checked against the installed OpenCode executable. Unknown registry and component fields are rejected.
+
+## Component manifest
+
+| Field | Contract |
+| --- | --- |
+| `name` | 1–64 lowercase letters/digits separated by single hyphens. |
+| `type` | `agent`, `skill`, `command`, `bundle`, `profile`, `plugin`, or `tool`. |
+| `description` | Nonempty string, at most 1,024 characters. |
+| `version` | Optional semantic version overriding the registry version. |
+| `files` | Array of strings or `{ "path": "...", "target": "..." }`; defaults to empty. |
+| `dependencies` | Array of local names or `alias/component` references; defaults to empty. |
+
+Registry aliases use the same naming rules as components. Qualified references contain exactly one slash. CLI installation does not accept `@version` selectors; it resolves the latest published manifest.
+
+A file `path` is relative to the source's `files/`. Its `target` is relative to the destination configuration directory. String entries use the same value for both. Assets are copied as bytes, including binary supporting files.
+
+## Static endpoints
+
+For base URL `https://registry.example.com/opencode-v2`:
+
+| Relative path | Contents |
+| --- | --- |
+| `/index.json` | Protocol marker, catalog metadata, and component summaries. |
+| `/components/review.json` | Component packument with revisions and a latest tag. |
+| `/components/review/skills/review/SKILL.md` | Asset bytes, using the manifest's source path. |
+| `/.well-known/ocx.json` | Discovery metadata. |
+
+The leading slash in this table is relative to the registry base, including `/opencode-v2`. OCX's normal source operations request the index directly from that base. Discovery metadata is also emitted for consumers that use it.
+
+### Index
+
+```json
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
+  "name": "Team registry",
+  "version": "1.0.0",
+  "author": "Team",
+  "components": [
+    { "name": "review", "type": "skill", "description": "Review code changes" }
+  ]
+}
+```
+
+### Component packument
+
+```json
+{
+  "name": "review",
+  "dist-tags": { "latest": "1.0.0" },
+  "versions": {
+    "1.0.0": {
+      "name": "review",
+      "type": "skill",
+      "description": "Review code changes",
+      "files": ["skills/review/SKILL.md"],
+      "dependencies": []
+    }
+  }
+}
+```
+
+The builder emits one revision for each component. It does not accumulate old versions or create content-addressed asset URLs. Deploy complete builds together so index, manifests, and files refer to the same release.
+
+### Discovery
+
+At a host root the builder emits:
+
+```json
+{ "registry": "/index.json" }
+```
+
+A publisher mounting output below `/opencode-v2` should set this to `/opencode-v2/index.json`, as the KDCO worker does.
+
+## Path and ownership rules
+
+Paths must be relative and portable across supported platforms. Absolute paths, traversal segments, empty segments, control characters, trailing dots/spaces, and Windows device names are rejected. Managed paths must not traverse symlinks.
+
+Reserved targets include root `.ocx/`, `.git/`, `.opencode/`, `node_modules/`, environment files, package manifests, and package-manager lockfiles. Only a `profile` component may own root `ocx.jsonc`, `opencode.json(c)`, `cli.json`, or `AGENTS.md`.
+
+Two installed components cannot own the same target. An unmanaged existing file is a conflict, even with `--force`. Dependencies should express shared ownership through one component, not duplicate its files.
+
+## Receipts
+
+Each destination has `.ocx/receipt.jsonc`. The receipt format's `version: 1` is independent of registry protocol 3 and the OpenCode version.
+
+Entries record the normalized registry URL, local alias, component name, dependency edges, timestamps, per-file hashes, and a content revision. The revision is `sha256:<digest>` computed from target paths, file bytes, and dependency references, rather than the packument's human version label.
+
+The canonical entry key has this shape:
+
+```text
+<registry-url>::<alias>/<component>@sha256:<digest>
+```
+
+Receipts are local ownership records, not publisher signatures. `verify` compares installed bytes to those baselines; it does not establish who published them or whether their behavior is safe. See [verification and trust](/v2/security).
+
+## Transport
+
+Sources may use HTTPS, HTTP, or `file:` URLs. JSON responses must contain JSON rather than a hosting provider's HTML fallback. HTTP requests use a 15-second timeout. Registry headers support `${ENV_VAR}` placeholders; a missing value is an error.
+
+Aliases and authentication settings belong to the selected metadata scope. Receipts retain origins for updates; they do not store resolved header secrets. See [source commands](/v2/cli/registries) for source conflicts and [configuration](/v2/configuration#registry-authentication) for private registries.

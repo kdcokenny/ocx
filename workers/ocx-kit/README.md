@@ -1,54 +1,82 @@
-# OCX Kit Registry
+# OCX Kit
 
-A component registry for [OpenCode](https://opencode.ai) deployed on Cloudflare Workers.
+The frozen OpenCode V1 profile registry at `https://ocx-kit.kdco.dev`.
 
-## Quick Start
+This worker keeps existing profile installation URLs available for **OCX 2.0.15 and OpenCode V1**. It restores verified built assets from [`legacy/ocx-kit.tar.gz`](../../legacy/README.md). New OpenCode V2 profile recipes belong in the [KDCO V2 catalog](../kdco-registry/README.md).
 
-```bash
-# Install dependencies
-bun install
+## Available profiles
 
-# Build the registry
-bun run build
+| Profile | Purpose | Documentation |
+| --- | --- | --- |
+| `kit/ws` | KDCO workspace agents, planning, and background-agent harness. | [Workspace guide](../../docs/profiles/ws.mdx), [original profile notes](../../legacy/docs/profiles/ws/README.md) |
+| `kit/omo` | Starter configuration for oh-my-openagent. | [OMO guide](../../docs/profiles/omo.mdx), [original profile notes](../../legacy/docs/profiles/omo/README.md) |
 
-# Local development
-bun run dev
+Profile instructions and model choices are frozen historical defaults. Provider availability and external npm packages can change independently of these static files.
 
-# Deploy to Cloudflare
-bun run deploy
+## Install with the legacy client
+
+Keep an OpenCode V1 executable available. From a V1 environment:
+
+```sh
+bunx ocx@2.0.15 init --global
+bunx ocx@2.0.15 profile add ws --source kit/ws \
+  --from https://ocx-kit.kdco.dev --global
+bunx ocx@2.0.15 oc -p ws
 ```
 
-## Using the Registry
+Replace `ws` and `kit/ws` with `omo` and `kit/omo` for the OMO profile. To customize an existing profile, clone it with the legacy CLI and edit its files under `~/.config/opencode/profiles/`:
 
-```bash
-# Install profile directly from registry
-ocx profile add omo --source kit/omo --from https://ocx-kit.your-domain.workers.dev --global
-
-# Or clone to customize
-ocx profile add my-omo --clone omo --global
+```sh
+bunx ocx@2.0.15 profile add my-ws --clone ws --global
 ```
 
-## Project Structure
+Do not point the V1 runtime at a profile converted to native V2-only configuration. For migration, use the [preview-first OCX 3 importer](../../docs/v2/migration.mdx) to create a separate profile.
 
+## Build and develop
+
+Run from the monorepo root with Bun and `tar` available:
+
+```sh
+bun install --frozen-lockfile
+bun run --cwd workers/ocx-kit build
+bun run --cwd workers/ocx-kit dev
 ```
-├── registry.jsonc      # Registry manifest
-├── files/              # Component source files
-│   └── profiles/       # Profile configurations
-├── dist/               # Built output (generated)
-└── wrangler.jsonc      # Cloudflare Workers config
+
+Wrangler prints a local URL, normally `http://localhost:8787`. Test it with the pinned legacy CLI in an isolated environment:
+
+```sh
+bunx ocx@2.0.15 profile add kit-test --source kit/ws \
+  --from http://localhost:8787 --global
 ```
 
-## Adding Components
+The build verifies the archive hash, its exact file list, and every extracted file hash before replacing `dist/`. It does not rebuild legacy source with OCX 3.
 
-1. Create your component files in `files/`
-2. Register in `registry.jsonc`
-3. Build and deploy: `bun run build && bun run deploy`
+## Project structure
 
-## Documentation
+```text
+workers/ocx-kit/
+├── scripts/build.ts       # Restore the verified legacy archive
+├── wrangler.jsonc         # Static asset worker configuration
+├── AGENTS.md              # Maintenance and compatibility instructions
+└── dist/                  # Generated V1 index, manifests, and profile files
 
-- [OCX CLI](https://github.com/kdcokenny/ocx)
-- [OpenCode](https://opencode.ai)
+legacy/
+├── ocx-kit.tar.gz         # Frozen built registry
+├── manifest.json          # Source commit and per-file/archive SHA-256 hashes
+└── restore.ts             # Shared checked restoration
+```
 
-## License
+Historical `registry.jsonc` and profile source remain at [commit `e79df6f`](https://github.com/kdcokenny/ocx/tree/e79df6f/workers/ocx-kit). They are not the worker's active build inputs.
 
-MIT
+## Deploy and maintain
+
+```sh
+bun run --cwd workers/ocx-kit check
+bun run --cwd workers/ocx-kit deploy
+```
+
+A normal deployment republishes the same frozen bytes. Preserve the hostname and all asset paths, including `/.well-known/ocx.json`. Compare deployed files with `legacy/manifest.json` and exercise both profile recipes with OCX 2.0.15 before promoting infrastructure changes.
+
+If archive verification fails, stop and check the committed artifact. Do not regenerate the manifest to accept a damaged archive. If publication was interrupted, retain the recovery journal and previous output, then rerun the build.
+
+See [maintainer guidance](AGENTS.md) for the full verification workflow and [legacy preservation](../../legacy/README.md) for provenance and recovery.

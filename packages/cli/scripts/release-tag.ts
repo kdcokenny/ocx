@@ -22,7 +22,6 @@ import {
 } from "../src/utils/npm-registry"
 
 const STABLE_SEMVER_REGEX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
-const STABLE_RELEASE_TAG_REGEX = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
 const USAGE_TEXT = [
 	"Usage: bun run scripts/release-tag.ts [--force]",
@@ -46,8 +45,9 @@ const MESSAGE_NOT_GIT_REPO = "Not a git repository; aborting without tag changes
 const MESSAGE_ORIGIN_HEAD_UNRESOLVED =
 	"Could not resolve origin/HEAD after refreshing refs; aborting without tag changes."
 const MESSAGE_INVALID_VERSION =
-	"CLI version must be a stable semver release; aborting without tag changes."
-const MESSAGE_INVALID_TAG = "Derived tag is not a stable release tag; aborting without tag changes."
+	"CLI version must be a legacy stable release or an OCX 3 preview; aborting without tag changes."
+const MESSAGE_INVALID_TAG =
+	"Derived tag is not a supported release tag; aborting without tag changes."
 const MESSAGE_NPM_PUBLISHED = "Version already published to npm; no tag changes made."
 const MESSAGE_NPM_CHECK_FAILED = "npm registry check failed; aborting without tag changes."
 
@@ -272,12 +272,15 @@ function failure(message: string): ReleaseTagExecutionResult {
 	return { exitCode: 1, message, stream: "stderr" }
 }
 
-function isStableSemver(version: string): boolean {
-	return STABLE_SEMVER_REGEX.test(version)
+function isPublishableVersion(version: string): boolean {
+	return (
+		(Number(version.split(".")[0]) < 3 && STABLE_SEMVER_REGEX.test(version)) ||
+		/^3\.(0|[1-9]\d*)\.(0|[1-9]\d*)-[a-zA-Z][a-zA-Z0-9-]*(?:\.(0|[1-9]\d*))*$/.test(version)
+	)
 }
 
-function isStableReleaseTag(tag: string): boolean {
-	return STABLE_RELEASE_TAG_REGEX.test(tag)
+function isPublishableTag(tag: string): boolean {
+	return tag.startsWith("v") && isPublishableVersion(tag.slice(1))
 }
 
 async function ensureMissingNpmVersion(
@@ -315,12 +318,12 @@ export async function executeReleaseTag(
 		return failure("Could not read packages/cli/package.json; aborting without tag changes.")
 	}
 
-	if (!isStableSemver(manifest.version)) {
+	if (!isPublishableVersion(manifest.version)) {
 		return failure(MESSAGE_INVALID_VERSION)
 	}
 
 	const releaseTag = `v${manifest.version}`
-	if (!isStableReleaseTag(releaseTag)) {
+	if (!isPublishableTag(releaseTag)) {
 		return failure(MESSAGE_INVALID_TAG)
 	}
 

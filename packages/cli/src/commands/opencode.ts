@@ -1,605 +1,228 @@
-/**
- * OpenCode Command
- *
- * Launch OpenCode with resolved configuration.
- * Uses ConfigResolver with registry isolation (profile OR local, not merged).
- * OpenCode config and instructions are additively merged when not excluded.
- * Spawns OpenCode with the resolved configuration.
- */
-
-import * as path from "node:path"
+import { isAbsolute, resolve } from "node:path"
 import type { Command } from "commander"
-import { type ParseError, parse as parseJsonc } from "jsonc-parser"
-import { ConfigResolver } from "../config/resolver"
-import {
-	findLocalConfigDir,
-	getProfileDir,
-	getProfileOpencodeConfig,
-	OPENCODE_CONFIG_FILE,
-} from "../profile/paths"
-import { dedupePluginsByCanonicalName, extractCanonicalPluginName } from "../registry/merge"
-import { type OpencodePluginSpec, opencodePluginSpecSchema } from "../schemas/registry"
+import { ProfileManager } from "../profile/manager"
+import { getProfileDir } from "../profile/paths"
 import { ConfigError } from "../utils/errors"
-import { getGitInfo } from "../utils/git-context"
 import { handleError } from "../utils/handle-error"
-import { formatJsoncParseError } from "../utils/jsonc"
-import { logger } from "../utils/logger"
-import { getGlobalConfigPath } from "../utils/paths"
-import { addVerboseOption } from "../utils/shared-options"
-import {
-	canWriteOscTerminalTitle,
-	formatTerminalName,
-	restoreTerminalTitle,
-	saveTerminalTitle,
-	setTerminalName,
-} from "../utils/terminal-title"
-import { isPlainObject } from "../utils/type-guards"
-import { identifyOpenCode } from "./opencode-cache"
-import {
-	createOpencodeOcError,
-	type PreparedMergedConfigDir,
-	prepareMergedConfigDirForProfile,
-} from "./opencode-overlay"
 
 interface OpencodeOptions {
 	profile?: string
-	rename?: boolean
-	verbose?: boolean
 }
-
 type OpenCodeShutdownSignal = "SIGINT" | "SIGTERM"
-
-// Give OpenCode 2.5s to handle SIGINT/SIGTERM itself before escalating to SIGKILL.
-// Keeps shutdown deterministic and avoids hanging if the child ignores the signal.
 const OPENCODE_SIGNAL_GRACE_MS = 2500
 const OPENCODE_SIGNAL_EXIT_CODES: Record<OpenCodeShutdownSignal, number> = {
 	SIGINT: 130,
 	SIGTERM: 143,
 }
 
-type OpencodeLeafOrigin = "profile" | "local"
-type OpencodePathSegment = string | number
-
-function pathSegmentsToKey(segments: OpencodePathSegment[]): string {
-	if (segments.length === 0) {
-		return "$"
-	}
-
-	let key = ""
-	for (const segment of segments) {
-		if (typeof segment === "number") {
-			key += `[${segment}]`
-			continue
-		}
-
-		key = key.length === 0 ? segment : `${key}.${segment}`
-	}
-
-	return key
+export function resolveOpenCodeBinary(options: { configBin?: string; envBin?: string }): string {
+	return options.configBin ?? options.envBin ?? "opencode"
 }
 
-function collectLeafOriginsForValue(
-	value: unknown,
-	origin: OpencodeLeafOrigin,
-	pathSegments: OpencodePathSegment[],
-	origins: Map<string, OpencodeLeafOrigin>,
-): void {
-	if (value === undefined) {
-		return
-	}
-
-	if (isPlainObject(value)) {
-		for (const [key, nestedValue] of Object.entries(value)) {
-			collectLeafOriginsForValue(nestedValue, origin, [...pathSegments, key], origins)
-		}
-		return
-	}
-
-	if (Array.isArray(value)) {
-		for (const [index, nestedValue] of value.entries()) {
-			collectLeafOriginsForValue(nestedValue, origin, [...pathSegments, index], origins)
-		}
-		return
-	}
-
-	origins.set(pathSegmentsToKey(pathSegments), origin)
-}
-
-function mergeInstructionArrayOrigins(
-	profileValues: string[],
-	localValues: string[],
-	pathSegments: OpencodePathSegment[],
-	origins: Map<string, OpencodeLeafOrigin>,
-): void {
-	const mergedValues = Array.from(new Set([...profileValues, ...localValues]))
-	const firstOwnerByValue = new Map<string, OpencodeLeafOrigin>()
-
-	for (const value of profileValues) {
-		if (!firstOwnerByValue.has(value)) {
-			firstOwnerByValue.set(value, "profile")
-		}
-	}
-
-	for (const value of localValues) {
-		if (!firstOwnerByValue.has(value)) {
-			firstOwnerByValue.set(value, "local")
-		}
-	}
-
-	for (const [index, value] of mergedValues.entries()) {
-		origins.set(
-			pathSegmentsToKey([...pathSegments, index]),
-			firstOwnerByValue.get(value) ?? "local",
-		)
-	}
-}
-
-function mergePluginArrayOrigins(
-	profileValues: OpencodePluginSpec[],
-	localValues: OpencodePluginSpec[],
-	pathSegments: OpencodePathSegment[],
-	origins: Map<string, OpencodeLeafOrigin>,
-): void {
-	const combined = [...profileValues, ...localValues]
-	const mergedValues = dedupePluginsByCanonicalName(combined)
-	const lastOwnerByCanonical = new Map<string, OpencodeLeafOrigin>()
-
-	for (let index = combined.length - 1; index >= 0; index--) {
-		const pluginSpecifier = combined[index]
-		if (!pluginSpecifier) {
-			continue
-		}
-
-		const canonicalName = extractCanonicalPluginName(pluginSpecifier)
-		if (!lastOwnerByCanonical.has(canonicalName)) {
-			lastOwnerByCanonical.set(canonicalName, index < profileValues.length ? "profile" : "local")
-		}
-	}
-
-	for (const [index, plugin] of mergedValues.entries()) {
-		const canonicalName = extractCanonicalPluginName(plugin)
-		collectLeafOriginsForValue(
-			plugin,
-			lastOwnerByCanonical.get(canonicalName) ?? "local",
-			[...pathSegments, index],
-			origins,
-		)
-	}
-}
-
-function isTopLevelOpencodeArrayPath(
-	pathSegments: OpencodePathSegment[],
-	expectedKey: "instructions" | "plugin",
-): boolean {
-	return pathSegments.length === 1 && pathSegments[0] === expectedKey
-}
-
-function mergeLeafOriginsAtPath(args: {
-	profileValue: unknown
-	localValue: unknown
-	pathSegments: OpencodePathSegment[]
-	origins: Map<string, OpencodeLeafOrigin>
-}): void {
-	const { profileValue, localValue, pathSegments, origins } = args
-
-	if (localValue === undefined) {
-		collectLeafOriginsForValue(profileValue, "profile", pathSegments, origins)
-		return
-	}
-
-	if (profileValue === undefined) {
-		collectLeafOriginsForValue(localValue, "local", pathSegments, origins)
-		return
-	}
-
-	if (isPlainObject(profileValue) && isPlainObject(localValue)) {
-		const keys = new Set([...Object.keys(profileValue), ...Object.keys(localValue)])
-		for (const key of keys) {
-			mergeLeafOriginsAtPath({
-				profileValue: profileValue[key],
-				localValue: localValue[key],
-				pathSegments: [...pathSegments, key],
-				origins,
-			})
-		}
-		return
-	}
-
-	if (Array.isArray(profileValue) && Array.isArray(localValue)) {
-		if (isTopLevelOpencodeArrayPath(pathSegments, "instructions")) {
-			if (
-				profileValue.every((value) => typeof value === "string") &&
-				localValue.every((value) => typeof value === "string")
-			) {
-				mergeInstructionArrayOrigins(profileValue, localValue, pathSegments, origins)
-				return
-			}
-		}
-
-		if (isTopLevelOpencodeArrayPath(pathSegments, "plugin")) {
-			if (
-				profileValue.every(
-					(value): value is OpencodePluginSpec => opencodePluginSpecSchema.safeParse(value).success,
-				) &&
-				localValue.every(
-					(value): value is OpencodePluginSpec => opencodePluginSpecSchema.safeParse(value).success,
-				)
-			) {
-				mergePluginArrayOrigins(profileValue, localValue, pathSegments, origins)
-				return
-			}
-		}
-	}
-
-	collectLeafOriginsForValue(localValue, "local", pathSegments, origins)
-}
-
-function buildMergedLeafOriginsForOpencodeConfig(args: {
-	profileConfig: Record<string, unknown>
-	localConfig: Record<string, unknown>
-}): Map<string, OpencodeLeafOrigin> {
-	const origins = new Map<string, OpencodeLeafOrigin>()
-
-	mergeLeafOriginsAtPath({
-		profileValue: args.profileConfig,
-		localValue: args.localConfig,
-		pathSegments: [],
-		origins,
-	})
-
-	return origins
-}
-
-function parseFileTokenReference(value: string): string | null {
-	if (!value.startsWith("{file:")) {
-		return null
-	}
-
-	if (!value.endsWith("}")) {
-		return null
-	}
-
-	const tokenPath = value.slice("{file:".length, -1)
-	return tokenPath.length > 0 ? tokenPath : null
-}
-
-function isWindowsAbsolutePath(value: string): boolean {
-	return /^[A-Za-z]:[\\/]/.test(value)
-}
-
-function isRelativeFileTokenPath(value: string): boolean {
-	if (value.startsWith("~")) {
-		return false
-	}
-
-	if (path.isAbsolute(value)) {
-		return false
-	}
-
-	if (isWindowsAbsolutePath(value)) {
-		return false
-	}
-
-	return true
-}
-
-function rewriteProfileRelativeFileTokenAtLeaf(args: {
-	value: string
-	pathSegments: OpencodePathSegment[]
-	origins: Map<string, OpencodeLeafOrigin>
-	profileDir: string
-}): string {
-	const tokenPath = parseFileTokenReference(args.value)
-	if (!tokenPath) {
-		return args.value
-	}
-
-	const leafPath = pathSegmentsToKey(args.pathSegments)
-	if (args.origins.get(leafPath) !== "profile") {
-		return args.value
-	}
-
-	if (!isRelativeFileTokenPath(tokenPath)) {
-		return args.value
-	}
-
-	return `{file:${path.resolve(args.profileDir, tokenPath)}}`
-}
-
-function rewriteProfileRelativeFileTokensInValue(args: {
-	value: unknown
-	pathSegments: OpencodePathSegment[]
-	origins: Map<string, OpencodeLeafOrigin>
-	profileDir: string
-}): unknown {
-	const { value, pathSegments, origins, profileDir } = args
-
-	if (typeof value === "string") {
-		return rewriteProfileRelativeFileTokenAtLeaf({
-			value,
-			pathSegments,
-			origins,
-			profileDir,
-		})
-	}
-
-	if (Array.isArray(value)) {
-		return value.map((item, index) =>
-			rewriteProfileRelativeFileTokensInValue({
-				value: item,
-				pathSegments: [...pathSegments, index],
-				origins,
-				profileDir,
-			}),
-		)
-	}
-
-	if (isPlainObject(value)) {
-		const rewritten: Record<string, unknown> = {}
-		for (const [key, nestedValue] of Object.entries(value)) {
-			rewritten[key] = rewriteProfileRelativeFileTokensInValue({
-				value: nestedValue,
-				pathSegments: [...pathSegments, key],
-				origins,
-				profileDir,
-			})
-		}
-		return rewritten
-	}
-
-	return value
-}
-
-async function loadLocalOpencodeConfigForProfileRewrite(
-	projectDir: string,
-): Promise<Record<string, unknown>> {
-	const localConfigDir = findLocalConfigDir(projectDir)
-	if (!localConfigDir) {
-		return {}
-	}
-
-	const localOpencodePath = path.join(localConfigDir, OPENCODE_CONFIG_FILE)
-	const localOpencodeFile = Bun.file(localOpencodePath)
-	if (!(await localOpencodeFile.exists())) {
-		return {}
-	}
-
-	let text: string
-	try {
-		text = await localOpencodeFile.text()
-	} catch (error) {
-		const reason = error instanceof Error ? error.message : "Unknown read error"
-		throw new ConfigError(`Failed to read local OpenCode config at ${localOpencodePath}: ${reason}`)
-	}
-
-	const parseErrors: ParseError[] = []
-	const parsed = parseJsonc(text, parseErrors, { allowTrailingComma: true })
-	if (parseErrors.length > 0) {
-		const errorDetail = formatJsoncParseError(parseErrors)
-		throw new ConfigError(
-			`Invalid JSONC in local OpenCode config at ${localOpencodePath}: ${errorDetail}`,
-		)
-	}
-
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new ConfigError(
-			`Invalid local OpenCode config at ${localOpencodePath}: root must be an object`,
-		)
-	}
-
-	return parsed as Record<string, unknown>
-}
-
-async function rewriteProfileRelativeFileTokensInMergedConfig(args: {
-	mergedConfig: Record<string, unknown>
-	profileConfig: Record<string, unknown>
-	projectDir: string
-	profileDir: string
-}): Promise<Record<string, unknown>> {
-	const localConfig = await loadLocalOpencodeConfigForProfileRewrite(args.projectDir)
-	const leafOrigins = buildMergedLeafOriginsForOpencodeConfig({
-		profileConfig: args.profileConfig,
-		localConfig,
-	})
-
-	return rewriteProfileRelativeFileTokensInValue({
-		value: args.mergedConfig,
-		pathSegments: [],
-		origins: leafOrigins,
-		profileDir: args.profileDir,
-	}) as Record<string, unknown>
-}
-
-/**
- * Deduplicates an array while preserving last occurrence.
- * Last-wins behavior: if duplicates exist, keeps the LAST occurrence.
- *
- * Example: ["a", "b", "a", "c"] -> ["b", "a", "c"]
- * (first "a" is removed, last "a" is kept)
- *
- * @internal - Exported for testing
- */
-export function dedupeLastWins<T>(items: T[]): T[] {
-	const seen = new Set<T>()
-	const result: T[] = []
-
-	// Iterate backwards to find last occurrences
-	for (let i = items.length - 1; i >= 0; i--) {
-		// biome-ignore lint/style/noNonNullAssertion: index i is guaranteed valid within bounds
-		const item = items[i]!
-		if (!seen.has(item)) {
-			seen.add(item)
-			result.unshift(item) // Prepend to maintain order
-		}
-	}
-
-	return result
-}
-
-/**
- * Resolves which opencode binary to use.
- * Priority: configBin > envBin > "opencode"
- *
- * Uses nullish coalescing (??) to preserve original behavior:
- * - Empty string "" is passed through (will cause spawn error, but that's intentional)
- * - Only undefined/null falls through to the next option
- */
-export function resolveOpenCodeBinary(opts: { configBin?: string; envBin?: string }): string {
-	return opts.configBin ?? opts.envBin ?? "opencode"
-}
-
-function isPathLikeLauncherToken(token: string): boolean {
-	return token.includes("/") || token.includes("\\")
-}
-
-/**
- * Resolve launcher token to a cwd-stable executable path.
- *
- * - Path-like tokens (absolute/relative) are normalized to absolute paths.
- * - Bare command names are resolved through PATH via Bun.which.
- * - Throws when PATH lookup fails, because OCX context requires a stable launcher path.
- */
-export function resolveStableOpenCodeLauncherPath(opts: {
+export function resolveStableOpenCodeLauncherPath(options: {
 	configuredBin: string
 	cwd: string
-	resolveExecutable?: (command: string) => string | null | undefined
 }): string {
-	const { configuredBin, cwd } = opts
-	const resolveExecutable = opts.resolveExecutable ?? ((command: string) => Bun.which(command))
-
-	if (!configuredBin.trim()) {
-		throw new Error("OpenCode launcher is empty and cannot be resolved to a stable path")
-	}
-
-	if (isPathLikeLauncherToken(configuredBin)) {
-		return path.isAbsolute(configuredBin) ? configuredBin : path.resolve(cwd, configuredBin)
-	}
-
-	const resolvedFromPath = resolveExecutable(configuredBin)
-	if (!resolvedFromPath) {
-		throw new Error(
-			`OpenCode launcher "${configuredBin}" is not available in PATH and cannot be used as OPENCODE_BIN`,
+	const binary = options.configuredBin
+	if (!binary.trim()) throw new ConfigError("OpenCode binary cannot be empty")
+	if (isAbsolute(binary) || binary.includes("/") || binary.includes("\\"))
+		return resolve(options.cwd, binary)
+	const executable = Bun.which(binary)
+	if (!executable)
+		throw new ConfigError(
+			`OpenCode binary "${binary}" was not found in PATH. Install OpenCode V2 (@opencode/cli).`,
 		)
-	}
-
-	return path.isAbsolute(resolvedFromPath) ? resolvedFromPath : path.resolve(cwd, resolvedFromPath)
+	return executable
 }
 
-export function resolveStableOcxExecutablePath(opts: {
-	cwd: string
-	inheritedOcxBin?: string
-	argv?: string[]
-	execPath?: string
-	resolveExecutable?: (command: string) => string | null | undefined
-	isCompiledBinary?: boolean
-}): string {
-	const resolveExecutable = opts.resolveExecutable ?? ((command: string) => Bun.which(command))
-	const argv = opts.argv ?? process.argv
-	const execPath = opts.execPath ?? process.execPath
-	const isCompiledBinary =
-		opts.isCompiledBinary ??
-		(typeof Bun !== "undefined" && typeof Bun.main === "string" && Bun.main.startsWith("/$bunfs/"))
-	const inheritedOcxBin = opts.inheritedOcxBin?.trim()
-	const runtimeExecutable = isCompiledBinary ? execPath : argv[1]
-
-	const candidate =
-		inheritedOcxBin && inheritedOcxBin.length > 0 ? inheritedOcxBin : runtimeExecutable
-
-	if (!candidate?.trim()) {
-		throw new Error("OCX executable path is empty and cannot be resolved from the current process")
-	}
-
-	if (isPathLikeLauncherToken(candidate)) {
-		return path.isAbsolute(candidate) ? candidate : path.resolve(opts.cwd, candidate)
-	}
-
-	const resolvedFromPath = resolveExecutable(candidate)
-	if (!resolvedFromPath) {
-		throw new Error(
-			`OCX executable "${candidate}" is not available in PATH and cannot be persisted as OCX_BIN`,
-		)
-	}
-
-	return path.isAbsolute(resolvedFromPath)
-		? resolvedFromPath
-		: path.resolve(opts.cwd, resolvedFromPath)
-}
-
-export interface OpenCodeTitleContext {
-	mayWriteOscTitle: boolean
-	baseTitle: string
-}
-
-/**
- * Builds environment variables to pass to the opencode process.
- * Returns a NEW object - does not mutate baseEnv.
- *
- * Behavior:
- * - Preserves all keys from baseEnv
- * - Overwrites OCX_PROFILE, OPENCODE_* keys with new values
- * - Exports OCX_CONTEXT/OCX_BIN only when a profile launch context is active
- * - OPENCODE_DISABLE_PROJECT_CONFIG: set to "true" ONLY when a profile is active
- *   (profileName is provided). When no profile, project config is NOT disabled.
- * - OPENCODE_CONFIG_DIR: when configDir is provided → use it;
- *   otherwise profile active → profile-specific dir; no profile → global config dir
- * - configContent is a pre-serialized JSON string; upstream OpenCode handles
- *   {env:...} / {file:...} token resolution in OPENCODE_CONFIG_CONTENT
- */
-export function buildOpenCodeEnv(opts: {
+export function buildOpenCodeEnv(options: {
 	baseEnv: Record<string, string | undefined>
-	profileName?: string
-	ocxBin?: string
-	opencodeBin?: string
-	configDir?: string
-	configContent?: string
-	titleContext?: OpenCodeTitleContext
+	profileName: string
+	projectConfig: "ignore" | "inherit"
 }): Record<string, string | undefined> {
-	// Profile presence gates both OPENCODE_DISABLE_PROJECT_CONFIG and OPENCODE_CONFIG_DIR
-	const hasProfile = Boolean(opts.profileName)
-	// Never leak stale inherited disable flag into no-profile launches.
-	const {
-		OPENCODE_DISABLE_PROJECT_CONFIG: _inheritedDisableProjectConfig,
-		OPENCODE_BIN: _inheritedOpencodeBin,
-		OCX_CONTEXT: _inheritedOcxContext,
-		OCX_BIN: _inheritedOcxBin,
-		OCX_PROFILE: _inheritedOcxProfile,
-		OCX_TITLE_CONTEXT: _inheritedOcxTitleContext,
-		...baseEnvWithoutDisableProjectConfig
-	} = opts.baseEnv
+	const env = { ...options.baseEnv }
+	for (const key of [
+		"OPENCODE_CONFIG",
+		"OPENCODE_CONFIG_CONTENT",
+		"OPENCODE_DISABLE_PROJECT_CONFIG",
+		"OPENCODE_CONFIG_PROJECT_DISABLE",
+		"OCX_CONTEXT",
+		"OCX_BIN",
+		"OCX_TITLE_CONTEXT",
+	])
+		delete env[key]
+	env.OPENCODE_CONFIG_DIR = getProfileDir(options.profileName)
+	env.OPENCODE_CONFIG_PROJECT_DISABLE = options.projectConfig === "ignore" ? "true" : "false"
+	env.OCX_PROFILE = options.profileName
+	return env
+}
 
-	return {
-		...baseEnvWithoutDisableProjectConfig,
-		...(opts.opencodeBin !== undefined && { OPENCODE_BIN: opts.opencodeBin }),
-		...(hasProfile && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
-		OPENCODE_CONFIG_DIR:
-			opts.configDir ??
-			(hasProfile ? getProfileDir(opts.profileName as string) : getGlobalConfigPath()),
-		...(opts.configContent && { OPENCODE_CONFIG_CONTENT: opts.configContent }),
-		...(hasProfile && { OCX_CONTEXT: "1" }),
-		...(hasProfile && opts.ocxBin && { OCX_BIN: opts.ocxBin }),
-		...(opts.profileName && { OCX_PROFILE: opts.profileName }),
-		...(opts.titleContext && { OCX_TITLE_CONTEXT: JSON.stringify(opts.titleContext) }),
+/** V2.0.3 has command-specific server flags, not a global standalone flag. */
+export function buildOpenCodeArgs(args: string[]): string[] {
+	if (args.some((arg) => arg === "--server" || arg.startsWith("--server=")))
+		throw new ConfigError("OCX profiles require a private server; do not supply --server.")
+	if (
+		args.some(
+			(arg, index) =>
+				arg === "--no-standalone" ||
+				arg.startsWith("--standalone=") ||
+				(arg === "--standalone" && args[index + 1] === "false"),
+		)
+	)
+		throw new ConfigError("OCX profiles require a private server; do not override --standalone.")
+	if (
+		args.includes("--help") ||
+		args.includes("-h") ||
+		args.includes("--version") ||
+		args.includes("-v")
+	)
+		return args
+	let first = 0
+	while (args[first]?.startsWith("-")) {
+		const flag = args[first]
+		if (flag === "--") break
+		first += ["--log-level", "--completions", "--prompt", "--session", "-s", "--server"].includes(
+			flag ?? "",
+		)
+			? 2
+			: 1
+	}
+	const command = args[first]
+	const nested = args[first + 1]
+	let insertion = first
+	if (["run", "mini", "api", "models", "stats"].includes(command ?? "")) insertion = first + 1
+	else if (
+		(command === "auth" && ["list", "login", "logout", "switch"].includes(nested ?? "")) ||
+		(command === "session" && ["list", "delete", "export", "import"].includes(nested ?? ""))
+	)
+		insertion = first + 2
+	else if (
+		command === "acp" ||
+		command === "serve" ||
+		(command === "debug" && nested === "paths") ||
+		(command === "plugin" && ["add", "remove"].includes(nested ?? "")) ||
+		(command === "mcp" && nested === "add")
+	) {
+		if (
+			command === "serve" &&
+			args.some((arg) => arg === "--service" || arg.startsWith("--service="))
+		)
+			throw new ConfigError(
+				"A profile server cannot use --service. Use 'ocx oc serve' for a foreground profile server.",
+			)
+		return args
+	} else if (
+		[
+			"agent",
+			"debug",
+			"plugin",
+			"mcp",
+			"service",
+			"pair",
+			"upgrade",
+			"update",
+			"uninstall",
+			"auth",
+			"session",
+		].includes(command ?? "")
+	) {
+		throw new ConfigError(
+			`OpenCode 2.0.3 cannot run '${command}${nested ? ` ${nested}` : ""}' with a private profile server. Use 'ocx oc api <operation>' for profile API inspection, or run 'opencode ${command}' directly for user-wide administration.`,
+		)
+	}
+	// The native parser rejects --server combined with --standalone.
+	if (args.includes("--standalone")) return args
+	return [...args.slice(0, insertion), "--standalone", ...args.slice(insertion)]
+}
+
+export async function requireOpenCodeV2(
+	binary: string,
+	env: Record<string, string | undefined>,
+): Promise<string> {
+	const proc = Bun.spawn([binary, "--version"], {
+		env,
+		stdin: "ignore",
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	const timer = setTimeout(() => proc.kill("SIGKILL"), 10_000)
+	try {
+		const [output, error, code] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		const match = /^\s*(?:opencode\s+)?v?(\d+)\.(\d+)\.(\d+)(?:[-+][\w.-]+)?\s*$/i.exec(output)
+		if (code !== 0 || !match)
+			throw new ConfigError(
+				`Cannot identify OpenCode at ${binary}: ${error.trim() || output.trim() || `exit ${code}`}`,
+			)
+		if (match[1] !== "2" || (Number(match[2]) === 0 && Number(match[3]) < 3))
+			throw new ConfigError(
+				`OCX 3 requires OpenCode V2 (2.0.3 or newer). Found ${output.trim()}. Keep OCX 2 for OpenCode V1.`,
+			)
+		return output.trim()
+	} finally {
+		clearTimeout(timer)
 	}
 }
 
 export function registerOpencodeCommand(program: Command): void {
-	const command = program
+	program
 		.command("oc")
 		.alias("opencode")
-		.description("Launch OpenCode with resolved configuration")
-		.option("-p, --profile <name>", "Use specific profile")
-		.option("--no-rename", "Disable terminal/tmux window renaming")
+		.description("Launch OpenCode V2 using a named profile")
+		.option("-p, --profile <name>", "Use a named profile")
+		.helpOption(false)
+		.passThroughOptions()
 		.allowUnknownOption()
 		.allowExcessArguments(true)
+		.action(async (options: OpencodeOptions, command: Command) => {
+			try {
+				process.exitCode = await runOpencode(command.args, options)
+			} catch (error) {
+				handleError(error)
+			}
+		})
+}
 
-	addVerboseOption(command)
-	command.action(async (options: OpencodeOptions, command: Command) => {
-		try {
-			await runOpencode(command.args, options)
-		} catch (error) {
-			handleError(error)
-		}
+export async function runOpencode(args: string[], options: OpencodeOptions): Promise<number> {
+	const manager = ProfileManager.create()
+	const name = await manager.resolveProfile(options.profile)
+	const profile = await manager.get(name)
+	const env = buildOpenCodeEnv({
+		baseEnv: process.env,
+		profileName: name,
+		projectConfig: profile.ocx.projectConfig,
 	})
+	const configuredBin = resolveOpenCodeBinary({
+		configBin: profile.ocx.bin,
+		envBin: process.env.OPENCODE_BIN,
+	})
+	const binary = resolveStableOpenCodeLauncherPath({ configuredBin, cwd: process.cwd() })
+	const nativeArgs = buildOpenCodeArgs(args)
+	await requireOpenCodeV2(binary, env)
+	const supervisor = createOpenCodeShutdownSupervisor()
+	const interrupt = () => supervisor.handleSigint()
+	const terminate = () => supervisor.handleSigterm()
+	process.on("SIGINT", interrupt)
+	process.on("SIGTERM", terminate)
+	try {
+		const child = Bun.spawn([binary, ...nativeArgs], {
+			cwd: process.cwd(),
+			env,
+			stdin: "inherit",
+			stdout: "inherit",
+			stderr: "inherit",
+		})
+		supervisor.attachChild(child)
+		const code = await child.exited
+		return supervisor.getRememberedSignalExitCode() ?? code
+	} finally {
+		supervisor.clearGraceTimer()
+		process.off("SIGINT", interrupt)
+		process.off("SIGTERM", terminate)
+	}
 }
 
 function createOpenCodeShutdownSupervisor() {
@@ -670,260 +293,5 @@ function createOpenCodeShutdownSupervisor() {
 		handleSigterm() {
 			requestShutdown("SIGTERM")
 		},
-	}
-}
-
-/** @internal Launch lifecycle, exported for integration tests. */
-export async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
-	// Resolve project directory
-	const projectDir = process.cwd()
-
-	// Create resolver with optional profile override
-	const resolver = await ConfigResolver.create(projectDir, { profile: options.profile })
-	const config = resolver.resolve()
-	const profile = resolver.getProfile()
-
-	// Print feedback about which profile is being used
-	if (config.profileName) {
-		logger.info(`Using profile: ${config.profileName}`)
-	}
-
-	// Determine if terminal should be renamed
-	// Precedence: CLI flag > config > default(true)
-	const ocxConfig = profile?.ocx
-	const shouldRename = options.rename !== false && ocxConfig?.renameWindow !== false
-
-	// Check for profile's opencode.jsonc (optional)
-	if (config.profileName) {
-		const profileOpencodePath = getProfileOpencodeConfig(config.profileName)
-		const profileOpencodeFile = Bun.file(profileOpencodePath)
-		const hasOpencodeConfig = await profileOpencodeFile.exists()
-		if (!hasOpencodeConfig) {
-			logger.warn(
-				`No opencode.jsonc found at ${profileOpencodePath}. Create one to customize OpenCode settings.`,
-			)
-		}
-	}
-
-	// Build the config to pass to OpenCode
-	let opencodeConfigForLaunch = config.opencode
-	if (config.profileName) {
-		opencodeConfigForLaunch = await rewriteProfileRelativeFileTokensInMergedConfig({
-			mergedConfig: config.opencode,
-			profileConfig: profile?.opencode ?? {},
-			projectDir,
-			profileDir: getProfileDir(config.profileName),
-		})
-	}
-
-	// Merge discovered instructions with user-configured instructions
-	// Order: discovered/global/profile/registry/project first, then user config instructions last (highest priority)
-	const userInstructions = Array.isArray(opencodeConfigForLaunch.instructions)
-		? opencodeConfigForLaunch.instructions
-		: []
-	const allInstructions = [...config.instructions, ...userInstructions]
-	// Deduplicate while preserving last occurrence (last-wins)
-	const dedupedInstructions = dedupeLastWins(allInstructions)
-
-	const configToPass =
-		dedupedInstructions.length > 0 || Object.keys(opencodeConfigForLaunch).length > 0
-			? {
-					...opencodeConfigForLaunch,
-					instructions: dedupedInstructions.length > 0 ? dedupedInstructions : undefined,
-				}
-			: undefined
-
-	// Setup signal handlers BEFORE spawn to avoid race condition
-	let proc: ReturnType<typeof Bun.spawn> | null = null
-	let mergedConfig: PreparedMergedConfigDir | null = null
-	let primaryFailure: Error | null = null
-	let childExitCode: number | null = null
-	const shutdownSupervisor = createOpenCodeShutdownSupervisor()
-
-	const sigintHandler = () => shutdownSupervisor.handleSigint()
-	const sigtermHandler = () => shutdownSupervisor.handleSigterm()
-
-	const exitHandler = () => {
-		if (shouldRename) {
-			restoreTerminalTitle()
-		}
-	}
-
-	try {
-		process.on("SIGINT", sigintHandler)
-		process.on("SIGTERM", sigtermHandler)
-		process.on("exit", exitHandler)
-
-		if (shutdownSupervisor.getRememberedSignalExitCode() !== null) {
-			childExitCode = shutdownSupervisor.getRememberedSignalExitCode()
-			return
-		}
-
-		// Determine OpenCode binary
-		const configuredBin = resolveOpenCodeBinary({
-			configBin: ocxConfig?.bin,
-			envBin: process.env.OPENCODE_BIN,
-		})
-
-		const hasProfileLaunchContext = Boolean(config.profileName)
-		let resolvedOpenCodeLaunchBin: string
-		try {
-			resolvedOpenCodeLaunchBin = hasProfileLaunchContext
-				? resolveStableOpenCodeLauncherPath({ configuredBin, cwd: projectDir })
-				: configuredBin
-		} catch (error) {
-			throw createOpencodeOcError(
-				"spawn",
-				`Failed to resolve OpenCode binary "${configuredBin}": ${error instanceof Error ? error.message : String(error)}`,
-			)
-		}
-		const resolvedOcxBin = hasProfileLaunchContext
-			? resolveStableOcxExecutablePath({
-					cwd: projectDir,
-					inheritedOcxBin: process.env.OCX_BIN,
-				})
-			: undefined
-
-		if (config.profileName) {
-			if (!profile) {
-				throw createOpencodeOcError(
-					"validate",
-					`Resolved profile ${config.profileName} is missing during profile launch`,
-				)
-			}
-
-			let openCodeIdentity: string
-			try {
-				openCodeIdentity = await identifyOpenCode(resolvedOpenCodeLaunchBin)
-			} catch (error) {
-				throw createOpencodeOcError(
-					"spawn",
-					`Failed to identify OpenCode binary "${configuredBin}": ${error instanceof Error ? error.message : String(error)}`,
-				)
-			}
-			mergedConfig = await prepareMergedConfigDirForProfile({
-				openCodeIdentity,
-				projectDir,
-				profileDir: getProfileDir(config.profileName),
-				profileVisibilityPolicy: {
-					include: profile.ocx.include,
-					exclude: profile.ocx.exclude,
-				},
-			})
-		}
-
-		if (shutdownSupervisor.getRememberedSignalExitCode() !== null) {
-			childExitCode = shutdownSupervisor.getRememberedSignalExitCode()
-			return
-		}
-
-		const gitInfo = shouldRename ? await getGitInfo(projectDir) : { repoName: null, branch: null }
-		if (shutdownSupervisor.getRememberedSignalExitCode() !== null) {
-			childExitCode = shutdownSupervisor.getRememberedSignalExitCode()
-			return
-		}
-
-		const baseTitle = formatTerminalName(projectDir, config.profileName ?? "default", gitInfo)
-		const titleContext: OpenCodeTitleContext = {
-			mayWriteOscTitle: shouldRename && canWriteOscTerminalTitle(),
-			baseTitle,
-		}
-
-		// Set terminal name only if enabled
-		if (shouldRename) {
-			saveTerminalTitle()
-			setTerminalName(baseTitle)
-		}
-
-		if (shutdownSupervisor.getRememberedSignalExitCode() !== null) {
-			childExitCode = shutdownSupervisor.getRememberedSignalExitCode()
-			return
-		}
-
-		// Spawn OpenCode directly in the project directory with config via environment
-		const configContent = configToPass ? JSON.stringify(configToPass) : undefined
-
-		try {
-			proc = Bun.spawn({
-				cmd: [resolvedOpenCodeLaunchBin, ...args],
-				cwd: projectDir,
-				env: buildOpenCodeEnv({
-					baseEnv: process.env as Record<string, string | undefined>,
-					profileName: config.profileName ?? undefined,
-					ocxBin: resolvedOcxBin,
-					opencodeBin: resolvedOpenCodeLaunchBin,
-					configDir: mergedConfig?.path,
-					configContent,
-					titleContext,
-				}),
-				stdin: "inherit",
-				stdout: "inherit",
-				stderr: "inherit",
-			})
-		} catch (error: unknown) {
-			throw createOpencodeOcError(
-				"spawn",
-				`Failed to launch OpenCode binary "${configuredBin}": ${error instanceof Error ? error.message : String(error)}`,
-			)
-		}
-		shutdownSupervisor.attachChild(proc)
-
-		// Wait for child to exit
-		childExitCode = await proc.exited
-	} catch (error: unknown) {
-		primaryFailure =
-			error instanceof Error
-				? error
-				: createOpencodeOcError("spawn", `OpenCode process failed: ${String(error)}`)
-	} finally {
-		shutdownSupervisor.clearGraceTimer()
-
-		// Cleanup signal handlers
-		process.off("SIGINT", sigintHandler)
-		process.off("SIGTERM", sigtermHandler)
-		process.off("exit", exitHandler)
-
-		if (shouldRename) {
-			restoreTerminalTitle()
-		}
-
-		if (mergedConfig) {
-			try {
-				await mergedConfig.cleanup()
-			} catch (cleanupError: unknown) {
-				const hasPrimaryFailure =
-					primaryFailure !== null ||
-					shutdownSupervisor.getRememberedSignalExitCode() !== null ||
-					(childExitCode !== null && childExitCode !== 0)
-
-				if (hasPrimaryFailure) {
-					logger.warn(
-						`Cleanup warning: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
-					)
-				} else {
-					const cleanupFailure: Error =
-						cleanupError instanceof Error
-							? cleanupError
-							: createOpencodeOcError(
-									"cleanup",
-									`Failed to release merged config cache lease: ${String(cleanupError)}`,
-								)
-					primaryFailure = cleanupFailure
-				}
-			}
-		}
-	}
-
-	if (primaryFailure) {
-		throw primaryFailure
-	}
-
-	const rememberedSignalExitCode = shutdownSupervisor.getRememberedSignalExitCode()
-	if (rememberedSignalExitCode !== null) {
-		process.exit(rememberedSignalExitCode)
-	}
-
-	if (childExitCode !== null) {
-		process.exit(childExitCode)
 	}
 }

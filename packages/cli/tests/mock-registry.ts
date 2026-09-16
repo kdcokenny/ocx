@@ -33,7 +33,6 @@ export function startMockRegistry(): MockRegistry {
 			description: "A test plugin",
 			files: [{ path: "index.ts", target: "plugins/test-plugin.ts" }],
 			dependencies: [],
-			npmDependencies: ["lodash@^4.17.21"],
 		},
 		"test-skill": {
 			name: "test-skill",
@@ -48,14 +47,6 @@ export function startMockRegistry(): MockRegistry {
 			description: "A test agent",
 			files: [{ path: "agent.md", target: "agents/test-agent.md" }],
 			dependencies: ["test-skill"],
-			opencode: {
-				mcp: {
-					"test-mcp": {
-						type: "remote",
-						url: "https://mcp.test.com",
-					},
-				},
-			},
 		},
 		"test-command": {
 			name: "test-command",
@@ -98,11 +89,6 @@ export function startMockRegistry(): MockRegistry {
 			description: "Researcher fixture for strict JSON tests",
 			files: [{ path: "agent.md", target: "agents/researcher.md" }],
 			dependencies: [],
-			opencode: {
-				tools: {
-					"research-tool": true,
-				},
-			},
 		},
 		// Profile component for testing profile installation
 		"test-profile": {
@@ -172,15 +158,6 @@ export function startMockRegistry(): MockRegistry {
 			description: "A component that provides MCP servers",
 			files: [{ path: "index.ts", target: "plugins/test-mcp-provider.ts" }],
 			dependencies: [],
-			opencode: {
-				mcp: {
-					"provider-mcp": {
-						type: "remote",
-						url: "https://mcp.provider.com",
-					},
-				},
-				plugin: ["provider-plugin"],
-			},
 		},
 		// Component with string command shorthand MCP
 		"test-local-mcp": {
@@ -189,14 +166,6 @@ export function startMockRegistry(): MockRegistry {
 			description: "A component with local MCP using string command",
 			files: [{ path: "index.ts", target: "plugins/test-local-mcp.ts" }],
 			dependencies: [],
-			opencode: {
-				mcp: {
-					"local-server": {
-						type: "local",
-						command: "npx some-mcp-server --port 3000",
-					},
-				},
-			},
 		},
 		"test-no-mcp": {
 			name: "test-no-mcp",
@@ -204,12 +173,6 @@ export function startMockRegistry(): MockRegistry {
 			description: "A component without MCP that depends on test-mcp-provider",
 			files: [{ path: "index.ts", target: "plugins/test-no-mcp.ts" }],
 			dependencies: ["test-mcp-provider"],
-			opencode: {
-				tools: {
-					"some-tool": true,
-				},
-				plugin: ["no-mcp-plugin"],
-			},
 		},
 	}
 
@@ -240,7 +203,7 @@ export function startMockRegistry(): MockRegistry {
 
 			if (path === "/index.json") {
 				return Response.json({
-					$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+					$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 					name: "Test Registry",
 					version: "1.0.0",
 					author: "Test Author",

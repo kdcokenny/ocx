@@ -14,9 +14,9 @@ describe("validateRegistrySource", () => {
 	describe("schema validation", () => {
 		it("should validate a valid registry schema", () => {
 			const validRegistry = {
-				$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+				$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 				name: "Test Registry",
-				namespace: "test",
+
 				version: "1.0.0",
 				author: "Test Author",
 				components: [],
@@ -47,9 +47,9 @@ describe("validateSourceFiles", () => {
 		await writeFile(join(filesDir, "test.ts"), "// test file")
 
 		const registry = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -74,9 +74,9 @@ describe("validateSourceFiles", () => {
 		await mkdir(filesDir, { recursive: true })
 
 		const registry = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -114,9 +114,9 @@ describe("validateRegistryWithOptions", () => {
 		await mkdir(filesDir, { recursive: true })
 
 		const registry = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -161,9 +161,9 @@ describe("validateRegistryWithOptions", () => {
 		await writeFile(join(filesDir, "b.ts"), "// b")
 
 		const registry = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -171,14 +171,14 @@ describe("validateRegistryWithOptions", () => {
 					name: "comp-a",
 					type: "plugin" as const,
 					description: "Component A",
-					files: [{ path: "a.ts", target: "./plugins/shared.ts" }],
+					files: [{ path: "a.ts", target: "plugins/shared.ts" }],
 					dependencies: [],
 				},
 				{
 					name: "comp-b",
 					type: "plugin" as const,
 					description: "Component B",
-					files: [{ path: "b.ts", target: "plugins/./shared.ts" }],
+					files: [{ path: "b.ts", target: "plugins\\shared.ts" }],
 					dependencies: [],
 				},
 			],
@@ -202,9 +202,9 @@ describe("validateRegistryWithOptions", () => {
 		await writeFile(join(filesDir, "test.ts"), "// test")
 
 		const registry = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -250,9 +250,9 @@ describe("loadRegistrySource", () => {
 
 	it("should load and parse registry.json file", async () => {
 		const registryData = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [],
@@ -268,9 +268,9 @@ describe("loadRegistrySource", () => {
 
 	it("should load and parse registry.jsonc file", async () => {
 		const registryData = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [],
@@ -281,9 +281,9 @@ describe("loadRegistrySource", () => {
 			join(testDir, "registry.jsonc"),
 			`{
   // Comment
-  "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
+  "$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
   "name": "Test Registry",
-  "namespace": "test",
+
   "version": "1.0.0",
   "author": "Test Author",
   "components": [],
@@ -298,18 +298,18 @@ describe("loadRegistrySource", () => {
 
 	it("should prefer registry.jsonc over registry.json when both exist", async () => {
 		const jsonData = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "JSON Registry",
-			namespace: "json",
+
 			version: "1.0.0",
 			author: "JSON Author",
 			components: [],
 		}
 
 		const jsoncData = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "JSONC Registry",
-			namespace: "jsonc",
+
 			version: "1.0.0",
 			author: "JSONC Author",
 			components: [],
@@ -336,9 +336,9 @@ describe("loadRegistrySource", () => {
 		await writeFile(
 			join(testDir, "registry.jsonc"),
 			`{
-  "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
+  "$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
   "name": "Test Registry",
-  "namespace": "test",
+
   "version": "1.0.0",
   "author": "Test Author",
   "components": [
@@ -358,7 +358,7 @@ describe("loadRegistrySource", () => {
 		await writeFile(
 			join(testDir, "registry.json"),
 			`{
-  "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
+  "$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
   "name": "Test Registry"
   "namespace": "test"
 }`,
@@ -376,7 +376,7 @@ describe("loadRegistrySource", () => {
 		await writeFile(
 			join(testDir, "registry.jsonc"),
 			`{
-  "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
+  "$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
   "name": "Test Registry",
   ]
 }`,
@@ -394,9 +394,9 @@ describe("loadRegistrySource", () => {
 describe("validateRegistrySchema", () => {
 	it("should validate a valid registry schema", () => {
 		const validRegistry = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [],
@@ -427,7 +427,7 @@ describe("validateRegistrySchema", () => {
 
 	it("should detect schema validation errors", () => {
 		const invalidRegistry = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
 			// Missing required 'version' field
 			author: "Test Author",
@@ -442,9 +442,9 @@ describe("validateRegistrySchema", () => {
 
 	it("should return parsed data on success", () => {
 		const validRegistry = {
-			$schema: "https://ocx.kdco.dev/schemas/v2/registry.json",
+			$schema: "https://ocx.kdco.dev/schemas/v3/registry.json",
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [

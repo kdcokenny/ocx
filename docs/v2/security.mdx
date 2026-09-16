@@ -1,0 +1,52 @@
+---
+title: Ownership and verification
+description: What OCX checks, what file hashes mean, and what OpenCode controls
+---
+
+OCX copies registry files into directories you can inspect and edit. Its receipts make file ownership and changes visible. OpenCode controls what happens when those files are loaded or executed.
+
+## Before installing
+
+Read the component's manifest, files, and dependencies. A Markdown instruction file can affect agent behavior; a native plugin or supporting script can execute code when used. A dry-run reports planned file operations and conflicts, not a security analysis of the contents.
+
+Prefer registries whose publisher and update process you trust. HTTPS protects transport to that host, but a registry's own file hash is not proof of publisher identity.
+
+## What OCX checks
+
+- Registry protocol and supported manifest fields.
+- Portable file paths and reserved destinations.
+- Source and managed-path symlinks, ownership collisions, and unmanaged existing files.
+- Recorded file hashes before update or removal.
+- Dependency requirements and complete file-set changes.
+- Concurrent OCX mutations through locks and recoverable transaction records.
+
+`--force` approves replacement or deletion of changed **owned** files. It does not relax the path or ownership rules.
+
+## What verification tells you
+
+```sh
+ocx verify --profile work
+ocx verify --project --json
+```
+
+A successful verification means the current files match the baselines in the local receipt. A modified skill is reported even when the modification is intentional. Missing owned files are reported too.
+
+Verification does not contact the publisher, audit instructions, scan plugin code, or check an external signature. Protect the receipt with the same care as the files if you rely on its history. Version control adds reviewable diffs and recovery history beyond the receipt.
+
+## Profile boundaries
+
+Profiles choose native configuration. They share OpenCode's credential store, session history, and other native data. They do not create separate user accounts or confine filesystem/network access.
+
+`projectConfig: "ignore"` disables initial project config and instruction discovery. OpenCode can still load nearby `AGENTS.md` guidance when reading a project file. This was also possible in V1. See the [concrete example](/v2/profiles#the-two-project-modes).
+
+Configure tool permissions and trusted integrations through native OpenCode. An OCX registry source is separate from a native plugin package or MCP server.
+
+## Credentials
+
+Use environment placeholders for private registry headers instead of committing tokens. Keep provider credentials in the native credential mechanism. Registry profile recipes should not contain credentials, machine-specific service state, or package dependency directories.
+
+## Failed or interrupted operations
+
+Ordinary failures roll managed changes back. Abrupt process termination may leave a lock, backups, and a transaction journal for recovery; OCX refuses further mutations rather than discarding that evidence. Follow [recovery instructions](/v2/troubleshooting) before removing a stale lock or transaction directory.
+
+For vulnerability reporting, follow the repository's [security policy](/security/policy). The protocol and profile behavior described on this page apply to OCX 3.

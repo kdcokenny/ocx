@@ -1,881 +1,347 @@
-/**
- * OCX CLI - migrate command
- *
- * Converts legacy ocx.lock state to .ocx/receipt.jsonc format and
- * normalizes deprecated registry config fields.
- *
- * Default: preview/dry-run (no writes). Use --apply to perform migration.
- * Default scope: local (cwd). Use --global for global config path + profiles.
- *
- * --global processes:
- *   1) Global root (~/.config/opencode / getGlobalConfigPath())
- *   2) All global profiles under <globalRoot>/profiles/*
- */
-
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
-import { rename, writeFile } from "node:fs/promises"
-import { join } from "node:path"
-
+import { mkdir, readdir, stat, writeFile } from "node:fs/promises"
+import { dirname, join, relative, resolve } from "node:path"
 import type { Command } from "commander"
-import { applyEdits, type ModificationOptions, modify, parse as parseJsonc } from "jsonc-parser"
-import {
-	findOcxConfig,
-	findOcxLock,
-	findReceipt,
-	readOcxConfig,
-	readOcxLock,
-	writeReceipt,
-} from "../../schemas/config"
+import { applyEdits, modify, type ParseError, parse } from "jsonc-parser"
+import { ProfileManager } from "../../profile/manager"
+import { getProfileDir } from "../../profile/paths"
+import { profileNameSchema } from "../../profile/schema"
+import { profileOcxConfigSchema } from "../../schemas/ocx"
 import { ConfigError, ValidationError } from "../../utils/errors"
+import { readManagedFile } from "../../utils/file-transaction"
 import { handleError } from "../../utils/handle-error"
-import { logger } from "../../utils/logger"
-import { getGlobalConfigPath } from "../../utils/paths"
-import {
-	buildReceiptFromLock,
-	type ConfigNormalizationAction,
-	detectConfigNormalization,
-	type MigrateBlocker,
-	type MigrateLifecycleStatus,
-	type MigrateResult,
-	type MigrateScope,
-	type TargetResult,
-} from "./transform"
+import { outputJson } from "../../utils/json-output"
+import { hashContent } from "../../utils/receipt"
 
 export interface MigrateOptions {
-	cwd?: string
-	global?: boolean
+	from: string
+	profile: string
+	projectConfig?: "ignore" | "inherit"
+	omitPlugins?: boolean
+	omitInstructions?: boolean
+	acceptGuidance?: boolean
 	apply?: boolean
 	json?: boolean
-	quiet?: boolean
+}
+interface ImportItem {
+	path: string
+	action: "copy" | "convert" | "omit"
+	reason?: string
+	sha256?: string
+}
+interface ImportReport {
+	source: string
+	destination: string
+	items: ImportItem[]
+	warnings: string[]
+	unresolved: string[]
+	applied: boolean
 }
 
-const MIGRATE_SCHEMA_VERSION = 1 as const
+const OMIT_DIRECTORIES = new Set(["node_modules", ".git", ".cache", ".ocx", ".opencode"])
+const OMIT_FILES = new Set([
+	"package.json",
+	"package-lock.json",
+	"bun.lock",
+	"bun.lockb",
+	"pnpm-lock.yaml",
+	"yarn.lock",
+])
+const OMIT_STATE_FILES = new Set(["ocx.lock", "auth.json", "service.json", "tui.json", "tui.jsonc"])
+const RETIRED_PACKAGES = new Set([
+	"opencode-background-agents",
+	"opencode-notify",
+	"opencode-worktree",
+	"opencode-workspace",
+])
+const OLD_TOOLS =
+	/\b(?:delegate|delegation_read|delegation_list|plan_save|plan_read|plan_find|worktree_create|worktree_delete)\b/
+
+function objectConfig(bytes: Buffer, path: string): Record<string, unknown> {
+	const errors: ParseError[] = []
+	const value: unknown = parse(bytes.toString("utf8"), errors, { allowTrailingComma: true })
+	if (errors.length || !value || typeof value !== "object" || Array.isArray(value))
+		throw new ConfigError(`Invalid JSONC object: ${path}`)
+	return value as Record<string, unknown>
+}
+
+function pluginPackage(entry: unknown): string | undefined {
+	const target =
+		typeof entry === "string"
+			? entry
+			: Array.isArray(entry)
+				? entry[0]
+				: typeof entry === "object" && entry && "package" in entry
+					? entry.package
+					: undefined
+	if (typeof target !== "string") return undefined
+	// Only exact unscoped package IDs are identified; paths and other namespaces stay unresolved.
+	return target.replace(/@[^@/]+$/, "")
+}
+
+/** Preview by default; application publishes a separate profile only after all decisions are explicit. */
+export async function importLegacy(options: MigrateOptions): Promise<ImportReport> {
+	profileNameSchema.parse(options.profile)
+	if (options.projectConfig !== undefined && !["ignore", "inherit"].includes(options.projectConfig))
+		throw new ValidationError("--project-config must be ignore or inherit")
+	let source = resolve(options.from)
+	if (
+		!(await Bun.file(join(source, "ocx.jsonc")).exists()) &&
+		(await Bun.file(join(source, ".opencode", "ocx.jsonc")).exists())
+	)
+		source = join(source, ".opencode")
+	if (!(await stat(source)).isDirectory())
+		throw new ValidationError("--from must be a legacy profile or project configuration directory")
+	const metadata = await readManagedFile(source, "ocx.jsonc")
+	if (!metadata)
+		throw new ValidationError(
+			`No legacy ocx.jsonc at ${source}. Point --from at the profile or project configuration directory.`,
+		)
+	const oldMetadata = objectConfig(metadata, "ocx.jsonc")
+	const report: ImportReport = {
+		source,
+		destination: getProfileDir(options.profile),
+		items: [],
+		warnings: [],
+		unresolved: [],
+		applied: false,
+	}
+	const candidate = new Map<string, Buffer>()
+	const filterKeys = ["include", "exclude"].filter(
+		(key) => Array.isArray(oldMetadata[key]) && (oldMetadata[key] as unknown[]).length > 0,
+	)
+	if (filterKeys.length && options.projectConfig === undefined)
+		report.unresolved.push(
+			"Legacy include/exclude filters cannot be translated exactly. Choose --project-config ignore or inherit.",
+		)
+	if (filterKeys.length)
+		report.warnings.push(
+			"Project filtering becomes one native switch. Nested AGENTS.md can still load during reads in either mode, as in V1.",
+		)
+	if (oldMetadata.registries && typeof oldMetadata.registries === "object")
+		report.warnings.push(
+			"Legacy registry sources are omitted. Add schema 3 sources after import; the original sources remain unchanged.",
+		)
+	const newMetadata = profileOcxConfigSchema.parse({
+		registries: {},
+		projectConfig: options.projectConfig ?? "ignore",
+		...(typeof oldMetadata.bin === "string" ? { bin: oldMetadata.bin } : {}),
+	})
+	candidate.set("ocx.jsonc", Buffer.from(`${JSON.stringify(newMetadata, null, 2)}\n`))
+	report.items.push({
+		path: "ocx.jsonc",
+		action: "convert",
+		reason:
+			"Keep binary selection; replace filtering with native project mode; start with no legacy registry sources",
+		sha256: hashContent(metadata),
+	})
+	const addedInstructions: string[] = []
+	async function walk(directory: string, prefix = "") {
+		for (const entry of await readdir(directory, { withFileTypes: true })) {
+			const path = prefix ? `${prefix}/${entry.name}` : entry.name
+			if (path === "ocx.jsonc") continue
+			if (entry.isSymbolicLink()) {
+				report.unresolved.push(
+					`Symlink ${path} must be replaced with a portable file before import.`,
+				)
+				continue
+			}
+			if (entry.isDirectory() && !prefix && ["plugin", "plugins"].includes(entry.name)) {
+				report.items.push({
+					path,
+					action: "omit",
+					reason: "Omit the complete V1 runtime directory to prevent native plugin autodiscovery",
+				})
+				if (!options.omitPlugins)
+					report.unresolved.push(
+						`Runtime directory ${path}: use --omit-plugins to leave it out of the new profile.`,
+					)
+				continue
+			}
+			if (entry.isDirectory() && OMIT_DIRECTORIES.has(entry.name)) {
+				report.items.push({
+					path,
+					action: "omit",
+					reason: "Generated state, legacy receipt, nested configuration, or repository internals",
+				})
+				continue
+			}
+			if (entry.isDirectory()) {
+				await walk(join(directory, entry.name), path)
+				continue
+			}
+			if (!entry.isFile()) {
+				report.unresolved.push(`Unsupported special file: ${path}`)
+				continue
+			}
+			const bytes = await readManagedFile(source, path)
+			if (!bytes) throw new ValidationError(`Source file disappeared during import: ${path}`)
+			const sha256 = hashContent(bytes)
+			if (
+				OMIT_FILES.has(path) ||
+				OMIT_STATE_FILES.has(entry.name) ||
+				entry.name === ".env" ||
+				entry.name.startsWith(".env.")
+			) {
+				report.items.push({
+					path,
+					action: "omit",
+					reason:
+						"Legacy package management, credentials, service state, or terminal config; preserve original for manual migration",
+					sha256,
+				})
+				continue
+			}
+			if (/^(?:plugins?|tools?)\//.test(path) && /\.(?:[cm]?[jt]sx?)$/.test(path)) {
+				report.items.push({
+					path,
+					action: "omit",
+					reason: "V1 runtime implementation requires a V2 port",
+					sha256,
+				})
+				if (!options.omitPlugins)
+					report.unresolved.push(
+						`Runtime file ${path}: use --omit-plugins to leave it out of the new profile.`,
+					)
+				continue
+			}
+			let converted = bytes
+			if (["opencode.json", "opencode.jsonc", "cli.json"].includes(path)) {
+				const config = objectConfig(bytes, path)
+				let text = bytes.toString("utf8")
+				for (const field of ["plugin", "plugins"]) {
+					if (config[field] === undefined) continue
+					const entries = Array.isArray(config[field])
+						? (config[field] as unknown[])
+						: [config[field]]
+					const unknown = entries.filter((item) => !RETIRED_PACKAGES.has(pluginPackage(item) ?? ""))
+					if (unknown.length && !options.omitPlugins)
+						report.unresolved.push(
+							`${path}: ${unknown.length} unverified plugin entry(s). Use --omit-plugins to exclude them; V1 implementations cannot run in V2.`,
+						)
+					text = applyEdits(text, modify(text, [field], undefined, {}))
+					report.warnings.push(
+						`${path}: removed ${entries.length} plugin entry(s) from the candidate; originals remain in the source.`,
+					)
+				}
+				if (config.instructions !== undefined) {
+					const entries = Array.isArray(config.instructions) ? config.instructions : []
+					if (!Array.isArray(config.instructions) && !options.omitInstructions)
+						report.unresolved.push(
+							`${path}: instructions is not an array; use --omit-instructions to omit it.`,
+						)
+					for (const instruction of entries) {
+						if (options.omitInstructions) continue
+						if (typeof instruction !== "string" || /[{}*?[\]]|^\w+:/.test(instruction)) {
+							report.unresolved.push(
+								`${path}: an instruction reference cannot be copied automatically. Use --omit-instructions or replace it with a local file.`,
+							)
+							continue
+						}
+						const local = relative(source, resolve(source, instruction)).replace(/\\/g, "/")
+						try {
+							const contents = await readManagedFile(source, local)
+							if (!contents) throw new Error("missing file")
+							addedInstructions.push(
+								`\n\n<!-- Imported from ${local} -->\n${contents.toString("utf8")}`,
+							)
+						} catch {
+							report.unresolved.push(
+								`${path}: instruction ${instruction} is missing or outside the source. Use --omit-instructions to omit it.`,
+							)
+						}
+					}
+					text = applyEdits(text, modify(text, ["instructions"], undefined, {}))
+				}
+				converted = Buffer.from(text)
+			}
+			if (/\.md$/i.test(path) && OLD_TOOLS.test(bytes.toString("utf8"))) {
+				report.warnings.push(
+					`${path} mentions retired runtime tools; review its instructions before use.`,
+				)
+				if (!options.acceptGuidance)
+					report.unresolved.push(
+						`${path}: rewrite the old tool guidance or pass --accept-guidance to keep it for manual editing.`,
+					)
+			}
+			candidate.set(path, converted)
+			report.items.push({ path, action: converted.equals(bytes) ? "copy" : "convert", sha256 })
+		}
+	}
+	await walk(source)
+	if (!candidate.has("AGENTS.md") && candidate.has("CLAUDE.md")) {
+		candidate.set("AGENTS.md", candidate.get("CLAUDE.md") as Buffer)
+		report.items.push({
+			path: "AGENTS.md",
+			action: "convert",
+			reason: "Preserve the former CLAUDE.md fallback using native AGENTS.md discovery",
+		})
+	}
+	if (addedInstructions.length) {
+		candidate.set(
+			"AGENTS.md",
+			Buffer.concat([
+				candidate.get("AGENTS.md") ?? Buffer.alloc(0),
+				Buffer.from(addedInstructions.join("")),
+			]),
+		)
+		report.items.push({
+			path: "AGENTS.md",
+			action: "convert",
+			reason: "Embed local instructions because V2 does not resolve the instructions array",
+		})
+	}
+	if (!options.apply) return report
+	if (report.unresolved.length)
+		throw new ValidationError(
+			`Import needs explicit decisions. Run without --apply to review:\n${report.unresolved.join("\n")}`,
+		)
+	await ProfileManager.create().createStaged(options.profile, async (stage) => {
+		for (const [path, bytes] of candidate) {
+			const target = join(stage, path)
+			await mkdir(dirname(target), { recursive: true, mode: 0o700 })
+			await writeFile(target, bytes, { mode: 0o600, flag: "wx" })
+		}
+		await mkdir(join(stage, ".ocx"), { recursive: true })
+		await writeFile(
+			join(stage, ".ocx/import.json"),
+			`${JSON.stringify({ ...report, applied: true }, null, 2)}\n`,
+			{ mode: 0o600 },
+		)
+	})
+	report.applied = true
+	return report
+}
 
 export function registerMigrateCommand(program: Command): void {
 	program
 		.command("migrate")
-		.description("Migrate legacy ocx.lock to receipt format (.ocx/receipt.jsonc)")
-		.option("--global", "Migrate global config scope (includes profiles)")
-		.option("--apply", "Apply migration (default is dry-run preview)")
-		.option("--json", "Output as JSON")
-		.option("-q, --quiet", "Suppress output")
-		.option("--cwd <path>", "Working directory")
+		.description("Preview an import from legacy OCX into a separate V2 profile")
+		.requiredOption("--from <directory>", "Legacy profile or project configuration directory")
+		.requiredOption("-p, --profile <name>", "New profile name")
+		.option("--project-config <mode>", "Choose ignore or inherit for project configuration")
+		.option("--omit-plugins", "Exclude all unverified V1 plugin entries and runtime files")
+		.option(
+			"--omit-instructions",
+			"Omit instructions-array references instead of embedding local files",
+		)
+		.option("--accept-guidance", "Keep text mentioning retired tools for manual editing")
+		.option("--apply", "Publish the new profile after resolving every reported decision")
+		.option("--json", "Output the import report as JSON")
 		.action(async (options: MigrateOptions) => {
 			try {
-				await runMigrate(options)
+				const report = await importLegacy(options)
+				if (options.json) outputJson(report)
+				else {
+					console.log(
+						`${report.applied ? "Imported" : "Import preview"}: ${report.source}\nDestination: ${report.destination}`,
+					)
+					for (const item of report.items)
+						console.log(`  ${item.action}: ${item.path}${item.reason ? ` — ${item.reason}` : ""}`)
+					for (const warning of report.warnings) console.log(`Warning: ${warning}`)
+					for (const decision of report.unresolved) console.log(`Decision required: ${decision}`)
+				}
 			} catch (error) {
 				handleError(error, { json: options.json })
 			}
 		})
-}
-
-// =============================================================================
-// CORE LOGIC
-// =============================================================================
-
-async function runMigrate(options: MigrateOptions): Promise<void> {
-	if (options.global) {
-		await runGlobalMigrate(options)
-		return
-	}
-
-	await runSingleTargetMigrate(options, "local", resolveRoot(options), false)
-}
-
-// =============================================================================
-// GLOBAL MULTI-TARGET MIGRATION
-// =============================================================================
-
-/**
- * Run migration across global root and all global profiles.
- *
- * Ordering: root first, then profiles sorted by name.
- * On apply: continues after target failure, exits non-zero with summary.
- */
-async function runGlobalMigrate(options: MigrateOptions): Promise<void> {
-	const globalRoot = options.cwd ?? getGlobalConfigPath()
-	const targets = discoverGlobalTargets(globalRoot)
-
-	// Preview mode: collect results from all targets, no writes
-	if (!options.apply) {
-		const targetResults: TargetResult[] = []
-		const staleLockCleanupPendingTargets = new Set<string>()
-
-		for (const { label, path: targetPath } of targets) {
-			const receipt = findReceipt(targetPath)
-			const lockInfo = findOcxLock(targetPath, { isFlattened: true })
-			if (receipt.exists && lockInfo.exists) {
-				staleLockCleanupPendingTargets.add(label)
-			}
-
-			try {
-				const result = await analyzeTarget(targetPath, true, {
-					emitWarnings: !options.json && !options.quiet,
-				})
-				targetResults.push({ ...result, target: label })
-			} catch (error) {
-				const targetErrorResult = createErrorTargetResult(label, error)
-				targetResults.push(targetErrorResult)
-
-				if (!options.json && !options.quiet) {
-					logger.error(`[global:${label}] Preview failed: ${targetErrorResult.error}`)
-				}
-			}
-		}
-
-		const aggregated = aggregateResults(targetResults, "global", false)
-		const previewBlocked = hasPreviewBlockers(aggregated)
-
-		if (options.json) {
-			emitMigrateJson(aggregated, false)
-			if (previewBlocked) process.exit(1)
-			return
-		}
-
-		if (!options.quiet) {
-			logGlobalPreview(targetResults, aggregated, staleLockCleanupPendingTargets)
-		}
-
-		if (previewBlocked) process.exit(1)
-		return
-	}
-
-	// Apply mode: migrate each target, continue on failure
-	const targetResults: TargetResult[] = []
-	let hasFailure = false
-
-	for (const { label, path: targetPath } of targets) {
-		try {
-			const result = await applyTarget(targetPath, true)
-			targetResults.push({ ...result, target: label })
-		} catch (error) {
-			hasFailure = true
-			const targetErrorResult = createErrorTargetResult(label, error)
-			targetResults.push(targetErrorResult)
-
-			if (!options.json && !options.quiet) {
-				logger.error(`[global:${label}] Migration failed: ${targetErrorResult.error}`)
-			}
-		}
-	}
-
-	const aggregated = aggregateResults(targetResults, "global", true)
-
-	if (options.json) {
-		emitMigrateJson(aggregated, true)
-		if (hasFailure) process.exit(1)
-		return
-	}
-
-	if (!options.quiet) {
-		logGlobalApplySummary(targetResults, hasFailure)
-	}
-
-	if (hasFailure) process.exit(1)
-}
-
-/**
- * Discover all global migration targets: root + profile directories.
- * Returns root first, then profiles sorted alphabetically.
- */
-function discoverGlobalTargets(globalRoot: string): Array<{ label: string; path: string }> {
-	const targets: Array<{ label: string; path: string }> = []
-
-	// Root target
-	targets.push({ label: "root", path: globalRoot })
-
-	// Profile targets
-	const profilesDir = join(globalRoot, "profiles")
-	if (existsSync(profilesDir) && statSync(profilesDir).isDirectory()) {
-		const entries = readdirSync(profilesDir, { withFileTypes: true })
-		const profileNames = entries
-			.filter((e) => e.isDirectory() && !e.name.startsWith("."))
-			.map((e) => e.name)
-			.sort()
-
-		for (const name of profileNames) {
-			targets.push({ label: `profile:${name}`, path: join(profilesDir, name) })
-		}
-	}
-
-	return targets
-}
-
-/**
- * Analyze a single target for migration state (no writes).
- * Parses lock files to provide accurate component counts in preview.
- */
-async function analyzeTarget(
-	root: string,
-	isFlattened: boolean,
-	options?: { emitWarnings?: boolean },
-): Promise<Omit<TargetResult, "target">> {
-	const shouldEmitWarnings = options?.emitWarnings ?? true
-	const configActions = detectConfigActionsForScope(root)
-	const receipt = findReceipt(root)
-	const lockInfo = findOcxLock(root, { isFlattened })
-	const shouldArchiveStaleLock = receipt.exists && lockInfo.exists
-
-	// Already migrated and no config normalization needed
-	if (receipt.exists && configActions.length === 0 && !shouldArchiveStaleLock) {
-		return { status: "already_v2", count: 0, components: [], configActions: [] }
-	}
-
-	// No lock, no receipt, no config actions → nothing to do
-	if (!lockInfo.exists && !receipt.exists && configActions.length === 0) {
-		return { status: "nothing_to_migrate", count: 0, components: [], configActions: [] }
-	}
-
-	// Parse lock to get accurate component count for preview
-	let components: TargetResult["components"] = []
-	if (lockInfo.exists && !receipt.exists) {
-		try {
-			const lock = await readOcxLock(root, { isFlattened })
-			const config = await readOcxConfig(root, {
-				emitParseDiagnostics: shouldEmitWarnings,
-			})
-			if (lock && config) {
-				const built = buildReceiptFromLock(lock, config, root)
-				components = built.components
-			}
-		} catch {
-			// Preview can still proceed with count=0 if parsing fails
-			if (shouldEmitWarnings) {
-				logger.warn(
-					`[preview] Could not parse lock/config at "${root}"; component count may be incomplete.`,
-				)
-			}
-		}
-	}
-
-	return { status: "preview", count: components.length, components, configActions }
-}
-
-/**
- * Apply migration to a single target. Returns the result.
- * Throws on error (caller handles continue-on-failure).
- */
-async function applyTarget(
-	root: string,
-	isFlattened: boolean,
-): Promise<Omit<TargetResult, "target">> {
-	const configActions = detectConfigActionsForScope(root)
-	const receipt = findReceipt(root)
-	const lockInfo = findOcxLock(root, { isFlattened })
-	const shouldArchiveStaleLock = receipt.exists && lockInfo.exists
-
-	// Already migrated and no config normalization needed
-	if (receipt.exists && configActions.length === 0 && !shouldArchiveStaleLock) {
-		return { status: "already_v2", count: 0, components: [], configActions: [] }
-	}
-
-	// No lock, no receipt, no config actions → nothing to do
-	if (!lockInfo.exists && !receipt.exists && configActions.length === 0) {
-		return { status: "nothing_to_migrate", count: 0, components: [], configActions: [] }
-	}
-
-	// Build lock migration plan (if lock exists and receipt doesn't)
-	let lockMigrationPlan: {
-		newReceipt: import("../../schemas/config").Receipt
-		components: TargetResult["components"]
-	} | null = null
-
-	if (lockInfo.exists && !receipt.exists) {
-		const lock = await readOcxLock(root, { isFlattened })
-		if (!lock) {
-			throw new ValidationError(
-				"Failed to parse ocx.lock. The lock file exists but could not be read or contains invalid data.",
-			)
-		}
-
-		const config = await readOcxConfig(root)
-		if (!config) {
-			throw new ConfigError(
-				"No ocx.jsonc found. The config is required to resolve registry URLs during migration.",
-			)
-		}
-
-		const { receipt: newReceipt, components } = buildReceiptFromLock(lock, config, root)
-		lockMigrationPlan = { newReceipt, components }
-	}
-
-	const components = lockMigrationPlan?.components ?? []
-	const count = components.length
-
-	// Write receipt and rename lock
-	if (lockMigrationPlan) {
-		await writeReceipt(root, lockMigrationPlan.newReceipt)
-		const bakPath = resolveBackupPath(lockInfo.path)
-		await rename(lockInfo.path, bakPath)
-	}
-
-	if (shouldArchiveStaleLock) {
-		const bakPath = resolveBackupPath(lockInfo.path)
-		await rename(lockInfo.path, bakPath)
-	}
-
-	// Apply config normalization
-	if (configActions.length > 0) {
-		await applyConfigNormalizationToFile(root, configActions)
-	}
-
-	const didWrite = lockMigrationPlan !== null || shouldArchiveStaleLock || configActions.length > 0
-	return {
-		status: didWrite ? "migrated" : "already_v2",
-		count,
-		components,
-		configActions,
-	}
-}
-
-/**
- * Aggregate per-target results into a single MigrateResult.
- * Preserves top-level keys for compatibility.
- */
-function aggregateResults(
-	targetResults: TargetResult[],
-	scope: MigrateScope,
-	isApply: boolean,
-): MigrateResult {
-	const hasError = targetResults.some((t) => t.status === "error")
-	const hasMigrated = targetResults.some((t) => t.status === "migrated" || t.status === "preview")
-	const allAlready = targetResults.every(
-		(t) => t.status === "already_v2" || t.status === "nothing_to_migrate",
-	)
-
-	const totalCount = targetResults.reduce((sum, t) => sum + t.count, 0)
-	const allComponents = targetResults.flatMap((t) => t.components)
-	const allConfigActions = targetResults.flatMap((t) => t.configActions)
-
-	let overallStatus: MigrateResult["status"]
-	if (hasError) {
-		overallStatus = isApply ? "partial_failure" : "preview_with_errors"
-	} else if (allAlready) {
-		// Distinguish between "all already_v2" vs "all nothing_to_migrate"
-		const allNothing = targetResults.every((t) => t.status === "nothing_to_migrate")
-		overallStatus = allNothing ? "nothing_to_migrate" : "already_v2"
-	} else if (isApply) {
-		overallStatus = hasMigrated ? "migrated" : "already_v2"
-	} else {
-		overallStatus = hasMigrated ? "preview" : "already_v2"
-	}
-
-	return {
-		success: !hasError,
-		status: overallStatus,
-		scope,
-		count: totalCount,
-		components: allComponents,
-		configActions: allConfigActions,
-		targets: targetResults,
-	}
-}
-
-function hasPreviewBlockers(result: MigrateResult): boolean {
-	return result.status === "preview_with_errors"
-}
-
-function emitMigrateJson(result: MigrateResult, isApply: boolean): void {
-	const payload = withMigrateContract(result, isApply)
-	console.log(JSON.stringify(payload, null, 2))
-}
-
-function withMigrateContract(result: MigrateResult, isApply: boolean): MigrateResult {
-	const targets = normalizeTargets(result)
-	const blockers = targets.flatMap((target) => target.blockers ?? [])
-
-	return {
-		...result,
-		lifecycle_status: mapLifecycleStatus(result.status, isApply),
-		schema_version: MIGRATE_SCHEMA_VERSION,
-		blockers,
-		targets,
-	}
-}
-
-function normalizeTargets(result: MigrateResult): TargetResult[] {
-	const rawTargets =
-		result.targets && result.targets.length > 0 ? result.targets : [synthesizeTarget(result)]
-	return rawTargets.map((target) => normalizeTargetResult(target))
-}
-
-function synthesizeTarget(result: MigrateResult): TargetResult {
-	return {
-		target: result.scope,
-		status: result.status,
-		count: result.count,
-		components: result.components,
-		configActions: result.configActions,
-		blockers: result.blockers ?? [],
-	}
-}
-
-function normalizeTargetResult(target: TargetResult): TargetResult {
-	const blockers =
-		target.blockers ??
-		(target.status === "error"
-			? [
-					{
-						code: "MIGRATE_BLOCKER",
-						message: target.error ?? "Migration blocked",
-						path: target.target,
-					},
-				]
-			: [])
-
-	return {
-		...target,
-		scope: target.scope ?? target.target,
-		result: target.result ?? target.status,
-		blockers,
-	}
-}
-
-function mapLifecycleStatus(
-	status: MigrateResult["status"],
-	isApply: boolean,
-): MigrateLifecycleStatus {
-	if (isApply) {
-		return status === "partial_failure" ? "apply_failed" : "apply_ok"
-	}
-
-	return status === "preview_with_errors" ? "preview_blocked" : "preview_ok"
-}
-
-function createErrorTargetResult(target: string, error: unknown): TargetResult {
-	const blocker = toBlocker(error, target)
-
-	return {
-		target,
-		status: "error",
-		count: 0,
-		components: [],
-		configActions: [],
-		error: blocker.message,
-		blockers: [blocker],
-	}
-}
-
-function toBlocker(error: unknown, path: string): MigrateBlocker {
-	const message = error instanceof Error ? error.message : String(error)
-	return {
-		code: resolveBlockerCode(error, message),
-		message,
-		path,
-	}
-}
-
-function resolveBlockerCode(error: unknown, message: string): string {
-	if (typeof error === "object" && error !== null && "code" in error) {
-		const code = (error as { code?: unknown }).code
-		if (typeof code === "string" && code.length > 0) return code
-	}
-
-	const lowerMessage = message.toLowerCase()
-	if (lowerMessage.includes("ocx.jsonc") || lowerMessage.includes("registry")) {
-		return "CONFIG_ERROR"
-	}
-
-	if (lowerMessage.includes("parse") || lowerMessage.includes("invalid")) {
-		return "VALIDATION_ERROR"
-	}
-
-	return "MIGRATE_BLOCKER"
-}
-
-// =============================================================================
-// SINGLE TARGET MIGRATION (preserves existing local behavior)
-// =============================================================================
-
-async function runSingleTargetMigrate(
-	options: MigrateOptions,
-	scope: MigrateScope,
-	root: string,
-	isFlattened: boolean,
-): Promise<void> {
-	// Detect config normalization needs (pre-Zod raw parse)
-	const configActions = detectConfigActionsForScope(root)
-
-	// Detect state: receipt exists?
-	const receipt = findReceipt(root)
-	const lockInfo = findOcxLock(root, { isFlattened })
-	const shouldArchiveStaleLock = receipt.exists && lockInfo.exists
-
-	// Guard: already migrated (receipt exists) and no config normalization needed → safe no-op
-	if (receipt.exists && configActions.length === 0 && !shouldArchiveStaleLock) {
-		const result: MigrateResult = {
-			success: true,
-			status: "already_v2",
-			scope,
-			count: 0,
-			components: [],
-			configActions: [],
-		}
-
-		if (options.json) {
-			emitMigrateJson(result, Boolean(options.apply))
-			return
-		}
-
-		if (!options.quiet) {
-			logger.success(`[${scope}] Already migrated to receipt format (.ocx/receipt.jsonc).`)
-		}
-		return
-	}
-
-	// Guard: no lock, no receipt, no config actions → nothing to do
-	if (!lockInfo.exists && !receipt.exists && configActions.length === 0) {
-		const result: MigrateResult = {
-			success: true,
-			status: "nothing_to_migrate",
-			scope,
-			count: 0,
-			components: [],
-			configActions: [],
-		}
-
-		if (options.json) {
-			emitMigrateJson(result, Boolean(options.apply))
-			return
-		}
-
-		if (!options.quiet) {
-			logger.info(`[${scope}] Nothing to migrate. No legacy ocx.lock found.`)
-		}
-		return
-	}
-
-	// Build lock migration plan (if lock exists and receipt doesn't)
-	let lockMigrationPlan: {
-		newReceipt: import("../../schemas/config").Receipt
-		components: MigrateResult["components"]
-	} | null = null
-
-	if (lockInfo.exists && !receipt.exists) {
-		// Parse legacy lock and config
-		const lock = await readOcxLock(root, { isFlattened })
-		if (!lock) {
-			throw new ValidationError(
-				"Failed to parse ocx.lock. The lock file exists but could not be read or contains invalid data.",
-			)
-		}
-
-		const config = await readOcxConfig(root)
-		if (!config) {
-			throw new ConfigError(
-				"No ocx.jsonc found. The config is required to resolve registry URLs during migration.",
-			)
-		}
-
-		const { receipt: newReceipt, components } = buildReceiptFromLock(lock, config, root)
-		lockMigrationPlan = { newReceipt, components }
-	}
-
-	const components = lockMigrationPlan?.components ?? []
-	const count = components.length
-
-	// Preview mode (default): show plan, no writes
-	if (!options.apply) {
-		const result: MigrateResult = {
-			success: true,
-			status: "preview",
-			scope,
-			count,
-			components,
-			configActions,
-		}
-
-		if (options.json) {
-			emitMigrateJson(result, false)
-			return
-		}
-
-		if (!options.quiet) {
-			if (count > 0) {
-				logger.info(`[${scope}] Migration preview: ${count} component(s) would be migrated.`)
-				logger.break()
-
-				for (const comp of components) {
-					logger.info(`  ${comp.legacyKey} → ${comp.canonicalId}`)
-				}
-				logger.break()
-			}
-
-			if (shouldArchiveStaleLock) {
-				logger.info(
-					`[${scope}] Legacy ocx.lock would be backed up and removed (receipt already exists).`,
-				)
-				logger.break()
-			}
-
-			if (configActions.length > 0) {
-				logger.info(
-					`[${scope}] Config normalization: ${configActions.length} deprecated field(s) would be removed.`,
-				)
-				for (const action of configActions) {
-					logger.info(`  registries.${action.registry}.${action.field} → remove`)
-				}
-				logger.break()
-			}
-
-			if (count === 0 && configActions.length === 0 && !shouldArchiveStaleLock) {
-				logger.info(`[${scope}] Nothing to migrate.`)
-			} else {
-				logger.info("No changes made. Run with --apply to perform migration.")
-			}
-		}
-		return
-	}
-
-	// Apply mode: write receipt, rename lock → .bak, normalize config
-	if (lockMigrationPlan) {
-		await writeReceipt(root, lockMigrationPlan.newReceipt)
-
-		const bakPath = resolveBackupPath(lockInfo.path)
-		await rename(lockInfo.path, bakPath)
-
-		if (!options.json && !options.quiet) {
-			logger.success(
-				`[${scope}] Migrated ${count} component(s) to receipt format (.ocx/receipt.jsonc).`,
-			)
-			logger.break()
-
-			for (const comp of components) {
-				logger.success(`  ✓ ${comp.legacyKey} → ${comp.canonicalId}`)
-			}
-
-			logger.break()
-			logger.info(`Legacy lock backed up to: ${bakPath}`)
-		}
-	}
-
-	if (shouldArchiveStaleLock) {
-		const bakPath = resolveBackupPath(lockInfo.path)
-		await rename(lockInfo.path, bakPath)
-
-		if (!options.json && !options.quiet) {
-			logger.success(`[${scope}] Removed stale legacy lock (receipt already exists).`)
-			logger.info(`Legacy lock backed up to: ${bakPath}`)
-		}
-	}
-
-	// Apply config normalization
-	if (configActions.length > 0) {
-		await applyConfigNormalizationToFile(root, configActions)
-
-		if (!options.json && !options.quiet) {
-			if (lockMigrationPlan) logger.break()
-			logger.success(`[${scope}] Normalized ${configActions.length} deprecated config field(s).`)
-			for (const action of configActions) {
-				logger.success(`  ✓ registries.${action.registry}.${action.field} removed`)
-			}
-		}
-	}
-
-	const didWrite = lockMigrationPlan !== null || shouldArchiveStaleLock || configActions.length > 0
-	const result: MigrateResult = {
-		success: true,
-		status: didWrite ? "migrated" : "already_v2",
-		scope,
-		count,
-		components,
-		configActions,
-	}
-
-	if (options.json) {
-		emitMigrateJson(result, true)
-		return
-	}
-
-	// If no lock migration and only config actions, summarize
-	if (!lockMigrationPlan && configActions.length > 0 && !options.quiet) {
-		logger.break()
-		logger.success(`[${scope}] Config normalization complete.`)
-	}
-}
-
-// =============================================================================
-// GLOBAL OUTPUT HELPERS
-// =============================================================================
-
-function logGlobalPreview(
-	targetResults: TargetResult[],
-	aggregated: MigrateResult,
-	staleLockCleanupPendingTargets: Set<string>,
-): void {
-	if (aggregated.status === "nothing_to_migrate") {
-		logger.info("[global] Nothing to migrate across all targets.")
-		return
-	}
-
-	if (aggregated.status === "already_v2") {
-		logger.success("[global] All targets already migrated.")
-		return
-	}
-
-	logger.info(`[global] Migration preview across ${targetResults.length} target(s):`)
-	logger.break()
-
-	for (const t of targetResults) {
-		const shouldIncludeStaleLockCleanup = staleLockCleanupPendingTargets.has(t.target)
-		const actionsSummary = describeTargetActions(t, shouldIncludeStaleLockCleanup)
-		logger.info(`  ${t.target}: ${actionsSummary}`)
-	}
-
-	logger.break()
-
-	if (aggregated.status === "preview_with_errors") {
-		logger.warn("[global] Preview completed with errors on some targets. See above for details.")
-		logger.info("No changes made. Run with --apply to perform migration.")
-	} else {
-		logger.info("No changes made. Run with --apply to perform migration.")
-	}
-}
-
-function logGlobalApplySummary(targetResults: TargetResult[], hasFailure: boolean): void {
-	logger.break()
-
-	const migrated = targetResults.filter((t) => t.status === "migrated")
-	const already = targetResults.filter(
-		(t) => t.status === "already_v2" || t.status === "nothing_to_migrate",
-	)
-	const failed = targetResults.filter((t) => t.status === "error")
-
-	if (migrated.length > 0) {
-		logger.success(`[global] Migrated ${migrated.length} target(s):`)
-		for (const t of migrated) {
-			logger.success(`  ✓ ${t.target}`)
-		}
-	}
-
-	if (already.length > 0) {
-		logger.info(`[global] ${already.length} target(s) already up to date.`)
-	}
-
-	if (failed.length > 0) {
-		logger.error(`[global] ${failed.length} target(s) failed:`)
-		for (const t of failed) {
-			logger.error(`  ✗ ${t.target}: ${t.error}`)
-		}
-	}
-
-	if (hasFailure) {
-		logger.break()
-		logger.error("[global] Migration completed with errors. See above for details.")
-	}
-}
-
-function describeTargetActions(t: TargetResult, shouldIncludeStaleLockCleanup: boolean): string {
-	if (t.status === "error") return "error"
-	if (t.status === "already_v2") return "already migrated"
-	if (t.status === "nothing_to_migrate") return "nothing to migrate"
-
-	const parts: string[] = []
-	if (t.count > 0) {
-		parts.push(`${t.count} component(s) to migrate`)
-	}
-	if (t.configActions.length > 0) {
-		parts.push(`${t.configActions.length} config field(s) to normalize`)
-	}
-	if (shouldIncludeStaleLockCleanup) {
-		parts.push("legacy lock cleanup pending")
-	}
-	if (parts.length === 0) return "nothing to migrate"
-	return parts.join(", ")
-}
-
-// =============================================================================
-// HELPERS
-// =============================================================================
-
-/**
- * Resolve the migration root directory.
- *
- * - Local mode: uses --cwd or process.cwd()
- * - Global mode: uses --cwd if explicit, otherwise getGlobalConfigPath()
- *
- * This allows tests to override the global path via --cwd.
- */
-function resolveRoot(options: MigrateOptions): string {
-	if (options.global) {
-		return options.cwd ?? getGlobalConfigPath()
-	}
-	return options.cwd ?? process.cwd()
-}
-
-/**
- * Resolve a non-colliding backup path for the lock file.
- * Tries `.bak`, then `.bak.1`, `.bak.2`, etc.
- */
-function resolveBackupPath(lockPath: string): string {
-	const base = `${lockPath}.bak`
-	if (!existsSync(base)) return base
-
-	for (let i = 1; i <= 100; i++) {
-		const candidate = `${base}.${i}`
-		if (!existsSync(candidate)) return candidate
-	}
-
-	// Fallback: timestamp-based (effectively unreachable)
-	return `${base}.${Date.now()}`
-}
-
-/**
- * Read raw config (pre-Zod) to detect deprecated fields.
- * Returns empty actions if no config file is found.
- */
-function detectConfigActionsForScope(root: string): ConfigNormalizationAction[] {
-	const configInfo = findOcxConfig(root)
-	if (!configInfo.exists) return []
-
-	try {
-		const raw = readFileSync(configInfo.path, "utf-8")
-		const parsed = parseJsonc(raw, [], { allowTrailingComma: true })
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return []
-
-		return detectConfigNormalization(parsed as Record<string, unknown>)
-	} catch {
-		return []
-	}
-}
-
-/**
- * Formatting options for jsonc-parser edits during config normalization.
- * Matches the project's standard 2-space tab convention for JSON configs.
- */
-const JSONC_EDIT_OPTIONS: ModificationOptions = {
-	formattingOptions: {
-		tabSize: 2,
-		insertSpaces: true,
-		eol: "\n",
-	},
-}
-
-/**
- * Apply config normalization by removing deprecated fields in-place.
- * Uses jsonc-parser's modify/applyEdits to preserve JSONC comments and formatting.
- * Deterministic and idempotent: each action maps to a single property removal.
- */
-async function applyConfigNormalizationToFile(
-	root: string,
-	actions: ConfigNormalizationAction[],
-): Promise<void> {
-	if (actions.length === 0) return
-
-	const configInfo = findOcxConfig(root)
-	if (!configInfo.exists) return
-
-	let content = readFileSync(configInfo.path, "utf-8")
-
-	for (const action of actions) {
-		const edits = modify(
-			content,
-			["registries", action.registry, action.field],
-			undefined,
-			JSONC_EDIT_OPTIONS,
-		)
-		content = applyEdits(content, edits)
-	}
-
-	await writeFile(configInfo.path, content)
 }

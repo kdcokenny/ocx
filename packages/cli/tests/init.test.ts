@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { existsSync, realpathSync } from "node:fs"
+import { afterEach, describe, expect, it } from "bun:test"
+import { existsSync } from "node:fs"
 import { mkdir, readFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { getReleaseTag, getTemplateUrl, TEMPLATE_REPO } from "../src/commands/init"
@@ -19,7 +19,7 @@ describe("ocx init", () => {
 
 	it("should create ocx.jsonc with default config", async () => {
 		testDir = await createTempDir("init-basic")
-		const { exitCode, output } = await runCLI(["init"], testDir)
+		const { exitCode, output } = await runCLI(["init", "--project"], testDir)
 
 		expect(exitCode).toBe(0)
 		// Success message from logger.info
@@ -41,16 +41,15 @@ describe("ocx init", () => {
 		const configPath = join(configDir, "ocx.jsonc")
 		await Bun.write(configPath, "{}")
 
-		const { exitCode, output } = await runCLI(["init"], testDir)
+		const { exitCode, output } = await runCLI(["init", "--project"], testDir)
 		expect(exitCode).not.toBe(0)
-		expect(output).toContain("ocx.jsonc already exists")
-		expect(output).toContain("To reset")
-		expect(output).toContain("rm")
+		expect(output).toContain("already exists")
+		expect(await Bun.file(configPath).text()).toBe("{}")
 	})
 
 	it("should output JSON when requested", async () => {
 		testDir = await createTempDir("init-json")
-		const { exitCode, output } = await runCLI(["init", "--json"], testDir)
+		const { exitCode, output } = await runCLI(["init", "--project", "--json"], testDir)
 
 		expect(exitCode).toBe(0)
 		const json = JSON.parse(output)
@@ -97,9 +96,9 @@ describe("init --registry", () => {
 		const manifest = parseJsonc(content) as { $schema?: string }
 
 		// Positive assertions - new values present
-		expect(content).toContain('"namespace": "test-namespace"')
+		expect(content).toContain('"name": "Test Namespace"')
 		expect(content).toContain('"author": "Test Author"')
-		expect(manifest.$schema).toBe("https://ocx.kdco.dev/schemas/v2/registry.json")
+		expect(manifest.$schema).toBe("https://ocx.kdco.dev/schemas/v3/registry.json")
 
 		// CRITICAL: Negative assertions - template placeholders GONE
 		// These are the original template values that should be replaced
@@ -159,231 +158,6 @@ describe("init --registry", () => {
 
 		// Negative: template placeholder should be gone
 		expect(content).not.toContain('"name": "my-registry"')
-	})
-})
-
-describe("init --global", () => {
-	let testDir: string
-
-	beforeEach(async () => {
-		testDir = await createTempDir("init-global")
-	})
-
-	afterEach(async () => {
-		await cleanupTempDir(testDir)
-	})
-
-	// 4.1: Test creates all 4 files with correct CONTENT
-	it("should create all 4 files with correct content", async () => {
-		const { exitCode } = await runCLI(["init", "--global"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		expect(exitCode).toBe(0)
-
-		const configDir = join(testDir, "opencode")
-
-		// Check global config exists and has correct content
-		const globalConfigPath = join(configDir, "ocx.jsonc")
-		expect(existsSync(globalConfigPath)).toBe(true)
-		const globalConfig = parseJsonc(await Bun.file(globalConfigPath).text()) as {
-			$schema?: string
-			registries?: Record<string, unknown>
-		}
-		expect(globalConfig.$schema).toBe("https://ocx.kdco.dev/schemas/ocx.json")
-		expect(globalConfig.registries).toEqual({})
-
-		// Check profile ocx.jsonc
-		const profileOcxPath = join(configDir, "profiles/default/ocx.jsonc")
-		expect(existsSync(profileOcxPath)).toBe(true)
-		const profileOcx = parseJsonc(await Bun.file(profileOcxPath).text()) as {
-			$schema?: string
-			registries?: Record<string, unknown>
-		}
-		expect(profileOcx.$schema).toBe("https://ocx.kdco.dev/schemas/profile.json")
-		expect(profileOcx.registries).toEqual({})
-
-		// Check profile opencode.jsonc
-		const profileOpencodePath = join(configDir, "profiles/default/opencode.jsonc")
-		expect(existsSync(profileOpencodePath)).toBe(true)
-		const profileOpencode = parseJsonc(await Bun.file(profileOpencodePath).text())
-		expect(profileOpencode).toEqual({})
-
-		// Check profile AGENTS.md
-		const agentsPath = join(configDir, "profiles/default/AGENTS.md")
-		expect(existsSync(agentsPath)).toBe(true)
-		const agentsContent = await Bun.file(agentsPath).text()
-		expect(agentsContent).toContain("# Profile Instructions")
-	})
-
-	// 4.2: Test idempotency with SENTINEL content
-	it("should not overwrite existing files (sentinel test)", async () => {
-		const configDir = join(testDir, "opencode")
-		const profileDir = join(configDir, "profiles/default")
-
-		// Pre-create directories
-		await mkdir(profileDir, { recursive: true })
-
-		// Pre-create files with SENTINEL content
-		const globalConfigPath = join(configDir, "ocx.jsonc")
-		const sentinelGlobal = {
-			$schema: "SENTINEL",
-			registries: { SENTINEL: { url: "https://sentinel.test" } },
-		}
-		await Bun.write(globalConfigPath, JSON.stringify(sentinelGlobal, null, 2))
-
-		const profileOcxPath = join(profileDir, "ocx.jsonc")
-		const sentinelProfileOcx = { SENTINEL_PROFILE: true }
-		await Bun.write(profileOcxPath, JSON.stringify(sentinelProfileOcx, null, 2))
-
-		const profileOpencodePath = join(profileDir, "opencode.jsonc")
-		const sentinelOpencode = { SENTINEL_OPENCODE: true }
-		await Bun.write(profileOpencodePath, JSON.stringify(sentinelOpencode, null, 2))
-
-		const agentsPath = join(profileDir, "AGENTS.md")
-		const sentinelAgents = "SENTINEL_DO_NOT_REMOVE\n"
-		await Bun.write(agentsPath, sentinelAgents)
-
-		// Run init --global TWICE
-		const result1 = await runCLI(["init", "--global"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		expect(result1.exitCode).toBe(0)
-		const result2 = await runCLI(["init", "--global"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		expect(result2.exitCode).toBe(0)
-
-		// Verify all files are BYTE-FOR-BYTE unchanged
-		expect(await Bun.file(globalConfigPath).text()).toBe(JSON.stringify(sentinelGlobal, null, 2))
-		expect(await Bun.file(profileOcxPath).text()).toBe(JSON.stringify(sentinelProfileOcx, null, 2))
-		expect(await Bun.file(profileOpencodePath).text()).toBe(
-			JSON.stringify(sentinelOpencode, null, 2),
-		)
-		expect(await Bun.file(agentsPath).text()).toBe(sentinelAgents)
-	})
-
-	// 4.3: Test partial convergence
-	it("should create only missing files (partial convergence)", async () => {
-		const configDir = join(testDir, "opencode")
-		const profileDir = join(configDir, "profiles/default")
-
-		// Pre-create ONLY global config with sentinel
-		await mkdir(configDir, { recursive: true })
-		const globalConfigPath = join(configDir, "ocx.jsonc")
-		const sentinelGlobal = { SENTINEL: "global" }
-		await Bun.write(globalConfigPath, JSON.stringify(sentinelGlobal, null, 2))
-
-		// Run init --global
-		const { exitCode } = await runCLI(["init", "--global"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		expect(exitCode).toBe(0)
-
-		// Verify global config unchanged (sentinel preserved)
-		const globalContent = await Bun.file(globalConfigPath).text()
-		expect(globalContent).toBe(JSON.stringify(sentinelGlobal, null, 2))
-
-		// Verify profile files were created
-		expect(existsSync(join(profileDir, "ocx.jsonc"))).toBe(true)
-		expect(existsSync(join(profileDir, "opencode.jsonc"))).toBe(true)
-		expect(existsSync(join(profileDir, "AGENTS.md"))).toBe(true)
-	})
-
-	// 4.4: Test --json output with filesystem cross-check
-	it("should output correct JSON that matches filesystem", async () => {
-		const { exitCode, output } = await runCLI(["init", "--global", "--json"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		expect(exitCode).toBe(0)
-
-		const json = JSON.parse(output) as {
-			success: boolean
-			files: {
-				globalConfig: string
-				profileOcx: string
-				profileOpencode: string
-				profileAgents: string
-			}
-			created: string[]
-			existed: string[]
-		}
-		expect(json.success).toBe(true)
-
-		// Verify files object has all 4 paths
-		expect(json.files.globalConfig).toBeDefined()
-		expect(json.files.profileOcx).toBeDefined()
-		expect(json.files.profileOpencode).toBeDefined()
-		expect(json.files.profileAgents).toBeDefined()
-
-		// Cross-check: all files should exist
-		expect(existsSync(json.files.globalConfig)).toBe(true)
-		expect(existsSync(json.files.profileOcx)).toBe(true)
-		expect(existsSync(json.files.profileOpencode)).toBe(true)
-		expect(existsSync(json.files.profileAgents)).toBe(true)
-
-		// All should be created (fresh run)
-		expect(json.created).toContain("globalConfig")
-		expect(json.created).toContain("profileOcx")
-		expect(json.created).toContain("profileOpencode")
-		expect(json.created).toContain("profileAgents")
-		expect(json.existed).toEqual([])
-
-		// Run again - should all be "existed"
-		const { output: output2 } = await runCLI(["init", "--global", "--json"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		const json2 = JSON.parse(output2) as { created: string[]; existed: string[] }
-		expect(json2.created).toEqual([])
-		expect(json2.existed).toContain("globalConfig")
-		expect(json2.existed).toContain("profileOcx")
-		expect(json2.existed).toContain("profileOpencode")
-		expect(json2.existed).toContain("profileAgents")
-	})
-
-	// 4.5: Test --quiet produces no stdout
-	it("should produce no stdout with --quiet", async () => {
-		const { exitCode, output } = await runCLI(["init", "--global", "--quiet"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		expect(exitCode).toBe(0)
-		expect(output.trim()).toBe("")
-
-		// Files should still be created
-		const configDir = join(testDir, "opencode")
-		expect(existsSync(join(configDir, "ocx.jsonc"))).toBe(true)
-	})
-
-	// 4.6: Test --quiet --json precedence (--json still outputs)
-	it("should output JSON even with --quiet flag", async () => {
-		const { exitCode, output } = await runCLI(["init", "--global", "--quiet", "--json"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		expect(exitCode).toBe(0)
-
-		// JSON output should still be present (--json wins for structured output)
-		const json = JSON.parse(output) as { success: boolean }
-		expect(json.success).toBe(true)
-
-		// Files should still be created
-		const configDir = join(testDir, "opencode")
-		expect(existsSync(join(configDir, "ocx.jsonc"))).toBe(true)
-	})
-
-	// 4.7: Test path isolation
-	it("should only create files under XDG_CONFIG_HOME", async () => {
-		const { exitCode } = await runCLI(["init", "--global"], testDir, {
-			env: { XDG_CONFIG_HOME: testDir },
-		})
-		expect(exitCode).toBe(0)
-
-		// All created paths should be under testDir
-		const configDir = join(testDir, "opencode")
-		const globalConfigPath = join(configDir, "ocx.jsonc")
-		const profileOcxPath = join(configDir, "profiles/default/ocx.jsonc")
-
-		// Verify paths start with XDG_CONFIG_HOME
-		expect(realpathSync(globalConfigPath).startsWith(realpathSync(testDir))).toBe(true)
-		expect(realpathSync(profileOcxPath).startsWith(realpathSync(testDir))).toBe(true)
 	})
 })
 

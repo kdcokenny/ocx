@@ -9,15 +9,8 @@
 		"dev": "bun run build && wrangler dev --inspector-port 0"
 	},
 	"devDependencies": {
-		"@opencode-ai/plugin": "^1.3.13",
-		"@opencode-ai/sdk": "^1.3.13",
-		"ocx": "workspace:*"
-	},
-	"dependencies": {
 		"@types/bun": "^1.3.11",
 		"@types/node": "^25.5.0",
-		"jsonc-parser": "3.3.1",
-		"unique-names-generator": "^4.7.1",
-		"zod": "^4.3.6"
+		"ocx": "workspace:*"
 	}
 }

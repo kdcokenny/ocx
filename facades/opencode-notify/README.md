@@ -1,5 +1,9 @@
 # opencode-notify
 
+> **Retired — OpenCode V1 only.** No OpenCode V2 port is planned. Use [OCX 2.0.15](https://github.com/kdcokenny/ocx/releases/tag/v2.0.15) with OpenCode V1 for the legacy installation instructions below. Existing published packages, tags, and registry artifacts remain available.
+>
+> Use OpenCode V2’s native terminal notification and sound settings in `cli.json`. This plugin’s notification hooks, filtering, and terminal-specific integrations are not being ported. These are workflow alternatives, not complete replacements for every custom feature. See the [official V2 migration guide](https://opencode.ai/v2/docs/migrate-v1) and [V2 terminal settings](https://opencode.ai/v2/docs/cli/config).
+
 > Native OS notifications for OpenCode.
 
 A plugin for [OpenCode](https://github.com/sst/opencode) that delivers Native OS notifications when tasks complete, errors occur, or the AI needs your input. It uses native OS notification delivery on macOS, Windows, and Linux, with an additional [cmux](https://www.cmux.dev/)-native path when available.
@@ -162,19 +166,11 @@ If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` an
 
 ## Part of the OCX Ecosystem
 
-This plugin is part of the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/main/registry/src/kdco). For the full experience, check out [kdco-workspace](https://github.com/kdcokenny/ocx) which bundles notifications with background agents, specialist agents, and planning tools.
+This plugin is part of the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/e79df6f/workers/kdco-registry). For the full experience, check out [kdco-workspace](https://github.com/kdcokenny/ocx) which bundles notifications with background agents, specialist agents, and planning tools.
 
-## Contributing
+## Maintenance
 
-This facade is maintained from the main [OCX monorepo](https://github.com/kdcokenny/ocx).
-
-If you want to update opencode-notify itself, start here:
-
-- https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/notify.ts
-
-- Open issues here: https://github.com/kdcokenny/ocx/issues/new
-- Open pull requests here: https://github.com/kdcokenny/ocx/compare
-- Please do **not** open issues or PRs in this facade repository.
+This V1 code is retired. Source synchronization and active maintenance have ended. Repository history and existing releases remain available for reference and forks.
 
 ## Disclaimer
 

@@ -26,13 +26,14 @@ describe("ocx config edit", () => {
 	describe("--profile flag", () => {
 		it("should open correct profile config path", async () => {
 			// Create profile with config
-			const profileDir = join(globalTestDir, "opencode", "profiles", "test-profile")
+			const profileDir = join(globalTestDir, "ocx", "profiles", "test-profile")
 			await mkdir(profileDir, { recursive: true })
 			await Bun.write(join(profileDir, "ocx.jsonc"), "{}")
 
 			const result = await runCLI(["config", "edit", "--profile", "test-profile"], testDir, {
 				env: {
 					XDG_CONFIG_HOME: globalTestDir,
+					VISUAL: "",
 					EDITOR: "echo",
 				},
 			})
@@ -46,12 +47,12 @@ describe("ocx config edit", () => {
 			})
 
 			expect(result.exitCode).not.toBe(0)
-			expect(result.output).toContain("not initialized")
+			expect(result.output).toContain("not found")
 		})
 
 		it("should error when profile does not exist", async () => {
 			// Initialize profiles first
-			const profilesDir = join(globalTestDir, "opencode", "profiles")
+			const profilesDir = join(globalTestDir, "ocx", "profiles")
 			await mkdir(profilesDir, { recursive: true })
 
 			const result = await runCLI(["config", "edit", "--profile", "nonexistent"], testDir, {
@@ -64,7 +65,7 @@ describe("ocx config edit", () => {
 
 		it("should error for invalid profile name (path traversal)", async () => {
 			// Initialize profiles first
-			const profilesDir = join(globalTestDir, "opencode", "profiles")
+			const profilesDir = join(globalTestDir, "ocx", "profiles")
 			await mkdir(profilesDir, { recursive: true })
 
 			const result = await runCLI(["config", "edit", "--profile", ".."], testDir, {
@@ -72,7 +73,7 @@ describe("ocx config edit", () => {
 			})
 
 			expect(result.exitCode).not.toBe(0)
-			expect(result.output).toContain("Invalid profile name")
+			expect(result.output).toContain("Profile name")
 		})
 
 		it("should error when using both --global and --profile", async () => {
@@ -81,7 +82,7 @@ describe("ocx config edit", () => {
 			})
 
 			expect(result.exitCode).not.toBe(0)
-			expect(result.output).toContain("Cannot use both")
+			expect(result.output).toContain("Choose one scope")
 		})
 
 		it("should require profile name argument", async () => {
@@ -97,26 +98,27 @@ describe("ocx config edit", () => {
 	})
 
 	describe("existing functionality", () => {
-		it("should edit local config by default", async () => {
+		it("should edit explicitly selected project config", async () => {
 			const localConfigDir = join(testDir, ".opencode")
 			await mkdir(localConfigDir, { recursive: true })
 			await Bun.write(join(localConfigDir, "ocx.jsonc"), "{}")
 
-			const result = await runCLI(["config", "edit"], testDir, {
-				env: { EDITOR: "echo" },
+			const result = await runCLI(["config", "edit", "--project"], testDir, {
+				env: { VISUAL: "", EDITOR: "echo" },
 			})
 
 			expect(result.stdout).toContain(join(localConfigDir, "ocx.jsonc"))
 		})
 
 		it("should edit global config with --global flag", async () => {
-			const globalConfigDir = join(globalTestDir, "opencode")
+			const globalConfigDir = join(globalTestDir, "ocx")
 			await mkdir(globalConfigDir, { recursive: true })
 			await Bun.write(join(globalConfigDir, "ocx.jsonc"), "{}")
 
 			const result = await runCLI(["config", "edit", "--global"], testDir, {
 				env: {
 					XDG_CONFIG_HOME: globalTestDir,
+					VISUAL: "",
 					EDITOR: "echo",
 				},
 			})

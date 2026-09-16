@@ -1,0 +1,69 @@
+---
+title: Registry authoring commands
+description: Scaffold, validate, and build a protocol-3 static registry
+---
+
+## Scaffold
+
+```sh
+ocx init --registry ./my-registry --namespace my-registry --author "Your team"
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--registry <path>` | Required for this mode | New registry directory. |
+| `--namespace <name>` | `my-registry` | Portable registry identifier used in template names. |
+| `--author <name>` | `Your Name` | Author placed in the manifest. |
+| `--local <path>` | Unset | Copy a local template directory. |
+| `--canary` | Off | Download the template from the repository's `main` branch. |
+
+The normal download uses the release tag matching the packaged CLI. During an unpublished preview, use this checkout's template:
+
+```sh
+ocx init --registry ./my-registry --namespace my-registry \
+  --author "Your team" --local ./examples/registry-starter
+```
+
+Run that command from the OCX checkout. `--canary` follows `main`, which may still be the V1 line before this migration merges; it does not mean the current PR branch.
+
+The destination must have no visible files. Scaffolding copies the template and replaces its registry name and author placeholders, including in README and authoring instructions. It supports the shared init options `--cwd`, `--json`, `-q, --quiet`, and `-v, --verbose`.
+
+## Validate
+
+```sh
+ocx validate ./my-registry
+ocx validate ./my-registry --json
+```
+
+Validation checks the schema, referenced source files, safe targets, same-registry dependencies, cycles, and duplicate targets. External dependency aliases are resolved at installation time. Validation does not execute native agents, plugins, or tools.
+
+| Option | Meaning |
+| --- | --- |
+| `[path]` | Source directory; defaults to `.`. |
+| `--cwd <path>` | Base directory for the source path. |
+| `--json` | Structured validation result. |
+| `-q, --quiet` | Suppress normal output. |
+| `--no-duplicate-targets` | Skip duplicate-target validation for this check only. |
+
+A failed validation exits nonzero. Skipping duplicate-target validation does not relax the installer's ownership checks, and `build` still performs full validation.
+
+## Build
+
+```sh
+ocx build ./my-registry --out ./registry-dist --dry-run
+ocx build ./my-registry --out ./registry-dist --show-validation
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `[path]` | `.` | Registry source directory. |
+| `--out <dir>` | `./dist` | Complete generated output directory. |
+| `--cwd <path>` | Current directory | Base for both source and output paths. |
+| `--dry-run` | Off | Validate and list planned output without publishing it. |
+| `--show-validation` | Off | Show validation details before building. |
+| `--json` | Off | Structured result. |
+| `-q, --quiet` | Off | Suppress normal output. |
+
+The output path is relative to `--cwd`, not automatically to the source directory. A build validates and reads all inputs, stages complete output, and then replaces the previous output. It rejects paths that would overwrite the source or overlap its `files/` tree.
+
+The result is static JSON and component assets, with no runtime server requirement. See the [authoring tutorial](/v2/registry-authoring) for local testing and deployment, and the [protocol reference](/v2/registry-protocol) for the emitted layout.

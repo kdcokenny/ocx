@@ -1,5 +1,9 @@
 # opencode-worktree
 
+> **Retired — OpenCode V1 only.** No OpenCode V2 port is planned. Use [OCX 2.0.15](https://github.com/kdcokenny/ocx/releases/tag/v2.0.15) with OpenCode V1 for the legacy installation instructions below. Existing published packages, tags, and registry artifacts remain available.
+>
+> Use OpenCode V2’s native workspace/worktree workflows, or ordinary Git worktrees. This plugin’s lifecycle hooks, automatic terminal handoff, and OCX environment bridge are not being ported. These are workflow alternatives, not complete replacements for every custom feature. See the [official V2 migration guide](https://opencode.ai/v2/docs/migrate-v1) and [V2 terminal settings](https://opencode.ai/v2/docs/cli/config).
+
 > Git worktrees that spawn their own terminal. Zero-friction isolation for AI-driven development.
 
 An [OpenCode](https://github.com/sst/opencode) plugin that creates isolated git worktrees—where each worktree automatically opens its own terminal with OpenCode running inside. No manual setup, no context switching, no cleanup work.
@@ -235,7 +239,7 @@ Copy [`src/`](./src) to `.opencode/plugin/`. You lose OCX's dependency managemen
 
 ## Part of the OCX Ecosystem
 
-From the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/main/registry/src/kdco). Combine with:
+From the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/e79df6f/workers/kdco-registry). Combine with:
 
 - [opencode-workspace](https://github.com/kdcokenny/opencode-workspace) - Structured planning with rule injection
 - [opencode-background-agents](https://github.com/kdcokenny/opencode-background-agents) - Async delegation with persistent outputs
@@ -245,18 +249,9 @@ From the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/main/registry/src
 
 Inspired by [opencode-worktree-session](https://github.com/felixAnhalt/opencode-worktree-session) by Felix Anhalt.
 
-## Contributing
+## Maintenance
 
-This facade is maintained from the main [OCX monorepo](https://github.com/kdcokenny/ocx).
-
-If you want to update opencode-worktree itself, start here:
-
-- https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/worktree.ts
-- https://github.com/kdcokenny/ocx/tree/main/workers/kdco-registry/files/plugins/worktree
-
-- Open issues here: https://github.com/kdcokenny/ocx/issues/new
-- Open pull requests here: https://github.com/kdcokenny/ocx/compare
-- Please do **not** open issues or PRs in this facade repository.
+This V1 code is retired. Source synchronization and active maintenance have ended. Repository history and existing releases remain available for reference and forks.
 
 ## Disclaimer
 

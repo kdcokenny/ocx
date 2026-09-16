@@ -1,0 +1,42 @@
+---
+title: Self management
+description: Update or uninstall OCX without confusing it with native OpenCode
+---
+
+## Update OCX
+
+```sh
+ocx self update
+ocx self update --json
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-f, --force` | Reinstall even if already up to date. |
+| `--method <method>` | Override install-method detection: `curl`, `npm`, `yarn`, `pnpm`, or `bun`. |
+| `--json` | Structured result. |
+
+Prerelease builds follow npm's `next` channel. Updates cannot cross major versions. No automatic update check runs after ordinary OCX commands.
+
+For a source checkout, update the checkout you intend to test and rebuild the CLI. Do not use self-update as a way to select an arbitrary branch. The frozen OCX 2.0.15 line remains the client for OpenCode V1.
+
+## Uninstall OCX
+
+Preview before removing an installation:
+
+```sh
+ocx self uninstall --dry-run
+ocx self uninstall --dry-run --json
+```
+
+The preview identifies the managed configuration and executable affected by the detected installation method. Running without `--dry-run` performs removal; there is no additional confirmation flag.
+
+Self-uninstall targets the new OCX storage root, including named profiles. It preserves native OpenCode configuration/data and legacy OCX profiles under the old `opencode/profiles/` location. It also leaves project-installed files in individual repositories.
+
+For package-manager installations, OCX reports the package-manager command needed to remove the package itself. A required manual package-manager step returns exit code `1`; read the output rather than treating it as completed removal. Safety checks return exit code `2` for unsafe paths such as a symlinked managed root.
+
+The command supports only `--dry-run` and `--json`. Back up profiles you want to keep before an actual uninstall. To remove one profile instead, use [profile removal](/v2/cli/profiles#remove).
+
+## OpenCode itself
+
+These commands manage OCX, not the OpenCode executable or its service. Follow the [native CLI documentation](https://opencode.ai/v2/docs/cli) for OpenCode upgrades and removal.

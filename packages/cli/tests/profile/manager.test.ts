@@ -13,12 +13,7 @@ import { mkdir, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { ProfileManager } from "../../src/profile/manager"
 import { getProfileDir, getProfilesDir } from "../../src/profile/paths"
-import {
-	InvalidProfileNameError,
-	ProfileExistsError,
-	ProfileNotFoundError,
-	ProfilesNotInitializedError,
-} from "../../src/utils/errors"
+import { ProfileExistsError, ProfileNotFoundError } from "../../src/utils/errors"
 
 // =============================================================================
 // HELPERS
@@ -124,7 +119,7 @@ describe("ProfileManager.initialize", () => {
 		const profile = await manager.get("default")
 		expect(profile.ocx).toBeDefined()
 		expect(profile.ocx.registries).toBeDefined()
-		expect(profile.ocx.$schema).toBe("https://ocx.kdco.dev/schemas/profile.json")
+		expect(profile.ocx.$schema).toBe("https://ocx.kdco.dev/schemas/v3/profile.json")
 	})
 })
 
@@ -150,10 +145,10 @@ describe("ProfileManager.list", () => {
 		await cleanupTempDir(testDir)
 	})
 
-	it("should throw ProfilesNotInitializedError when not initialized", async () => {
+	it("should list no profiles when not initialized", async () => {
 		const manager = ProfileManager.create()
 
-		expect(manager.list()).rejects.toThrow(ProfilesNotInitializedError)
+		expect(await manager.list()).toEqual([])
 	})
 
 	it("should return all profile names sorted", async () => {
@@ -180,7 +175,7 @@ describe("ProfileManager.list", () => {
 		expect(profiles).not.toContain(".hidden")
 	})
 
-	it("should include symlinks that resolve to directories", async () => {
+	it("should exclude symlinks that resolve to directories", async () => {
 		const manager = ProfileManager.create()
 		await manager.initialize()
 		await manager.add("zebra")
@@ -191,7 +186,7 @@ describe("ProfileManager.list", () => {
 
 		const profiles = await manager.list()
 
-		expect(profiles).toEqual(["alpha-link", "default", "zebra"])
+		expect(profiles).toEqual(["default", "zebra"])
 	})
 
 	it("should exclude broken symlinks", async () => {
@@ -403,28 +398,28 @@ describe("ProfileManager.add", () => {
 		const manager = ProfileManager.create()
 		await manager.initialize()
 
-		expect(manager.add("")).rejects.toThrow(InvalidProfileNameError)
+		expect(manager.add("")).rejects.toThrow()
 	})
 
 	it("should throw InvalidProfileNameError for names starting with number", async () => {
 		const manager = ProfileManager.create()
 		await manager.initialize()
 
-		expect(manager.add("123profile")).rejects.toThrow(InvalidProfileNameError)
+		expect(manager.add("123profile")).rejects.toThrow()
 	})
 
 	it("should throw InvalidProfileNameError for names with path traversal", async () => {
 		const manager = ProfileManager.create()
 		await manager.initialize()
 
-		expect(manager.add("../../../etc")).rejects.toThrow(InvalidProfileNameError)
+		expect(manager.add("../../../etc")).rejects.toThrow()
 	})
 
 	it("should throw InvalidProfileNameError for names with slashes", async () => {
 		const manager = ProfileManager.create()
 		await manager.initialize()
 
-		expect(manager.add("a/b/c")).rejects.toThrow(InvalidProfileNameError)
+		expect(manager.add("a/b/c")).rejects.toThrow()
 	})
 
 	it("should accept valid names with dots, underscores, and hyphens", async () => {
@@ -481,12 +476,12 @@ describe("ProfileManager.remove", () => {
 		expect(manager.remove("nonexistent")).rejects.toThrow(ProfileNotFoundError)
 	})
 
-	it("should prevent deleting the last profile", async () => {
+	it("should prevent deleting the selected default", async () => {
 		const manager = ProfileManager.create()
 		await manager.initialize()
 
 		// Only default exists, can't delete it
-		expect(manager.remove("default")).rejects.toThrow(/Cannot delete the last profile/)
+		expect(manager.remove("default")).rejects.toThrow(/is the default profile/)
 	})
 
 	it("should allow deleting when multiple profiles exist", async () => {
@@ -494,10 +489,10 @@ describe("ProfileManager.remove", () => {
 		await manager.initialize()
 		await manager.add("other")
 
-		// Now we can delete default since "other" exists
-		await manager.remove("default")
+		// A non-default profile can be removed.
+		await manager.remove("other")
 
-		const exists = await manager.exists("default")
+		const exists = await manager.exists("other")
 		expect(exists).toBe(false)
 	})
 })

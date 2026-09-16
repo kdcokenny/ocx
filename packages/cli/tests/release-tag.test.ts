@@ -251,9 +251,12 @@ const failClosedGitScenarios: Array<{
 ]
 
 describe("release-tag helper", () => {
-	it("creates and pushes a fresh tag when npm is missing and no tags exist", async () => {
-		const repo = await setupRepo("1.2.3")
-		const tag = "v1.2.3"
+	it.each([
+		"1.2.3",
+		"3.0.0-alpha.1",
+	])("creates and pushes a fresh %s tag when npm is missing", async (version) => {
+		const repo = await setupRepo(version)
+		const tag = `v${version}`
 
 		const result = await executeReleaseTag(
 			{ force: false },
@@ -264,7 +267,7 @@ describe("release-tag helper", () => {
 		)
 
 		expect(result.exitCode).toBe(0)
-		expect(result.message).toBe("Created and pushed release tag v1.2.3.")
+		expect(result.message).toBe(`Created and pushed release tag ${tag}.`)
 
 		const headSha = await getHeadSha(repo)
 		expect(await getLocalTagSha(repo, tag)).toBe(headSha)
@@ -513,7 +516,7 @@ describe("release-tag helper", () => {
 		expect(await getRemoteTagSha(repo, tag)).toBe(remoteBefore)
 	})
 
-	for (const version of ["1.2.3-beta.1", "not-semver"]) {
+	for (const version of ["1.2.3-beta.1", "not-semver", "3.0.0", "4.0.0"]) {
 		it(`refuses non-stable CLI version ${version}`, async () => {
 			const repo = await setupRepo(version)
 			const tag = `v${version}`
@@ -528,7 +531,7 @@ describe("release-tag helper", () => {
 
 			expect(result.exitCode).toBe(1)
 			expect(result.message).toBe(
-				"CLI version must be a stable semver release; aborting without tag changes.",
+				"CLI version must be a legacy stable release or an OCX 3 preview; aborting without tag changes.",
 			)
 
 			expect(await getLocalTagSha(repo, tag)).toBeNull()

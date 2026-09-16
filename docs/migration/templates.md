@@ -14,7 +14,7 @@ Standard templates for OCX Mintlify documentation pages.
 
 Use for: Architecture explanations, design principles, feature overviews
 
-```markdown
+````markdown
 ---
 title: "Page Title"
 description: "One-line description for SEO and previews"
@@ -68,7 +68,7 @@ Explanation of the second key concept.
 
 - [Task: How to do X](/guides/doing-x)
 - [Reference: Configuration Options](/reference/config)
-```
+````
 
 ### Concept Page Checklist
 
@@ -86,7 +86,7 @@ Explanation of the second key concept.
 
 Use for: Tutorials, setup guides, how-to procedures
 
-```markdown
+````markdown
 ---
 title: "How to [Achieve Result]"
 description: "Step-by-step guide to [achieving result] with OCX"
@@ -160,7 +160,7 @@ Expected verification output
 |---------|----------|
 | Error message X | Do Y to fix |
 | Unexpected behavior Z | Check W setting |
-```
+````
 
 ### Task Page Checklist
 
@@ -178,7 +178,7 @@ Expected verification output
 
 Use for: CLI command documentation, API endpoints, configuration options
 
-```markdown
+````markdown
 ---
 title: "ocx [command]"
 description: "Reference for the ocx [command] command"
@@ -264,7 +264,7 @@ ocx profile add my-profile --source kit/omo --from https://ocx-kit.kdco.dev --gl
 
 - [Related command](/cli/related-command)
 - [Concept: What this command manages](/section/concept)
-```
+````
 
 ### Command Reference Checklist
 
@@ -316,7 +316,7 @@ Use these terms consistently:
 
 - **Bold** for UI elements and important terms
 - `code` for commands, filenames, and inline code
-- [Links](/path) for internal references (use site-root paths starting with `/`)
+- [Links](/v2/overview) for internal references (use site-root paths starting with `/`)
 - Tables for structured comparisons
 - Bullet lists for unordered items
 - Numbered lists for sequential steps

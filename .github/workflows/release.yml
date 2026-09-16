@@ -14,8 +14,8 @@ permissions:
 jobs:
   build-artifacts:
     runs-on: ubuntu-latest
-    # Guards: only run on main repo, skip prereleases (v1.4.0-rc.1)
-    if: github.repository == 'kdcokenny/ocx' && !contains(github.ref_name, '-')
+    # OCX 3 publishes previews without changing the frozen V1 latest channel.
+    if: github.repository == 'kdcokenny/ocx'
     steps:
       - uses: actions/checkout@v6
 
@@ -28,6 +28,10 @@ jobs:
         run: |
           set -euo pipefail
           package_version="$(node -p "require('./packages/cli/package.json').version")"
+          case "$package_version" in
+            3.*-*) ;;
+            *) echo "::error::This branch only publishes OCX 3 prereleases; latest remains frozen for V1 users."; exit 1 ;;
+          esac
           if [ "$GITHUB_REF_NAME" != "v${package_version}" ]; then
             echo "::error::Tag ${GITHUB_REF_NAME} does not match packages/cli/package.json version ${package_version}."
             exit 1
@@ -181,6 +185,8 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: true
+          make_latest: false
           files: |
             packages/cli/dist/bin/ocx-*
             packages/cli/dist/bin/SHA256SUMS.txt
@@ -189,12 +195,12 @@ jobs:
 
             **Via curl (macOS/Linux):**
             ```bash
-            curl -fsSL https://ocx.kdco.dev/install.sh | bash
+            curl -fsSL https://ocx.kdco.dev/install.sh | OCX_VERSION=${{ github.ref_name }} bash
             ```
 
             **Via npm (all platforms including Windows):**
             ```bash
-            npm install -g ocx
+            npm install -g ocx@next
             ```
 
             **Manual download:**
@@ -215,5 +221,5 @@ jobs:
       # Tokenless npm publish using OIDC
       # Requires trusted publisher configured at npmjs.com/package/ocx/access
       - name: Publish ocx to npm
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag next
         working-directory: packages/cli

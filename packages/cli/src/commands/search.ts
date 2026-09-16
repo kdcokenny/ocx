@@ -12,6 +12,7 @@ export interface SearchOptions {
 	installed: boolean
 	limit: number
 	profile?: string
+	project?: boolean
 }
 
 function parsePositiveInt(value: string): number {
@@ -31,6 +32,7 @@ export function registerSearchCommand(program: Command): void {
 		.argument("[query]", "Search query")
 		.option("--installed", "List installed components only", false)
 		.option("-p, --profile <name>", "Use specific profile")
+		.option("--project", "Use project sources or installed files")
 		.addOption(new Option("--limit <n>", "Limit results").default(20).argParser(parsePositiveInt))
 
 	addCommonOptions(cmd)

@@ -5,10 +5,11 @@
  * Shared by both validate command and build command.
  */
 
-import { join, posix } from "node:path"
+import { posix } from "node:path"
 import { type ParseError, parse as parseJsonc } from "jsonc-parser"
 import type { Registry } from "../schemas/registry"
 import { classifyRegistrySchemaIssue, normalizeFile, registrySchema } from "../schemas/registry"
+import { readManagedFile } from "../utils/file-transaction"
 import { formatJsoncParseError } from "../utils/jsonc"
 
 export interface ValidationResult<T = unknown> {
@@ -145,10 +146,11 @@ export async function validateSourceFiles(
 	for (const component of registry.components) {
 		for (const rawFile of component.files) {
 			const file = normalizeFile(rawFile, component.type)
-			const sourceFilePath = join(sourcePath, "files", file.path)
-
-			if (!(await Bun.file(sourceFilePath).exists())) {
-				errors.push(`${component.name}: Source file not found at ${file.path}`)
+			try {
+				if ((await readManagedFile(sourcePath, `files/${file.path}`)) === null)
+					errors.push(`${component.name}: Source file not found at ${file.path}`)
+			} catch (error) {
+				errors.push(`${component.name}: ${error}`)
 			}
 		}
 	}
@@ -253,7 +255,8 @@ export function validateDuplicateTargets(registry: Registry): ValidationResult {
 		const normalizedUnicode = target.normalize("NFC")
 		const unifiedSeparators = normalizedUnicode.replace(/\\/g, "/")
 		const normalizedTarget = posix.normalize(unifiedSeparators)
-		return normalizedTarget.replace(/^\.\//, "")
+		// Registry output must also install unambiguously on case-insensitive filesystems.
+		return normalizedTarget.replace(/^\.\//, "").toLowerCase()
 	}
 
 	for (const component of registry.components) {
