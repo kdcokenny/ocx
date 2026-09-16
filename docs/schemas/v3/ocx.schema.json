@@ -31,8 +31,7 @@
 						}
 					}
 				},
-				"required": ["url"],
-				"additionalProperties": false
+				"required": ["url"]
 			}
 		},
 		"lockRegistries": {
@@ -40,7 +39,6 @@
 			"type": "boolean"
 		}
 	},
-	"required": ["registries", "lockRegistries"],
 	"additionalProperties": false,
 	"$id": "https://ocx.kdco.dev/schemas/v3/ocx.json"
 }

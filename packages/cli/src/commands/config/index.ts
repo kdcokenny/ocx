@@ -1,5 +1,6 @@
 import type { Command } from "commander"
-import { resolveMetadata, type ScopeOptions } from "../../config/scope"
+import { resolveMetadata, type ScopeOptions, withMetadataLock } from "../../config/scope"
+import { editorCommand } from "../../utils/editor-command"
 import { handleError } from "../../utils/handle-error"
 import { outputJson } from "../../utils/json-output"
 
@@ -20,19 +21,21 @@ export function registerConfigCommand(program: Command): void {
 			.option("--json", "Output JSON")
 			.action(async (options: ScopeOptions & { json?: boolean }) => {
 				try {
-					const target = await resolveMetadata(options)
 					if (action === "show") {
-						outputJson(target)
+						outputJson(await resolveMetadata(options))
 						return
 					}
 					const editor = process.env.VISUAL || process.env.EDITOR || "vi"
-					const child = Bun.spawn([editor, target.path], {
-						stdin: "inherit",
-						stdout: "inherit",
-						stderr: "inherit",
+					await withMetadataLock(options, async () => {
+						const target = await resolveMetadata(options)
+						const child = Bun.spawn([...editorCommand(editor), target.path], {
+							stdin: "inherit",
+							stdout: "inherit",
+							stderr: "inherit",
+						})
+						const code = await child.exited
+						if (code !== 0) throw new Error(`Editor exited with code ${code}`)
 					})
-					const code = await child.exited
-					if (code !== 0) throw new Error(`Editor exited with code ${code}`)
 				} catch (error) {
 					handleError(error, { json: options.json })
 				}

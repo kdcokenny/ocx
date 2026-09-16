@@ -45,8 +45,7 @@
 									"type": "string"
 								}
 							},
-							"required": ["path", "hash"],
-							"additionalProperties": false
+							"required": ["path", "hash"]
 						}
 					},
 					"installedAt": {
@@ -66,8 +65,7 @@
 								"type": "string"
 							}
 						},
-						"required": ["type"],
-						"additionalProperties": false
+						"required": ["type"]
 					},
 					"dependencies": {
 						"default": [],
@@ -85,14 +83,11 @@
 					"revision",
 					"hash",
 					"files",
-					"installedAt",
-					"dependencies"
-				],
-				"additionalProperties": false
+					"installedAt"
+				]
 			}
 		}
 	},
-	"required": ["version", "installed"],
-	"additionalProperties": false,
+	"required": ["version"],
 	"$id": "https://ocx.kdco.dev/schemas/v3/receipt.json"
 }

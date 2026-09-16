@@ -1,4 +1,4 @@
 {
-	"buildCommand": "bunx ocx build . --out dist",
+	"buildCommand": "bun run build",
 	"outputDirectory": "dist"
 }

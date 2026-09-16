@@ -76,22 +76,26 @@ async function start(name: string, inherit: boolean) {
 	)
 	const reader = proc.stdout.getReader()
 	let output = ""
-	const deadline = setTimeout(() => proc.kill(), 30000)
+	const deadline = setTimeout(() => proc.kill("SIGKILL"), 30000)
 	try {
 		while (!output.includes("\n")) {
 			const chunk = await reader.read()
 			if (chunk.done) throw new Error(`Server ${name} exited before readiness: ${output}`)
 			output += new TextDecoder().decode(chunk.value)
 		}
+		const { url } = JSON.parse(output.slice(0, output.indexOf("\n")))
+		const client = OpenCode.make({
+			baseUrl: url,
+			headers: { Authorization: `Basic ${btoa(`opencode:${env.OPENCODE_PASSWORD}`)}` },
+		})
+		return { name, profile, process: proc, client, reader }
+	} catch (error) {
+		proc.kill("SIGKILL")
+		await proc.exited
+		throw error
 	} finally {
 		clearTimeout(deadline)
 	}
-	const { url } = JSON.parse(output.slice(0, output.indexOf("\n")))
-	const client = OpenCode.make({
-		baseUrl: url,
-		headers: { Authorization: `Basic ${btoa(`opencode:${env.OPENCODE_PASSWORD}`)}` },
-	})
-	return { name, profile, process: proc, client, reader }
 }
 
 const servers: Awaited<ReturnType<typeof start>>[] = []
@@ -130,7 +134,13 @@ try {
 		assert.equal(text.includes("projectagent"), inherit, "project discovery mismatch")
 		assert.equal(text.includes("projectcommand"), inherit, "project command discovery mismatch")
 		assert.equal(text.includes("project-marker"), inherit, "project config discovery mismatch")
-		assert(!text.includes(`${name === "alpha" ? "beta" : "alpha"}agent`), "other profile leaked")
+		for (const other of ["alpha", "beta", "gamma"].filter((other) => other !== name))
+			assert(
+				!text.includes(`${other}agent`) &&
+					!text.includes(`${other}skill`) &&
+					!text.includes(`${other}command`),
+				"other profile leaked",
+			)
 	}
 	console.log(
 		"PASS: built OCX launches three simultaneous native servers with distinct profiles and both discovery modes",

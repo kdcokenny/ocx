@@ -56,16 +56,33 @@
 						"items": {
 							"anyOf": [
 								{
-									"type": "string"
+									"type": "string",
+									"allOf": [
+										{
+											"pattern": "^(?!~)(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9)(?:\\.|[/\\\\]|$))[^\\x00-\\x1f<>:\"|?*/\\\\]+(?<![. ])(?:[/\\\\](?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9)(?:\\.|[/\\\\]|$))[^\\x00-\\x1f<>:\"|?*/\\\\]+(?<![. ]))*$"
+										},
+										{
+											"pattern": "^(?!(?:\\.[oO][cC][xX]|\\.[gG][iI][tT]|\\.[oO][pP][eE][nN][cC][oO][dD][eE]|[nN][oO][dD][eE]_[mM][oO][dD][uU][lL][eE][sS])(?:[/\\\\]|$))(?!(?:[oO][cC][xX]\\.[lL][oO][cC][kK]|[pP][aA][cC][kK][aA][gG][eE]\\.[jJ][sS][oO][nN]|[pP][aA][cC][kK][aA][gG][eE]-[lL][oO][cC][kK]\\.[jJ][sS][oO][nN]|[bB][uU][nN]\\.[lL][oO][cC][kK]|[bB][uU][nN]\\.[lL][oO][cC][kK][bB]|[pP][nN][pP][mM]-[lL][oO][cC][kK]\\.[yY][aA][mM][lL]|[yY][aA][rR][nN]\\.[lL][oO][cC][kK])$)(?!\\.[eE][nN][vV](?:\\.|[/\\\\]|$))"
+										}
+									]
 								},
 								{
 									"type": "object",
 									"properties": {
 										"path": {
-											"type": "string"
+											"type": "string",
+											"pattern": "^(?!~)(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9)(?:\\.|[/\\\\]|$))[^\\x00-\\x1f<>:\"|?*/\\\\]+(?<![. ])(?:[/\\\\](?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9)(?:\\.|[/\\\\]|$))[^\\x00-\\x1f<>:\"|?*/\\\\]+(?<![. ]))*$"
 										},
 										"target": {
-											"type": "string"
+											"type": "string",
+											"allOf": [
+												{
+													"pattern": "^(?!~)(?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9)(?:\\.|[/\\\\]|$))[^\\x00-\\x1f<>:\"|?*/\\\\]+(?<![. ])(?:[/\\\\](?!(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9)(?:\\.|[/\\\\]|$))[^\\x00-\\x1f<>:\"|?*/\\\\]+(?<![. ]))*$"
+												},
+												{
+													"pattern": "^(?!(?:\\.[oO][cC][xX]|\\.[gG][iI][tT]|\\.[oO][pP][eE][nN][cC][oO][dD][eE]|[nN][oO][dD][eE]_[mM][oO][dD][uU][lL][eE][sS])(?:[/\\\\]|$))(?!(?:[oO][cC][xX]\\.[lL][oO][cC][kK]|[pP][aA][cC][kK][aA][gG][eE]\\.[jJ][sS][oO][nN]|[pP][aA][cC][kK][aA][gG][eE]-[lL][oO][cC][kK]\\.[jJ][sS][oO][nN]|[bB][uU][nN]\\.[lL][oO][cC][kK]|[bB][uU][nN]\\.[lL][oO][cC][kK][bB]|[pP][nN][pP][mM]-[lL][oO][cC][kK]\\.[yY][aA][mM][lL]|[yY][aA][rR][nN]\\.[lL][oO][cC][kK])$)(?!\\.[eE][nN][vV](?:\\.|[/\\\\]|$))"
+												}
+											]
 										}
 									},
 									"required": ["path", "target"],
@@ -93,7 +110,7 @@
 						}
 					}
 				},
-				"required": ["name", "type", "description", "files", "dependencies"],
+				"required": ["name", "type", "description"],
 				"additionalProperties": false
 			}
 		}

@@ -71,7 +71,14 @@ async function request(url: string, options: FetchOptions): Promise<Buffer> {
 			status: response.status,
 			statusText: response.statusText,
 		})
-	return Buffer.from(await response.arrayBuffer())
+	try {
+		return Buffer.from(await response.arrayBuffer())
+	} catch (error) {
+		throw new NetworkError(
+			`Cannot read registry response from ${url}: ${error instanceof Error ? error.message : String(error)}`,
+			{ url },
+		)
+	}
 }
 
 async function fetchJson<T>(

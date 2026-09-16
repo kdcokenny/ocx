@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
-import { mkdir, mkdtemp, readFile, rename, rm } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
+import { publishDirectory } from "../packages/cli/src/utils/publish-directory"
 import manifest from "./manifest.json"
 
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex")
@@ -14,9 +15,7 @@ export async function restoreLegacyRegistry(
 	const archive = join(import.meta.dir, snapshot.archive)
 	if (digest(await readFile(archive)) !== snapshot.sha256)
 		throw new Error(`Legacy archive checksum mismatch: ${name}`)
-	await mkdir(dirname(output), { recursive: true })
-	const stage = await mkdtemp(join(dirname(output), ".legacy-"))
-	try {
+	await publishDirectory(output, async (stage) => {
 		const listing = Bun.spawn(["tar", "-tzf", archive], { stdout: "pipe", stderr: "pipe" })
 		const [list, listError, listCode] = await Promise.all([
 			new Response(listing.stdout).text(),
@@ -40,9 +39,5 @@ export async function restoreLegacyRegistry(
 			if (digest(await readFile(join(stage, path))) !== expected)
 				throw new Error(`Legacy file checksum mismatch: ${name}/${path}`)
 		}
-		await rm(output, { recursive: true, force: true })
-		await rename(stage, output)
-	} finally {
-		await rm(stage, { recursive: true, force: true })
-	}
+	})
 }

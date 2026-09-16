@@ -128,22 +128,51 @@ export function validateFileTarget(target: string, componentType?: ComponentType
 	}
 }
 
-const relativeFileSchema = string().superRefine((value, context) => {
-	try {
-		validateSafePath(value)
-	} catch (error) {
-		context.addIssue({
-			code: "custom",
-			message: error instanceof Error ? error.message : String(error),
-		})
-	}
-})
-export const targetPathSchema = relativeFileSchema
+const caseInsensitive = (text: string) =>
+	Array.from(text)
+		.map((character) =>
+			/[a-z]/i.test(character)
+				? `[${character.toLowerCase()}${character.toUpperCase()}]`
+				: character.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+		)
+		.join("")
+const reservedNames = [
+	"con",
+	"prn",
+	"aux",
+	"nul",
+	...Array.from({ length: 9 }, (_, index) => `com${index + 1}`),
+	...Array.from({ length: 9 }, (_, index) => `lpt${index + 1}`),
+]
+	.map(caseInsensitive)
+	.join("|")
+const segmentPattern = String.raw`(?!(?:${reservedNames})(?:\.|[/\\]|$))[^\x00-\x1f<>:"|?*/\\]+(?<![. ])`
+const safePathPattern = new RegExp(String.raw`^(?!~)${segmentPattern}(?:[/\\]${segmentPattern})*$`)
+const protectedPathPattern = new RegExp(
+	String.raw`^(?!(?:${[...PROTECTED_ROOTS].map(caseInsensitive).join("|")})(?:[/\\]|$))(?!(?:${[...PROTECTED_FILES].map(caseInsensitive).join("|")})$)(?!${caseInsensitive(".env")}(?:\.|[/\\]|$))`,
+)
+
+const relativeFileSchema = string()
+	.regex(safePathPattern, "Expected a portable relative file path")
+	.superRefine((value, context) => {
+		try {
+			validateSafePath(value)
+		} catch (error) {
+			context.addIssue({
+				code: "custom",
+				message: error instanceof Error ? error.message : String(error),
+			})
+		}
+	})
+export const targetPathSchema = relativeFileSchema.regex(
+	protectedPathPattern,
+	"Target is reserved and cannot be installed",
+)
 export const componentFileObjectSchema = object({
 	path: relativeFileSchema,
-	target: relativeFileSchema,
+	target: targetPathSchema,
 }).strict()
-export const componentFileSchema = union([relativeFileSchema, componentFileObjectSchema])
+export const componentFileSchema = union([targetPathSchema, componentFileObjectSchema])
 export type ComponentFileObject = ZodInfer<typeof componentFileObjectSchema>
 export type ComponentFile = ZodInfer<typeof componentFileSchema>
 export function inferTargetPath(sourcePath: string): string {

@@ -338,3 +338,13 @@ test("case-only target collisions fail before copying on every platform", async 
 	expect(await Bun.file(join(root, "skills/guide/README.md")).exists()).toBe(false)
 	expect(await Bun.file(join(root, ".ocx/receipt.jsonc")).exists()).toBe(false)
 })
+
+test("a stale canonical reference cannot remove a replaced installation", async () => {
+	await publish([{ name: "guide", files: { "skills/guide/SKILL.md": "first" } }])
+	await installComponents(["team/guide"], provider, { mode: "add" })
+	const oldId = Object.keys((await readReceipt(root))?.installed ?? {})[0] as string
+	await publish([{ name: "guide", files: { "skills/guide/SKILL.md": "second" } }])
+	await installComponents(["team/guide"], provider, { mode: "update" })
+	await expect(removeComponents([oldId], provider, {})).rejects.toThrow("not installed")
+	expect(await readFile(join(root, "skills/guide/SKILL.md"), "utf8")).toBe("second")
+})

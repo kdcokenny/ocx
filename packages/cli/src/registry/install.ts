@@ -9,6 +9,7 @@ import {
 } from "../schemas/config"
 import { profileOcxConfigSchema } from "../schemas/ocx"
 import { parseQualifiedComponent } from "../schemas/registry"
+import { resolveInstalledComponentRefs } from "../utils/component-ref-resolver"
 import { ConflictError, IntegrityError, NotFoundError, ValidationError } from "../utils/errors"
 import {
 	applyFileChanges,
@@ -47,7 +48,7 @@ function installedByName(receipt: Receipt): Map<string, { id: string; entry: Ins
 		if (names.has(name)) throw new ValidationError(`Receipt has multiple installations of ${name}`)
 		names.set(name, { id, entry })
 		for (const file of entry.files) {
-			const portablePath = file.path.normalize("NFC").toLowerCase()
+			const portablePath = file.path.normalize("NFC").replace(/\\/g, "/").toLowerCase()
 			if (paths.has(portablePath))
 				throw new ConflictError(
 					`Receipt assigns ${file.path} to both ${paths.get(portablePath)} and ${name}`,
@@ -121,6 +122,7 @@ async function prepareInstallation(
 	provider: ConfigProvider,
 	options: InstallOptions,
 ): Promise<InstallationResult> {
+	await provider.assertCurrent?.()
 	const root = provider.cwd
 	const receipt = (await readReceipt(root)) ?? { version: 1, installed: {} }
 	const previous = installedByName(receipt)
@@ -256,10 +258,17 @@ export async function removeComponents(
 	options: { force?: boolean; dryRun?: boolean; beforeWrite?: (index: number) => Promise<void> },
 ): Promise<InstallationResult> {
 	const run = async () => {
+		await provider.assertCurrent?.()
 		const receipt = await readReceipt(provider.cwd)
 		if (!receipt) throw new NotFoundError("No components installed")
 		const previous = installedByName(receipt)
-		const selected = new Set(references)
+		const selected = new Set(
+			resolveInstalledComponentRefs(references, receipt).map((id) => {
+				const entry = receipt.installed[id]
+				if (!entry) throw new NotFoundError(`Component ${id} is not installed`)
+				return qualified(entry)
+			}),
+		)
 		for (const reference of selected)
 			if (!previous.has(reference))
 				throw new NotFoundError(`Component ${reference} is not installed`)

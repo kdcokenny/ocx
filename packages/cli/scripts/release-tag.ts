@@ -22,7 +22,6 @@ import {
 } from "../src/utils/npm-registry"
 
 const STABLE_SEMVER_REGEX = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
-const STABLE_RELEASE_TAG_REGEX = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 
 const USAGE_TEXT = [
 	"Usage: bun run scripts/release-tag.ts [--force]",
@@ -275,16 +274,13 @@ function failure(message: string): ReleaseTagExecutionResult {
 
 function isPublishableVersion(version: string): boolean {
 	return (
-		(!version.startsWith("3.") && STABLE_SEMVER_REGEX.test(version)) ||
+		(Number(version.split(".")[0]) < 3 && STABLE_SEMVER_REGEX.test(version)) ||
 		/^3\.(0|[1-9]\d*)\.(0|[1-9]\d*)-[a-zA-Z][a-zA-Z0-9-]*(?:\.(0|[1-9]\d*))*$/.test(version)
 	)
 }
 
 function isPublishableTag(tag: string): boolean {
-	return (
-		STABLE_RELEASE_TAG_REGEX.test(tag) ||
-		(tag.startsWith("v3.") && isPublishableVersion(tag.slice(1)))
-	)
+	return tag.startsWith("v") && isPublishableVersion(tag.slice(1))
 }
 
 async function ensureMissingNpmVersion(

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { buildOpenCodeArgs, buildOpenCodeEnv } from "../src/commands/opencode"
@@ -87,6 +87,32 @@ test("rename updates the default and removal protects it until explicitly cleare
 	expect((await run(["profile", "remove", "work"])).code).not.toBe(0)
 	expect((await run(["profile", "use", "--clear"])).code).toBe(0)
 	expect((await run(["profile", "remove", "work"])).code).toBe(0)
+})
+
+test("replaying an interrupted move repairs the default without losing other metadata", async () => {
+	await run(["init", "--global"])
+	await writeFile(
+		join(fixture, "config/ocx/.ocx/profile-move.json"),
+		JSON.stringify({ oldName: "default", newName: "work" }),
+	)
+	await rename(profile("default"), profile("work"))
+	expect((await run(["profile", "remove", "work"])).code).not.toBe(0)
+	expect((await run(["profile", "move", "default", "work"])).code).toBe(0)
+	expect(JSON.parse((await run(["profile", "show", "--json"])).stdout).name).toBe("work")
+	expect(await Bun.file(join(fixture, "config/ocx/.ocx/profile-move.json")).exists()).toBe(false)
+})
+
+test("profile removal preserves interrupted installation recovery files", async () => {
+	await run(["profile", "add", "work"])
+	await mkdir(join(profile("work"), ".ocx/transaction-interrupted"), { recursive: true })
+	await writeFile(
+		join(profile("work"), ".ocx/transaction-interrupted/manifest.json"),
+		'{"complete":false}',
+	)
+	const result = await run(["profile", "remove", "work"])
+	expect(result.code).not.toBe(0)
+	expect(result.stderr).toContain("Interrupted operation")
+	expect(await Bun.file(join(profile("work"), "ocx.jsonc")).exists()).toBe(true)
 })
 
 test("V1 files remain untouched and mutation destinations never come from launch defaults", async () => {

@@ -80,7 +80,7 @@ export async function runRegistryAddCore(
 
 	// Fetch registry index to validate the URL serves a valid registry
 	const { fetchRegistryIndex } = await import("../registry/fetcher")
-	await fetchRegistryIndex(normalizedUrl, existingByName)
+	await fetchRegistryIndex(normalizedUrl, existingByUrl?.config)
 
 	// -------------------------------------------------------------------------
 	// Conflict resolution matrix (alias-first model)
@@ -278,7 +278,17 @@ export function registerRegistryCommand(program: Command): void {
 								? await runRegistryRemoveCore(value as string, callbacks)
 								: runRegistryListCore(callbacks)
 					if ("dryRun" in result) outputDryRun(result, { json: options.json })
-					else outputJson({ success: true, ...result })
+					else if (options.json) outputJson({ success: true, ...result })
+					else if ("registries" in result)
+						console.log(
+							result.registries.map((entry) => `${entry.name}\t${entry.url}`).join("\n") ||
+								"No registries configured.",
+						)
+					else if ("removed" in result) console.log(`Removed registry "${result.removed}"`)
+					else
+						console.log(
+							`Registry "${result.name}": ${result.url}${result.alreadyConfigured ? " (already configured)" : ""}`,
+						)
 				}
 				if (action === "list" || options.dryRun) await run()
 				else await withMetadataLock(options, run)

@@ -32,8 +32,7 @@
 						}
 					}
 				},
-				"required": ["url"],
-				"additionalProperties": false
+				"required": ["url"]
 			}
 		},
 		"projectConfig": {
@@ -42,7 +41,6 @@
 			"enum": ["ignore", "inherit"]
 		}
 	},
-	"required": ["registries", "projectConfig"],
 	"additionalProperties": false,
 	"$id": "https://ocx.kdco.dev/schemas/v3/profile.json"
 }

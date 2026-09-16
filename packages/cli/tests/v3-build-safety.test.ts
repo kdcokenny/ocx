@@ -63,3 +63,14 @@ test("refuses symlink sources and output directories, and never replaces its own
 	await expect(buildRegistry({ source, out: root })).rejects.toThrow("must not contain")
 	expect(await readFile(join(out, "previous"), "utf8")).toBe("previous")
 })
+
+test("output cannot overlap source files, including an ancestor symlink", async () => {
+	for (const directory of ["files", "files/skills", "files/generated"]) {
+		await expect(buildRegistry({ source, out: join(source, directory) })).rejects.toThrow("overlap")
+	}
+	await symlink(join(source, "files"), join(root, "alias"))
+	await expect(buildRegistry({ source, out: join(root, "alias/generated") })).rejects.toThrow(
+		"overlap",
+	)
+	expect(await readFile(join(source, "files/skills/data.bin"))).toEqual(Buffer.from([0, 255, 128]))
+})

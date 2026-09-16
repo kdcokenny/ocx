@@ -1,8 +1,9 @@
+import { lstat } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { ProfileManager } from "../profile/manager"
 import { getGlobalOcxRoot, getProfileDir } from "../profile/paths"
 import { ocxConfigSchema, type RegistryConfig } from "../schemas/config"
-import { ConfigError } from "../utils/errors"
+import { ConfigError, ConflictError } from "../utils/errors"
 import { readGlobalConfig, readJsoncObject } from "./files"
 
 export interface ConfigProvider {
@@ -10,12 +11,14 @@ export interface ConfigProvider {
 	readonly cwd: string
 	getRegistries(): Record<string, RegistryConfig>
 	getComponentPath(): string
+	assertCurrent?(): Promise<void>
 }
 
 class FileConfigProvider implements ConfigProvider {
 	constructor(
 		readonly cwd: string,
 		private readonly registries: Record<string, RegistryConfig>,
+		readonly assertCurrent?: () => Promise<void>,
 	) {}
 	getRegistries(): Record<string, RegistryConfig> {
 		return this.registries
@@ -55,7 +58,15 @@ export async function resolveDestination(options: DestinationOptions): Promise<C
 	}
 	if (options.profile !== undefined) {
 		const profile = await ProfileManager.create().get(options.profile)
-		return new FileConfigProvider(getProfileDir(profile.name), profile.ocx.registries)
+		const root = getProfileDir(profile.name)
+		const original = await lstat(root)
+		return new FileConfigProvider(root, profile.ocx.registries, async () => {
+			const current = await lstat(root)
+			if (current.dev !== original.dev || current.ino !== original.ino)
+				throw new ConflictError(
+					`Profile "${profile.name}" changed while preparing the operation; retry it`,
+				)
+		})
 	}
 	return LocalConfigProvider.requireInitialized(options.cwd ?? process.cwd())
 }

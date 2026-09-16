@@ -516,7 +516,7 @@ describe("release-tag helper", () => {
 		expect(await getRemoteTagSha(repo, tag)).toBe(remoteBefore)
 	})
 
-	for (const version of ["1.2.3-beta.1", "not-semver", "3.0.0"]) {
+	for (const version of ["1.2.3-beta.1", "not-semver", "3.0.0", "4.0.0"]) {
 		it(`refuses non-stable CLI version ${version}`, async () => {
 			const repo = await setupRepo(version)
 			const tag = `v${version}`

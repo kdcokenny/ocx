@@ -12,7 +12,15 @@
  * - Intentional Naming: tildify, isLexicallyInside, classifyTargetSafety
  */
 
-import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, unlinkSync } from "node:fs"
+import {
+	existsSync,
+	lstatSync,
+	readdirSync,
+	realpathSync,
+	rmdirSync,
+	rmSync,
+	unlinkSync,
+} from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 import type { Command } from "commander"
@@ -396,15 +404,16 @@ function buildConfigTargets(): UninstallTarget[] {
 	// Remove empty operation metadata, preserving any recovery journal or live lock.
 	const metadata = path.join(rootPath, ".ocx")
 	const metadataKind = getPathKind(metadata)
-	targets.push({
-		rootPath,
-		relativePath: ".ocx",
-		absolutePath: metadata,
-		displayPath: tildify(metadata),
-		kind: metadataKind,
-		deleteIfEmpty: true,
-		safetyStatus: classifyTargetSafety({ rootPath, absolutePath: metadata, kind: metadataKind }),
-	})
+	if (metadataKind !== "file")
+		targets.push({
+			rootPath,
+			relativePath: ".ocx",
+			absolutePath: metadata,
+			displayPath: tildify(metadata),
+			kind: metadataKind,
+			deleteIfEmpty: true,
+			safetyStatus: classifyTargetSafety({ rootPath, absolutePath: metadata, kind: metadataKind }),
+		})
 
 	// Root directory (only delete if empty after other removals)
 	const rootKind = getPathKind(rootPath)
@@ -489,12 +498,19 @@ function executeRemoval(target: UninstallTarget): DeletionResult {
 
 	try {
 		if (target.kind === "directory") {
-			rmSync(target.absolutePath, { recursive: true, force: true })
+			if (target.deleteIfEmpty) rmdirSync(target.absolutePath)
+			else rmSync(target.absolutePath, { recursive: true, force: true })
 		} else {
 			unlinkSync(target.absolutePath)
 		}
 		return { target, success: true, skipped: false }
 	} catch (err) {
+		if (
+			target.deleteIfEmpty &&
+			isNodeError(err) &&
+			["ENOTEMPTY", "EEXIST"].includes(err.code ?? "")
+		)
+			return { target, success: true, skipped: true, reason: "not empty" }
 		const error = err instanceof Error ? err : new Error(String(err))
 		const reason =
 			isNodeError(err) && (err.code === "EACCES" || err.code === "EPERM")

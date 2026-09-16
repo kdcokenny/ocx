@@ -27,7 +27,7 @@ describe("registry add conflict matrix", () => {
 
 		// Re-add with exact same name + URL
 		const result = await runCLI(
-			["registry", "add", "--project", registry.url, "--name", "kdco"],
+			["registry", "add", "--project", registry.url, "--name", "kdco", "--json"],
 			testDir,
 		)
 

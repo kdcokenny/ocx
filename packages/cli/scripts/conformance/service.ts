@@ -31,7 +31,7 @@ async function run(args: string[], nativeCommand = false) {
 		stdout: "pipe",
 		stderr: "pipe",
 	})
-	const timer = setTimeout(() => child.kill(), 30000)
+	const timer = setTimeout(() => child.kill("SIGKILL"), 30000)
 	try {
 		const [code, stdout, stderr] = await Promise.all([
 			child.exited,

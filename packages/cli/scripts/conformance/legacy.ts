@@ -2,11 +2,13 @@ import assert from "node:assert/strict"
 import { mkdtemp, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { restoreLegacyRegistry } from "../../../../legacy/restore"
 
-const repo = join(import.meta.dir, "../../../..")
 const legacyCli = process.env.OCX_V1_ENTRYPOINT
 if (!legacyCli) throw new Error("Set OCX_V1_ENTRYPOINT to the published ocx@2.0.15 dist/index.js")
 const root = await mkdtemp(join(tmpdir(), "ocx-legacy-install-"))
+await restoreLegacyRegistry("kdco-registry", join(root, "kdco"))
+await restoreLegacyRegistry("ocx-kit", join(root, "kit"))
 const served: string[] = []
 const server = Bun.serve({
 	hostname: "127.0.0.1",
@@ -15,7 +17,7 @@ const server = Bun.serve({
 		const path = new URL(req.url).pathname
 		const [_, catalog, ...parts] = path.split("/")
 		if (!["kdco", "kit"].includes(catalog ?? "")) return new Response("missing", { status: 404 })
-		const base = join(repo, "workers", catalog === "kdco" ? "kdco-registry" : "ocx-kit", "dist")
+		const base = join(root, catalog as string)
 		const file = Bun.file(join(base, ...parts))
 		if (!(await file.exists())) return new Response("missing", { status: 404 })
 		served.push(path)
@@ -31,6 +33,7 @@ const env = {
 	OCX_NO_UPDATE_CHECK: "1",
 	OCX_PROFILE: undefined,
 }
+let commandNumber = 0
 async function run(args: string[]) {
 	const child = Bun.spawn([process.execPath, legacyCli, ...args], {
 		cwd: root,
@@ -44,7 +47,7 @@ async function run(args: string[]) {
 		new Response(child.stdout).text(),
 		new Response(child.stderr).text(),
 	])
-	await writeFile(join(root, `${args.join("-").replaceAll("/", "_")}.log`), stdout + stderr)
+	await writeFile(join(root, `command-${++commandNumber}.log`), stdout + stderr)
 	assert.equal(code, 0, `${args.join(" ")}: ${stdout} ${stderr}`)
 }
 try {

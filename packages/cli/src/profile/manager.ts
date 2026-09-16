@@ -142,6 +142,9 @@ export class ProfileManager {
 					throw new ConfigError(
 						`"${name}" is the default profile. Select another with 'ocx profile use <name>' or clear it with 'ocx profile use --clear'.`,
 					)
+				await assertNoInterruptedTransaction(getProfileDir(name))
+				if (await Bun.file(join(getGlobalOcxRoot(), ".ocx/profile-move.json")).exists())
+					throw new ConfigError("Finish the interrupted profile move before deleting profiles")
 				await rm(getProfileDir(name), { recursive: true })
 			}),
 		)
@@ -155,6 +158,24 @@ export class ProfileManager {
 		await withInstallLock(getGlobalOcxRoot(), () =>
 			withProfileLock(oldName, () =>
 				withProfileLock(newName, async () => {
+					const journal = join(getGlobalOcxRoot(), ".ocx/profile-move.json")
+					if (await Bun.file(journal).exists()) {
+						const pending = await readJsoncObject(journal)
+						if (pending.oldName !== oldName || pending.newName !== newName)
+							throw new ConfigError(`Finish the interrupted rename recorded in ${journal} first`)
+						if (!(await this.exists(oldName)) && (await this.exists(newName))) {
+							const config = await readGlobalConfig()
+							if (config.defaultProfile === oldName)
+								await atomicWrite(getGlobalConfig(), { ...config, defaultProfile: newName })
+							await rm(journal)
+							return
+						}
+						if (!(await this.exists(oldName)) || (await this.exists(newName)))
+							throw new ConfigError(
+								`Cannot recover profile rename automatically; inspect ${journal}`,
+							)
+						await rm(journal)
+					}
 					await this.get(oldName)
 					try {
 						await lstat(getProfileDir(newName))
@@ -162,15 +183,19 @@ export class ProfileManager {
 					} catch (error) {
 						if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
 					}
+					await assertNoInterruptedTransaction(getProfileDir(oldName))
 					const config = await readGlobalConfig()
+					await atomicWrite(journal, { oldName, newName })
 					await rename(getProfileDir(oldName), getProfileDir(newName))
 					try {
 						if (config.defaultProfile === oldName)
 							await atomicWrite(getGlobalConfig(), { ...config, defaultProfile: newName })
 					} catch (error) {
 						await rename(getProfileDir(newName), getProfileDir(oldName))
+						await rm(journal)
 						throw error
 					}
+					await rm(journal)
 				}),
 			),
 		)

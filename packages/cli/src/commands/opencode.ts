@@ -111,6 +111,7 @@ export function buildOpenCodeArgs(args: string[]): string[] {
 		return args
 	} else if (
 		[
+			"agent",
 			"debug",
 			"plugin",
 			"mcp",

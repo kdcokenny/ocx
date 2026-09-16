@@ -13,6 +13,9 @@ for (const [name, schema] of Object.entries({
 	profile: profileOcxConfigSchema,
 	receipt: receiptSchema,
 })) {
-	const output = { ...toJSONSchema(schema), $id: `https://ocx.kdco.dev/schemas/v3/${name}.json` }
+	const output = {
+		...toJSONSchema(schema, { io: "input" }),
+		$id: `https://ocx.kdco.dev/schemas/v3/${name}.json`,
+	}
 	await writeFile(join(directory, `${name}.schema.json`), `${JSON.stringify(output, null, 2)}\n`)
 }

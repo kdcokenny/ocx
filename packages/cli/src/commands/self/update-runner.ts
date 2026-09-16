@@ -174,9 +174,9 @@ async function updateViaPackageManager(
 			case "unknown": {
 				throw new SelfUpdateError(
 					"Could not detect install method. Update manually with one of:\n" +
-						"  npm install -g ocx@next\n" +
-						"  pnpm install -g ocx@next\n" +
-						"  bun install -g ocx@next",
+						`  npm install -g ocx@${targetVersion}\n` +
+						`  pnpm install -g ocx@${targetVersion}\n` +
+						`  bun install -g ocx@${targetVersion}`,
 				)
 			}
 		}

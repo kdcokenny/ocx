@@ -1,9 +1,9 @@
-import { lstat, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { mkdir, realpath, writeFile } from "node:fs/promises"
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { normalizeFile } from "../schemas/registry"
 import type { DryRunResult } from "../utils/dry-run"
 import { readManagedFile } from "../utils/file-transaction"
-import { logger } from "../utils/logger"
+import { publishDirectory } from "../utils/publish-directory"
 import { runCompleteValidation } from "./validation-runner"
 
 export interface BuildRegistryOptions {
@@ -31,16 +31,30 @@ export class BuildRegistryError extends Error {
 export async function buildRegistry(
 	options: BuildRegistryOptions,
 ): Promise<BuildRegistryResult | DryRunResult> {
-	const source = resolve(options.source)
+	const source = await realpath(resolve(options.source))
 	const out = resolve(options.out)
-	const sourceFromOutput = relative(out, source)
+	const canonical = async (path: string): Promise<string> => {
+		try {
+			return await realpath(path)
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+			return join(await canonical(dirname(path)), basename(path))
+		}
+	}
+	const contains = (parent: string, child: string) => {
+		const path = relative(parent, child)
+		return !path || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path))
+	}
+	const canonicalOut = await canonical(out)
+	const sourceFiles = await canonical(join(source, "files"))
 	if (
-		!sourceFromOutput ||
-		(sourceFromOutput !== ".." &&
-			!sourceFromOutput.startsWith(`..${sep}`) &&
-			!isAbsolute(sourceFromOutput))
+		contains(canonicalOut, source) ||
+		contains(canonicalOut, sourceFiles) ||
+		contains(sourceFiles, canonicalOut)
 	)
-		throw new BuildRegistryError("Output must not contain the registry source directory")
+		throw new BuildRegistryError(
+			"Output must not contain or overlap the registry source directory or files tree",
+		)
 	const validation = await runCompleteValidation(source)
 	if (!validation.success || !validation.registry)
 		throw new BuildRegistryError("Registry validation failed", validation.errors)
@@ -84,45 +98,12 @@ export async function buildRegistry(
 			validation: { passed: true },
 			summary: `Would build ${registry.components.length} components, ${files.size} files to ${out}`,
 		}
-	await mkdir(dirname(out), { recursive: true })
-	const stage = await mkdtemp(join(dirname(out), ".ocx-build-"))
-	const candidate = join(stage, "candidate")
-	const backup = join(stage, "previous")
-	let hadPrevious = false
-	let preserveBackup = false
-	try {
+	await publishDirectory(out, async (candidate) => {
 		for (const [path, bytes] of files) {
 			const target = join(candidate, path)
 			await mkdir(dirname(target), { recursive: true })
 			await writeFile(target, bytes)
 		}
-		try {
-			const info = await lstat(out)
-			if (!info.isDirectory() || info.isSymbolicLink())
-				throw new BuildRegistryError("Output must be a real directory")
-			await rename(out, backup)
-			hadPrevious = true
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-		}
-		try {
-			await rename(candidate, out)
-		} catch (error) {
-			if (hadPrevious) {
-				try {
-					await rename(backup, out)
-				} catch (restoreError) {
-					preserveBackup = true
-					throw new AggregateError([error, restoreError], `Previous registry remains at ${backup}`)
-				}
-			}
-			throw error
-		}
-	} finally {
-		if (!preserveBackup)
-			await rm(stage, { recursive: true, force: true }).catch((error) =>
-				logger.warn(`Could not remove build staging directory ${stage}: ${error}`),
-			)
-	}
+	})
 	return { componentsCount: registry.components.length, outputPath: out }
 }

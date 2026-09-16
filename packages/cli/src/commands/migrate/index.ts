@@ -328,7 +328,17 @@ export function registerMigrateCommand(program: Command): void {
 		.option("--json", "Output the import report as JSON")
 		.action(async (options: MigrateOptions) => {
 			try {
-				outputJson(await importLegacy(options))
+				const report = await importLegacy(options)
+				if (options.json) outputJson(report)
+				else {
+					console.log(
+						`${report.applied ? "Imported" : "Import preview"}: ${report.source}\nDestination: ${report.destination}`,
+					)
+					for (const item of report.items)
+						console.log(`  ${item.action}: ${item.path}${item.reason ? ` — ${item.reason}` : ""}`)
+					for (const warning of report.warnings) console.log(`Warning: ${warning}`)
+					for (const decision of report.unresolved) console.log(`Decision required: ${decision}`)
+				}
 			} catch (error) {
 				handleError(error, { json: options.json })
 			}

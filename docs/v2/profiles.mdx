@@ -17,7 +17,9 @@ ocx profile use --clear
 ocx profile remove team
 ```
 
-Renaming the default updates its selection. Removing the default requires selecting another profile or clearing the selection first. Cloning copies editable files, supporting assets, terminal settings, and receipts; it excludes generated dependencies and rejects symlinks inside the copied tree. Profile names cannot contain path separators.
+Renaming the default updates its selection. Removing the default requires selecting another profile or clearing the selection first. Cloning copies editable files, supporting assets, terminal settings, and receipts; it excludes generated dependencies and rejects symlinks inside the copied tree. Profile names cannot contain path separators. File mutations require a real profile directory; symlink roots are not managed destinations.
+
+If a process exits during a rename, OCX preserves `.ocx/profile-move.json` under the global OCX root. After confirming the process is stopped, clear only its reported stale locks and rerun the same `profile move <old> <new>` command. It repairs the default selection before accepting the move. Do not delete the moved directory while recovering.
 
 Launch selection is `--profile`, then `OCX_PROFILE`, then the default explicitly set by `profile use`. No selection produces an error. Project metadata never selects a profile. Component commands still require an explicit destination.
 
