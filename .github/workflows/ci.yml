@@ -139,3 +139,18 @@ jobs:
         working-directory: packages/cli
         env:
           OCX_BINARY_SMOKE_TARGETS: ${{ github.workspace }}\packages\cli\dist\bin\ocx-windows-x64.exe;${{ github.workspace }}\packages\cli\dist\bin\ocx-windows-x64-baseline.exe
+
+  macos-binary-smoke:
+    name: macOS Binary Smoke
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run build:binary
+        working-directory: packages/cli
+      - run: bun run test:binary-smoke
+        working-directory: packages/cli

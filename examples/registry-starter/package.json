@@ -2,7 +2,7 @@
 	"name": "my-registry",
 	"private": true,
 	"scripts": {
-		"build": "bunx ocx build . --out dist",
+		"build": "bunx ocx@next build . --out dist",
 		"deploy": "bun run build && wrangler deploy",
 		"dev": "bun run build && wrangler dev"
 	},

@@ -1,5 +1,9 @@
 # opencode-background-agents
 
+> **Retired — OpenCode V1 only.** No OpenCode V2 port is planned. Use [OCX 2.0.15](https://github.com/kdcokenny/ocx/releases/tag/v2.0.15) with OpenCode V1 for the legacy installation instructions below. Existing published packages, tags, and registry artifacts remain available.
+>
+> Use OpenCode V2’s native background subagents and result delivery. This plugin’s `delegate` / `delegation_read` API, research archive layout, and compaction hooks are not being ported. These are workflow alternatives, not complete replacements for every custom feature. See the [official V2 migration guide](https://opencode.ai/v2/docs/migrate-v1) and [V2 terminal settings](https://opencode.ai/v2/docs/cli/config).
+
 > Keep working while research runs in the background. Your work survives context compaction.
 
 A plugin for [OpenCode](https://github.com/sst/opencode) that enables async background delegation. Fire off research tasks, continue brainstorming or coding, and retrieve results when you need them.
@@ -127,19 +131,11 @@ If you prefer not to use OCX, copy the source files from [`src/`](./src) to `.op
 
 ## Part of the OCX Ecosystem
 
-This plugin is part of the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/main/registry/src/kdco). For the full experience, check out [kdco-workspace](https://github.com/kdcokenny/ocx) which bundles background agents with specialist agents, planning tools, and notification support.
+This plugin is part of the [KDCO Registry](https://github.com/kdcokenny/ocx/tree/e79df6f/workers/kdco-registry). For the full experience, check out [kdco-workspace](https://github.com/kdcokenny/ocx) which bundles background agents with specialist agents, planning tools, and notification support.
 
-## Contributing
+## Maintenance
 
-This facade is maintained from the main [OCX monorepo](https://github.com/kdcokenny/ocx).
-
-If you want to update opencode-background-agents itself, start here:
-
-- https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/background-agents.ts
-
-- Open issues here: https://github.com/kdcokenny/ocx/issues/new
-- Open pull requests here: https://github.com/kdcokenny/ocx/compare
-- Please do **not** open issues or PRs in this facade repository.
+This V1 code is retired. Source synchronization and active maintenance have ended. Repository history and existing releases remain available for reference and forks.
 
 ## Disclaimer
 

@@ -1,0 +1,104 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"const": "https://ocx.kdco.dev/schemas/v3/registry.json"
+		},
+		"name": {
+			"type": "string",
+			"minLength": 1
+		},
+		"version": {
+			"type": "string",
+			"pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.-]+)?(\\+[a-zA-Z0-9.-]+)?$"
+		},
+		"author": {
+			"type": "string",
+			"minLength": 1
+		},
+		"opencode": {
+			"type": "string",
+			"pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.-]+)?(\\+[a-zA-Z0-9.-]+)?$"
+		},
+		"ocx": {
+			"type": "string",
+			"pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.-]+)?(\\+[a-zA-Z0-9.-]+)?$"
+		},
+		"components": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 64,
+						"pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+					},
+					"type": {
+						"type": "string",
+						"enum": ["agent", "skill", "command", "bundle", "profile", "plugin", "tool"]
+					},
+					"description": {
+						"type": "string",
+						"minLength": 1,
+						"maxLength": 1024
+					},
+					"version": {
+						"type": "string",
+						"pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.-]+)?(\\+[a-zA-Z0-9.-]+)?$"
+					},
+					"files": {
+						"default": [],
+						"type": "array",
+						"items": {
+							"anyOf": [
+								{
+									"type": "string"
+								},
+								{
+									"type": "object",
+									"properties": {
+										"path": {
+											"type": "string"
+										},
+										"target": {
+											"type": "string"
+										}
+									},
+									"required": ["path", "target"],
+									"additionalProperties": false
+								}
+							]
+						}
+					},
+					"dependencies": {
+						"default": [],
+						"type": "array",
+						"items": {
+							"anyOf": [
+								{
+									"type": "string",
+									"minLength": 1,
+									"maxLength": 64,
+									"pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+								},
+								{
+									"type": "string",
+									"pattern": "^[a-z0-9]+(-[a-z0-9]+)*\\/[a-z0-9]+(-[a-z0-9]+)*$"
+								}
+							]
+						}
+					}
+				},
+				"required": ["name", "type", "description", "files", "dependencies"],
+				"additionalProperties": false
+			}
+		}
+	},
+	"required": ["$schema", "name", "version", "author", "components"],
+	"additionalProperties": false,
+	"$id": "https://ocx.kdco.dev/schemas/v3/registry.json"
+}

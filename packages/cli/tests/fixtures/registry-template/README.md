@@ -1,46 +1,7 @@
-# OCX Registry Starter
+# My Registry
 
-A ready-to-deploy component registry for [OpenCode](https://opencode.ai).
+A static file registry for OCX 3 and OpenCode V2. Edit `registry.jsonc` and put source files under `files/`. Build with `bun run build`; preview with `bun run dev`; deploy with `bun run deploy`. These commands use the OCX preview channel after it has been published.
 
-## Quick Start
+Install files with `ocx add team/hello-world --from <registry-url> --project`, or select a named profile with `--profile <name>`. Run `ocx init --project` before a project install.
 
-### 1. Install Dependencies
-
-```bash
-bun install
-```
-
-### 2. Build the Registry
-
-```bash
-bun run build
-```
-
-### 3. Local Development
-
-```bash
-bun run dev
-```
-
-This starts a local server at `http://localhost:8787`.
-
-### 4. Deploy
-
-```bash
-bun run deploy
-```
-
-## Using Your Registry
-
-Once deployed, users can add components from your registry:
-
-```bash
-# Add the registry with a custom alias
-ocx registry add https://your-registry.workers.dev --name myreg
-
-# Then install components using the alias
-ocx add myreg/hello-world
-
-# Or use --from for one-time access without saving the registry
-ocx add hello-world --from https://your-registry.workers.dev
-```
+See https://ocx.kdco.dev/v2/registries for ownership, dependencies, update behavior, and publishing.

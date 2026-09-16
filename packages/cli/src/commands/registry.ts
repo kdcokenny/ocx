@@ -1,34 +1,14 @@
-/**
- * Registry Command
- *
- * Manage configured registries.
- */
-
-import { existsSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { mkdir } from "node:fs/promises"
+import { dirname } from "node:path"
 import type { Command } from "commander"
-import kleur from "kleur"
-import { ProfileManager } from "../profile/manager"
-import { getProfileOcxConfig } from "../profile/paths"
+import { resolveMetadata, withMetadataLock } from "../config/scope"
+import { atomicWrite } from "../profile/atomic"
 import type { RegistryConfig } from "../schemas/config"
-import { findOcxConfig, readOcxConfig, writeOcxConfig } from "../schemas/config"
+import { aliasSchema } from "../schemas/registry"
 import { type DryRunResult, outputDryRun } from "../utils/dry-run"
-import {
-	ConfigError,
-	ProfileNotFoundError,
-	RegistryExistsError,
-	ValidationError,
-} from "../utils/errors"
+import { RegistryExistsError, ValidationError } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
 import { outputJson } from "../utils/json-output"
-import { logger } from "../utils/logger"
-import { getGlobalConfigPath } from "../utils/paths"
-import {
-	addCommonOptions,
-	addGlobalOption,
-	addProfileOption,
-	validateProfileName,
-} from "../utils/shared-options"
 import { normalizeRegistryUrl } from "../utils/url"
 
 export interface RegistryOptions {
@@ -37,6 +17,7 @@ export interface RegistryOptions {
 	quiet?: boolean
 	global?: boolean
 	profile?: string
+	project?: boolean
 }
 
 export interface RegistryAddOptions extends RegistryOptions {
@@ -78,8 +59,10 @@ export async function runRegistryAddCore(
 	}
 	try {
 		const parsed = new URL(trimmedUrl)
-		if (!["http:", "https:"].includes(parsed.protocol)) {
-			throw new ValidationError(`Invalid registry URL: ${trimmedUrl} (must use http or https)`)
+		if (!["http:", "https:", "file:"].includes(parsed.protocol)) {
+			throw new ValidationError(
+				`Invalid registry URL: ${trimmedUrl} (must use http, https, or file)`,
+			)
 		}
 	} catch (error) {
 		if (error instanceof ValidationError) throw error
@@ -88,7 +71,7 @@ export async function runRegistryAddCore(
 
 	const normalizedUrl = normalizeRegistryUrl(trimmedUrl)
 
-	const name = options.name
+	const name = aliasSchema.parse(options.name)
 	const registries = callbacks.getRegistries()
 	const existingByName = registries[name]
 
@@ -97,7 +80,7 @@ export async function runRegistryAddCore(
 
 	// Fetch registry index to validate the URL serves a valid registry
 	const { fetchRegistryIndex } = await import("../registry/fetcher")
-	await fetchRegistryIndex(normalizedUrl)
+	await fetchRegistryIndex(normalizedUrl, existingByName)
 
 	// -------------------------------------------------------------------------
 	// Conflict resolution matrix (alias-first model)
@@ -251,269 +234,57 @@ export function runRegistryListCore(callbacks: {
 	return { registries: list, locked }
 }
 
-// =============================================================================
-// REGISTRY TARGET RESOLUTION
-// =============================================================================
-
-interface RegistryTarget {
-	scope: "profile" | "global" | "local"
-	configPath: string
-	configDir: string
-	targetLabel: string
-}
-
-/**
- * Resolves the target config location for registry operations.
- * Handles mutual exclusivity checks and profile/global/local scope selection.
- */
-async function resolveRegistryTarget(
-	options: RegistryOptions,
-	command: Command,
-	cwd: string,
-): Promise<RegistryTarget> {
-	const cwdExplicitlyProvided = command.getOptionValueSource("cwd") === "cli"
-
-	// Mutual exclusivity checks
-	if (options.global && options.profile) {
-		throw new ValidationError("Cannot use both --global and --profile flags")
-	}
-	if (cwdExplicitlyProvided && options.profile) {
-		throw new ValidationError("Cannot use both --cwd and --profile flags")
-	}
-	if (options.global && cwdExplicitlyProvided) {
-		throw new ValidationError("Cannot use both --global and --cwd flags")
-	}
-
-	// Profile scope
-	if (options.profile) {
-		validateProfileName(options.profile)
-
-		const manager = await ProfileManager.requireInitialized()
-		if (!(await manager.exists(options.profile))) {
-			throw new ProfileNotFoundError(options.profile)
-		}
-
-		const configPath = getProfileOcxConfig(options.profile)
-		if (!existsSync(configPath)) {
-			throw new ConfigError(
-				`Profile '${options.profile}' has no ocx.jsonc. Run 'ocx profile config ${options.profile}' to create it.`,
-			)
-		}
-
-		return {
-			scope: "profile",
-			configPath,
-			configDir: dirname(configPath),
-			targetLabel: `profile '${options.profile}' config`,
-		}
-	}
-
-	// Global scope
-	if (options.global) {
-		const configDir = getGlobalConfigPath()
-		return {
-			scope: "global",
-			configPath: join(configDir, "ocx.jsonc"),
-			configDir,
-			targetLabel: "global config",
-		}
-	}
-
-	// Local scope (default)
-	const found = findOcxConfig(cwd)
-	return {
-		scope: "local",
-		configPath: found.path,
-		configDir: found.exists ? dirname(found.path) : join(cwd, ".opencode"),
-		targetLabel: "local config",
-	}
-}
-
-// =============================================================================
-// COMMAND REGISTRATION
-// =============================================================================
-
 export function registerRegistryCommand(program: Command): void {
-	const registry = program.command("registry").description("Manage registries")
-
-	// registry add <url> --name <name>
-	const addCmd = registry
-		.command("add")
-		.description("Add a registry")
-		.argument("<url>", "Registry URL")
-		.requiredOption(
-			"--name <name>",
-			"Registry alias (required, used as lookup key for alias/component refs)",
-		)
-		.option("--dry-run", "Validate registry without adding to config")
-
-	addGlobalOption(addCmd)
-	addProfileOption(addCmd)
-	addCommonOptions(addCmd)
-
-	addCmd.action(async (url: string, options: RegistryAddOptions, command: Command) => {
-		let target: RegistryTarget | undefined
-		try {
-			const cwd = options.cwd ?? process.cwd()
-			target = await resolveRegistryTarget(options, command, cwd)
-			const { configDir, configPath } = target
-
-			// Read config from resolved path
-			const config = await readOcxConfig(configDir)
-			if (!config) {
-				const initHint =
-					target.scope === "global"
-						? "Run 'ocx init --global' first."
-						: target.scope === "profile"
-							? `Run 'ocx profile config ${options.profile}' to create it.`
-							: "Run 'ocx init' first."
-				logger.error(`${target.targetLabel} not found. ${initHint}`)
-				process.exit(1)
-			}
-
-			const result = await runRegistryAddCore(url, options, {
-				getRegistries: () => config.registries,
-				isLocked: () => config.lockRegistries ?? false,
-				setRegistry: async (name, regConfig) => {
-					config.registries[name] = regConfig
-					await writeOcxConfig(configDir, config, configPath)
-				},
-				targetLabel: target.targetLabel,
-			})
-
-			// Handle dry-run result
-			if ("dryRun" in result && result.dryRun) {
-				outputDryRun(result, { json: options.json, quiet: options.quiet })
-				return
-			}
-
-			// Type narrowing: result is now the add-result shape
-			const actualResult = result as {
-				name: string
-				url: string
-				updated: boolean
-				alreadyConfigured: boolean
-			}
-
-			if (options.json) {
-				outputJson({ success: true, data: actualResult })
-			} else if (!options.quiet) {
-				if (actualResult.alreadyConfigured) {
-					logger.info(`Registry already configured (no changes): ${actualResult.name}`)
-				} else if (actualResult.updated) {
-					logger.success(
-						`Updated registry in ${target.targetLabel}: ${actualResult.name} -> ${actualResult.url}`,
-					)
-				} else {
-					logger.success(
-						`Added registry to ${target.targetLabel}: ${actualResult.name} -> ${actualResult.url}`,
-					)
-				}
-			}
-		} catch (error) {
-			handleError(error, { json: options.json })
-		}
-	})
-
-	// registry remove <name>
-	const removeCmd = registry
-		.command("remove")
-		.description("Remove a registry")
-		.argument("<name>", "Registry name")
-
-	addGlobalOption(removeCmd)
-	addProfileOption(removeCmd)
-	addCommonOptions(removeCmd)
-
-	removeCmd.action(async (name: string, options: RegistryOptions, command: Command) => {
-		try {
-			const cwd = options.cwd ?? process.cwd()
-			const target = await resolveRegistryTarget(options, command, cwd)
-
-			// Read config from resolved path
-			const config = await readOcxConfig(target.configDir)
-			if (!config) {
-				const initHint =
-					target.scope === "global"
-						? "Run 'ocx init --global' first."
-						: target.scope === "profile"
-							? `Run 'ocx profile config ${options.profile}' to create it.`
-							: "Run 'ocx init' first."
-				logger.error(`${target.targetLabel} not found. ${initHint}`)
-				process.exit(1)
-			}
-
-			const result = await runRegistryRemoveCore(name, {
-				getRegistries: () => config.registries,
-				isLocked: () => config.lockRegistries ?? false,
-				removeRegistry: async (regName) => {
-					delete config.registries[regName]
-					await writeOcxConfig(target.configDir, config, target.configPath)
-				},
-			})
-
-			if (options.json) {
-				outputJson({ success: true, data: result })
-			} else if (!options.quiet) {
-				logger.success(`Removed registry from ${target.targetLabel}: ${result.removed}`)
-			}
-		} catch (error) {
-			handleError(error, { json: options.json })
-		}
-	})
-
-	// registry list
-	const listCmd = registry.command("list").description("List configured registries")
-
-	addGlobalOption(listCmd)
-	addProfileOption(listCmd)
-	addCommonOptions(listCmd)
-
-	listCmd.action(async (options: RegistryOptions, command: Command) => {
-		try {
-			const cwd = options.cwd ?? process.cwd()
-			const target = await resolveRegistryTarget(options, command, cwd)
-
-			// Read config from resolved path
-			const config = await readOcxConfig(target.configDir)
-			if (!config) {
-				const initHint =
-					target.scope === "global"
-						? "Run 'ocx init --global' first."
-						: target.scope === "profile"
-							? `Run 'ocx profile config ${options.profile}' to create it.`
-							: "Run 'ocx init' first."
-				logger.warn(`${target.targetLabel} not found. ${initHint}`)
-				return
-			}
-
-			const result = runRegistryListCore({
-				getRegistries: () => config.registries,
-				isLocked: () => config.lockRegistries ?? false,
-			})
-
-			if (options.json) {
-				outputJson({ success: true, data: result })
-			} else if (!options.quiet) {
-				if (result.registries.length === 0) {
-					logger.info("No registries configured.")
-				} else {
-					const scopeLabel =
-						target.scope === "global"
-							? " (global)"
-							: target.scope === "profile"
-								? ` (profile '${options.profile}')`
-								: ""
-					logger.info(
-						`Configured registries${scopeLabel}${result.locked ? kleur.yellow(" (locked)") : ""}:`,
-					)
-					for (const reg of result.registries) {
-						console.log(`  ${kleur.cyan(reg.name)}: ${reg.url}`)
+	const parent = program.command("registry").description("Manage registry sources")
+	for (const action of ["add", "remove", "list"] as const) {
+		const command = parent
+			.command(action === "add" ? "add <url>" : action === "remove" ? "remove <name>" : "list")
+			.option("--global", "Use global sources for profile creation")
+			.option("-p, --profile <name>", "Use a profile's sources")
+			.option("--project", "Use project sources")
+			.option("--cwd <directory>", "Project directory", process.cwd())
+			.option("--json", "Output JSON")
+		if (action === "add")
+			command
+				.requiredOption("--name <alias>", "Registry alias")
+				.option("--dry-run", "Preview without writing")
+		if (action === "remove") command.alias("rm")
+		if (action === "list") command.alias("ls")
+		command.action(async (...args: unknown[]) => {
+			const value = action === "list" ? undefined : (args[0] as string)
+			const options = args[action === "list" ? 0 : 1] as RegistryAddOptions
+			try {
+				const run = async () => {
+					const target = await resolveMetadata(options)
+					const config = target.config
+					const callbacks = {
+						getRegistries: () => config.registries,
+						isLocked: () => "lockRegistries" in config && config.lockRegistries,
+						targetLabel: target.path,
+						setRegistry: async (name: string, entry: RegistryConfig) => {
+							config.registries[name] = entry
+							await mkdir(dirname(target.path), { recursive: true, mode: 0o700 })
+							await atomicWrite(target.path, config)
+						},
+						removeRegistry: async (name: string) => {
+							delete config.registries[name]
+							await atomicWrite(target.path, config)
+						},
 					}
+					const result =
+						action === "add"
+							? await runRegistryAddCore(value as string, options, callbacks)
+							: action === "remove"
+								? await runRegistryRemoveCore(value as string, callbacks)
+								: runRegistryListCore(callbacks)
+					if ("dryRun" in result) outputDryRun(result, { json: options.json })
+					else outputJson({ success: true, ...result })
 				}
+				if (action === "list" || options.dryRun) await run()
+				else await withMetadataLock(options, run)
+			} catch (error) {
+				handleError(error, { json: options.json })
 			}
-		} catch (error) {
-			handleError(error, { json: options.json })
-		}
-	})
+		})
+	}
 }

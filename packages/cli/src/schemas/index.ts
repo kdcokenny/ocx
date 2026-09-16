@@ -12,22 +12,16 @@ export {
 	type InstalledComponent,
 	installedComponentSchema,
 	type OcxConfig,
-	type OcxLock,
 	ocxConfigSchema,
-	ocxLockSchema,
 	// Receipt types (V2)
 	type Receipt,
 	// Types
 	type RegistryConfig,
 	// I/O helpers
-	readOcxConfig,
-	readOcxLock,
 	readReceipt,
 	receiptSchema,
 	// Schemas
 	registryConfigSchema,
-	writeOcxConfig,
-	writeOcxLock,
 	writeReceipt,
 } from "./config"
 
@@ -36,8 +30,6 @@ export { type ProfileOcxConfig, profileOcxConfigSchema } from "./ocx"
 
 // Registry & component schemas
 export {
-	type AgentConfig,
-	agentConfigSchema,
 	aliasSchema,
 	type ComponentFile,
 	type ComponentFileObject,
@@ -53,28 +45,16 @@ export {
 	dependencyRefSchema,
 	// Normalizer functions
 	inferTargetPath,
-	type McpServer,
-	type McpServerRef,
-	mcpServerObjectSchema,
-	mcpServerRefSchema,
 	type NormalizedComponentManifest,
-	type NormalizedOpencodeConfig,
 	namespaceSchema,
 	normalizeComponentManifest,
 	normalizeFile,
-	normalizeMcpServer,
-	type OpencodeConfig,
-	type OpencodePluginSpec,
 	// Name schemas
 	openCodeNameSchema,
-	opencodeConfigSchema,
-	opencodePluginSpecSchema,
 	type Packument,
-	type PermissionConfig,
 	packumentSchema,
 	// Helper functions
 	parseQualifiedComponent,
-	permissionConfigSchema,
 	qualifiedComponentSchema,
 	type Registry,
 	type RegistryIndex,

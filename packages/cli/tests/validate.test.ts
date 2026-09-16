@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { EXIT_CODES } from "../src/utils/errors"
 import { cleanupTempDir, createTempDir, runCLI } from "./helpers"
 
-const REGISTRY_SCHEMA_V2_URL = "https://ocx.kdco.dev/schemas/v2/registry.json"
+const REGISTRY_SCHEMA_V3_URL = "https://ocx.kdco.dev/schemas/v3/registry.json"
 
 describe("ocx validate", () => {
 	let testDir: string
@@ -22,9 +22,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -56,9 +56,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -122,9 +122,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -154,7 +154,7 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const invalidRegistryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
 			// Missing required 'version' field
 			author: "Test Author",
@@ -174,9 +174,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -220,9 +220,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -261,9 +261,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -271,14 +271,14 @@ describe("ocx validate", () => {
 					name: "component-a",
 					type: "plugin",
 					description: "Component A",
-					files: [{ path: "file-a.ts", target: "./plugins/shared.ts" }],
+					files: [{ path: "file-a.ts", target: "plugins/shared.ts" }],
 					dependencies: [],
 				},
 				{
 					name: "component-b",
 					type: "plugin",
 					description: "Component B",
-					files: [{ path: "file-b.ts", target: "plugins/./shared.ts" }],
+					files: [{ path: "file-b.ts", target: "plugins\\shared.ts" }],
 					dependencies: [],
 				},
 			],
@@ -302,9 +302,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -347,9 +347,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -402,7 +402,7 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const invalidRegistryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
 			// Missing required 'version' field
 			author: "Test Author",
@@ -463,9 +463,9 @@ describe("ocx validate", () => {
 		await writeFile(
 			join(sourceDir, "registry.jsonc"),
 			`{
-  "$schema": "${REGISTRY_SCHEMA_V2_URL}",
+  "$schema": "${REGISTRY_SCHEMA_V3_URL}",
   "name": "Invalid JSON Registry",
-  "namespace": "test",
+
   "version": "1.0.0",
   "author": "Test Author",
   "components": [
@@ -500,9 +500,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [
@@ -533,7 +533,7 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const invalidRegistryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
 			// Missing required 'version' field
 			author: "Test Author",
@@ -555,9 +555,9 @@ describe("ocx validate", () => {
 		await mkdir(sourceDir, { recursive: true })
 
 		const registryJson = {
-			$schema: REGISTRY_SCHEMA_V2_URL,
+			$schema: REGISTRY_SCHEMA_V3_URL,
 			name: "Test Registry",
-			namespace: "test",
+
 			version: "1.0.0",
 			author: "Test Author",
 			components: [

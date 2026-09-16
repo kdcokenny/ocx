@@ -1,0 +1,43 @@
+name: OpenCode V2 Conformance
+
+on:
+  pull_request:
+    paths:
+      - "packages/cli/**"
+      - "bun.lock"
+      - ".github/workflows/native-v2.yml"
+  push:
+    branches: [main]
+    paths:
+      - "packages/cli/**"
+      - "bun.lock"
+      - ".github/workflows/native-v2.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "31 8 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: ${{ github.event_name == 'schedule' && 'Latest V2 compatibility' || 'Pinned V2 conformance' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OPENCODE_TEST_VERSION: ${{ github.event_name == 'schedule' && 'latest' || '2.0.3' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: Install isolated native binary
+        run: |
+          npm install --prefix "$RUNNER_TEMP/opencode-v2" --ignore-scripts --no-audit --no-fund "@opencode/cli@$OPENCODE_TEST_VERSION"
+          node "$RUNNER_TEMP/opencode-v2/node_modules/@opencode/cli/postinstall.mjs"
+      - name: Exercise built OCX with native servers and a local mock model
+        run: |
+          export OPENCODE_V2_BIN="$RUNNER_TEMP/opencode-v2/node_modules/.bin/opencode"
+          "$OPENCODE_V2_BIN" --version
+          bun run --cwd packages/cli test:native

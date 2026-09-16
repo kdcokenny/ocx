@@ -1,0 +1,27 @@
+---
+title: Runtime plugin retirement
+description: What OCX stops maintaining and what native V2 provides
+---
+
+The V2 OCX product maintains no runtime plugins. The four former plugins remain available to legacy V1 users through frozen registries and repository history. They are not compatible V2 implementations.
+
+| Retired plugin | Native V2 direction | Custom behavior OCX no longer maintains |
+| --- | --- | --- |
+| `opencode-background-agents` | Native background subagents and result delivery. | Its delegation tool API, persistent research archive layout, and compaction hooks. |
+| `opencode-notify` | Native terminal-client notifications and preferences. | Its notification hooks, filtering, and integration-specific behavior. |
+| `opencode-worktree` | Native worktree/workspace workflows. | Its lifecycle hooks, terminal handoff, and `OCX_CONTEXT` / `OCX_BIN` bridge. |
+| `opencode-workspace` | Native agents, planning, compaction, and ordinary skills. | Its orchestration, planning reminders, research conventions, and plugin tool names. |
+
+These are product cuts, not a claim that V2 reproduces every feature. Existing instructions that refer to `delegate`, `delegation_read`, `plan_save`, or custom worktree tools need review. Native OpenCode documentation defines the current tools and configuration.
+
+OCX also removes native config mirroring, component config patches, npm dependency installation, launch-time merged overlays/caches, per-file project include/exclude filters, project-selected profiles, adaptive installation roots, and terminal title management. Native V2 handles configuration loading; OCX retains profile selection and file ownership.
+
+Named portable profiles and file-owned registry installation remain OCX's scope. Native configuration directories and skill discovery alone do not provide the same profile lifecycle, package receipts, edit protection, or registry authoring workflow.
+
+## Legacy continuity
+
+Use OCX `2.0.15` with OpenCode V1. Existing registry URLs and schema URLs remain pinned to their legacy meanings. The new catalog and schema URLs are separate. No published npm package is unpublished, and old tags/releases remain available.
+
+Facade retirement follows this order: publish V1-only notices, disable source synchronization, then archive the four repositories. Archiving preserves read access and history. The validation record tracks delivery status; a source PR alone does not mean public deployments or archiving have occurred.
+
+Third-party V2 plugins remain supported through native OpenCode configuration. OCX's retirement does not restrict them.

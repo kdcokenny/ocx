@@ -13,7 +13,7 @@
 
 import { NetworkError } from "../utils/errors"
 import { fetchPackageVersion } from "../utils/npm-registry"
-import { compareSemver } from "../utils/semver"
+import { isValidSemver } from "../utils/semver"
 import type { VersionProvider } from "./types"
 import { defaultVersionProvider } from "./version-provider"
 
@@ -37,7 +37,15 @@ export interface VersionCheckResult {
  */
 export type CheckResult =
 	| { ok: true; current: string; latest: string; updateAvailable: boolean }
-	| { ok: false; reason: "dev-version" | "timeout" | "network-error" | "invalid-response" }
+	| {
+			ok: false
+			reason:
+				| "dev-version"
+				| "timeout"
+				| "network-error"
+				| "invalid-response"
+				| "incompatible-major"
+	  }
 
 /** Extract failure type for error message mapping */
 export type CheckFailure = Extract<CheckResult, { ok: false }>
@@ -91,19 +99,22 @@ export async function checkForUpdate(
 		// Fetch with timeout signal - aborts the actual HTTP request on timeout
 		const result = await fetchPackageVersion(
 			PACKAGE_NAME,
-			undefined,
+			Number(current.split(".")[0]) >= 3 ? "next" : undefined,
 			AbortSignal.timeout(timeoutMs),
 		)
 
 		const latest = result.version
 
 		// Compare versions
-		const comparison = compareSemver(latest, current)
+		const comparison =
+			isValidSemver(latest) && isValidSemver(current) ? Bun.semver.order(latest, current) : null
 
 		// Early exit: can't compare (invalid versions)
 		if (comparison === null) {
 			return { ok: false, reason: "invalid-response" }
 		}
+		if (Number(current.split(".")[0]) >= 3 && latest.split(".")[0] !== current.split(".")[0])
+			return { ok: false, reason: "incompatible-major" }
 
 		return {
 			ok: true,

@@ -1,0 +1,44 @@
+---
+title: Import an OCX 2 setup
+description: Preview a separate profile while preserving the original
+---
+
+OCX 3 targets OpenCode V2 exclusively. Keep `ocx@2.0.15` and your V1 executable for legacy profiles. The new profile root is `~/.config/ocx/profiles/`; OCX 3 does not rewrite `~/.config/opencode/profiles/`.
+
+```sh
+ocx migrate --from ~/.config/opencode/profiles/work --profile work
+```
+
+The default is a report. It inventories copied and omitted files, warnings, and unresolved decisions. Use `--json` for a machine-readable report. The source may be a legacy profile directory or a project with `.opencode/ocx.jsonc`.
+
+When the report matches your intent:
+
+```sh
+ocx migrate --from ~/.config/opencode/profiles/work --profile work \
+  --project-config ignore --omit-plugins --apply
+ocx profile show work
+ocx oc --profile work
+```
+
+`--apply` stages a separate profile and publishes it only after validation. It does not select that profile as your default. Repeating the import into an existing destination fails. Originals stay intact, and the new profile includes `.ocx/import.json` with provenance.
+
+## Decisions the importer cannot make for you
+
+| Option | Meaning |
+| --- | --- |
+| `--project-config ignore` or `inherit` | Required when nontrivial legacy include/exclude filters cannot map automatically to the native policy. |
+| `--omit-plugins` | Approve omitting unverified runtime plugin configuration and local plugin code. Whole plugin directories are omitted to prevent autodiscovery. |
+| `--omit-instructions` | Approve omissions for instruction references the importer cannot safely embed, such as outside files, URLs, or globs. |
+| `--accept-guidance` | Retain Markdown mentioning retired tools for your manual edit; this does not make those tools available. |
+
+Known retired plugin package entries are omitted from the candidate. Unknown runtime code requires a decision. Package manifests, dependency directories, credentials, service state, old TUI config, and old installation receipts are not activated in the new profile. Legacy registry sources are recorded as omissions because OCX 3 requires a new protocol endpoint.
+
+Supported V1 native config syntax is preserved where possible; OCX does not implement a universal native config converter. Local relative `instructions` files can be embedded into `AGENTS.md`. A `CLAUDE.md` fallback can supply `AGENTS.md` when none exists. Review the resulting guidance and native startup warnings.
+
+The import does not preserve every old plugin workflow. A clean minimal profile plus selected custom agent/skill files is often easier to review than an old workspace harness.
+
+## Roll back
+
+Select the unchanged old profile using OCX 2 and your retained OpenCode V1 executable. The two OpenCode versions normally share the `opencode` command and configuration locations; preserving OCX files alone does not preserve the V1 binary. Avoid pointing V1 at native V2-only configuration.
+
+Profiles remain native directories, not security isolation. [Nested instruction discovery still applies](/v2/profiles) in both OpenCode versions. Third-party profile builders must emit protocol-3 files and OCX 3 metadata before their output can be installed by the new CLI.

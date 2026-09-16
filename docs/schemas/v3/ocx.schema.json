@@ -1,0 +1,46 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"type": "string"
+		},
+		"defaultProfile": {
+			"type": "string"
+		},
+		"registries": {
+			"default": {},
+			"type": "object",
+			"propertyNames": {
+				"type": "string"
+			},
+			"additionalProperties": {
+				"type": "object",
+				"properties": {
+					"url": {
+						"type": "string",
+						"format": "uri"
+					},
+					"headers": {
+						"type": "object",
+						"propertyNames": {
+							"type": "string"
+						},
+						"additionalProperties": {
+							"type": "string"
+						}
+					}
+				},
+				"required": ["url"],
+				"additionalProperties": false
+			}
+		},
+		"lockRegistries": {
+			"default": false,
+			"type": "boolean"
+		}
+	},
+	"required": ["registries", "lockRegistries"],
+	"additionalProperties": false,
+	"$id": "https://ocx.kdco.dev/schemas/v3/ocx.json"
+}

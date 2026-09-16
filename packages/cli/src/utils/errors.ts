@@ -132,15 +132,17 @@ export class ConflictError extends OCXError {
 export class IntegrityError extends OCXError {
 	constructor(
 		public readonly component: string,
-		public readonly expected: string,
-		public readonly found: string,
+		public readonly expected?: string,
+		public readonly found?: string,
 	) {
 		const message =
-			`Integrity verification failed for "${component}"\n` +
-			`  Expected: ${expected}\n` +
-			`  Found:    ${found}\n\n` +
-			`The registry content has changed since this component was locked.\n` +
-			`Use 'ocx update ${component}' to intentionally update this component.`
+			expected === undefined
+				? component
+				: `Integrity verification failed for "${component}"\n` +
+					`  Expected: ${expected}\n` +
+					`  Found:    ${found}\n\n` +
+					`The registry content has changed since this component was locked.\n` +
+					`Use 'ocx update ${component}' to intentionally update this component.`
 		super(message, "INTEGRITY_ERROR", EXIT_CODES.INTEGRITY)
 		this.name = "IntegrityError"
 	}

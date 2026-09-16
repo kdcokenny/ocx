@@ -1,20 +1,11 @@
-import * as fs from "node:fs/promises"
-import * as path from "node:path"
+import { join } from "node:path"
 import { buildRegistry } from "ocx"
+import { restoreLegacyRegistry } from "../../../legacy/restore"
 
+const root = join(import.meta.dir, "..")
+await restoreLegacyRegistry("kdco-registry", join(root, "dist"))
 const result = await buildRegistry({
-	source: ".",
-	out: "dist",
+	source: join(root, "catalog"),
+	out: join(root, "dist", "opencode-v2"),
 })
-
-console.log(`✓ Built ${result.componentsCount} components to ${result.outputPath}`)
-
-// Copy schemas to dist
-const schemasDir = path.join(import.meta.dir, "..", "schemas")
-const distSchemasDir = path.join(import.meta.dir, "..", "dist", "schemas")
-try {
-	await fs.cp(schemasDir, distSchemasDir, { recursive: true })
-	console.log("✓ Copied schemas to dist")
-} catch (_error) {
-	console.log("⚠ No schemas directory found, skipping")
-}
+console.log(`Preserved legacy URLs and built ${result.componentsCount} V2 components`)

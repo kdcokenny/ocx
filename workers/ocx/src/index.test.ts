@@ -9,6 +9,7 @@ const TEST_ENV: Env = {
 const LATEST_SCHEMA_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=86400"
 const VERSIONED_SCHEMA_CACHE_CONTROL = "public, max-age=31536000, immutable"
 const MINTLIFY_ROOT_DOC_PATHS = [
+	"/v2/overview",
 	"/getting-started/introduction",
 	"/profiles/overview",
 	"/cli/commands",
@@ -54,6 +55,21 @@ function installUnexpectedFetchMock() {
 describe("schema routes", () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch
+	})
+
+	it.each([
+		"registry",
+		"profile",
+		"receipt",
+		"ocx",
+	])("serves the separate V3 %s schema", async (name) => {
+		const fetchMock = installUnexpectedFetchMock()
+		const response = await app.request(`https://ocx.kdco.dev/schemas/v3/${name}.json`, {}, TEST_ENV)
+		expect(response.status).toBe(200)
+		expect(fetchMock).not.toHaveBeenCalled()
+		expect(response.headers.get("cache-control")).toBe(VERSIONED_SCHEMA_CACHE_CONTROL)
+		const payload = (await response.json()) as { $id?: string }
+		expect(payload.$id).toBe(`https://ocx.kdco.dev/schemas/v3/${name}.json`)
 	})
 
 	it("serves legacy registry schema v1 at /schemas/v1/registry.json", async () => {
@@ -107,7 +123,7 @@ describe("schema routes", () => {
 		const fetchMock = installUnexpectedFetchMock()
 
 		const response = await app.request(
-			"https://ocx.kdco.dev/schemas/v3/registry.json",
+			"https://ocx.kdco.dev/schemas/v4/registry.json",
 			{},
 			TEST_ENV,
 		)
@@ -116,7 +132,11 @@ describe("schema routes", () => {
 		expect(fetchMock).not.toHaveBeenCalled()
 		const payload = (await response.json()) as { error?: string; supportedSchemas?: string[] }
 		expect(payload.error).toBe("Unsupported registry schema version")
-		expect(payload.supportedSchemas).toEqual(["v1/registry.json", "v2/registry.json"])
+		expect(payload.supportedSchemas).toEqual([
+			"v1/registry.json",
+			"v2/registry.json",
+			"v3/registry.json",
+		])
 	})
 })
 

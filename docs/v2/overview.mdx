@@ -1,0 +1,25 @@
+---
+title: OCX for OpenCode V2
+description: Portable profiles and editable file registries
+---
+
+OCX 3 manages named profiles and files for OpenCode V2. OpenCode owns configuration interpretation, agent execution, sessions, credentials, plugins, MCP, background work, worktrees, notifications, and compaction.
+
+<Note>
+This is the development preview. OCX 3 requires OpenCode 2.0.3 or a newer V2 release. The default OCX release remains 2.0.15 for OpenCode V1 during preview. Existing documentation outside this V2 section describes that legacy line.
+</Note>
+
+Build from a checkout without replacing your installed CLI:
+
+```sh
+bun install --frozen-lockfile
+bun run --cwd packages/cli build
+bun packages/cli/dist/index.js profile add work
+bun packages/cli/dist/index.js oc --profile work
+```
+
+After preview publication, `npm install -g ocx@next` selects OCX 3. Install OpenCode V2 independently; its executable must identify itself as V2. Use `OPENCODE_BIN` or a profile's `bin` setting when retaining separate V1 and V2 binaries.
+
+Profiles are ordinary directories. Components are editable files with ownership receipts. OCX performs no launch-time config merge and installs no runtime plugin.
+
+Continue with [profiles](/v2/profiles), [registry installation](/v2/registries), or [legacy import](/v2/migration).

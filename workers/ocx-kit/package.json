@@ -9,7 +9,7 @@
 		"dev": "bun run build && wrangler dev --inspector-port 0"
 	},
 	"devDependencies": {
-		"ocx": "workspace:*",
-		"wrangler": "^4.79.0"
+		"@types/bun": "^1.3.11",
+		"@types/node": "^25.5.0"
 	}
 }

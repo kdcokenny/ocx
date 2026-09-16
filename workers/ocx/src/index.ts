@@ -11,6 +11,10 @@ import profileSchema from "../../../docs/schemas/profile.schema.json"
 import receiptSchema from "../../../docs/schemas/receipt.schema.json"
 import registrySchemaV2 from "../../../docs/schemas/registry.schema.json"
 import registrySchemaV1 from "../../../docs/schemas/registry.v1.schema.json"
+import ocxSchemaV3 from "../../../docs/schemas/v3/ocx.schema.json"
+import profileSchemaV3 from "../../../docs/schemas/v3/profile.schema.json"
+import receiptSchemaV3 from "../../../docs/schemas/v3/receipt.schema.json"
+import registrySchemaV3 from "../../../docs/schemas/v3/registry.schema.json"
 
 const MINTLIFY_HOST = "kdco.mintlify.dev"
 const MINTLIFY_ORIGIN = `https://${MINTLIFY_HOST}`
@@ -23,6 +27,7 @@ const VERSIONED_SCHEMA_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 const VALID_SCHEMAS = ["ocx", "profile", "local", "lock", "registry", "receipt"] as const
 const MINTLIFY_ROOT_DOC_PREFIXES = [
+	"v2",
 	"getting-started",
 	"profiles",
 	"cli",
@@ -40,6 +45,7 @@ type SchemaName = (typeof VALID_SCHEMAS)[number]
 const REGISTRY_SCHEMAS_BY_VERSION = {
 	v1: registrySchemaV1,
 	v2: registrySchemaV2,
+	v3: registrySchemaV3,
 } as const
 
 const SCHEMA_PAYLOADS: Record<SchemaName, unknown> = {
@@ -494,6 +500,13 @@ app.use("*", async (c, next) => {
 // Unified schema route
 app.get("/schemas/:name{.+\\.json}", async (c) => {
 	const nameWithExt = c.req.param("name") // "registry.json"
+	const nativeSchemas: Record<string, unknown> = {
+		"v3/profile.json": profileSchemaV3,
+		"v3/ocx.json": ocxSchemaV3,
+		"v3/receipt.json": receiptSchemaV3,
+	}
+	const nativeSchema = nativeSchemas[nameWithExt]
+	if (nativeSchema) return respondWithSchema(c, nativeSchema, VERSIONED_SCHEMA_CACHE_CONTROL)
 
 	const versionedRegistryMatch = nameWithExt.match(/^v(\d+)\/registry\.json$/)
 	if (versionedRegistryMatch) {

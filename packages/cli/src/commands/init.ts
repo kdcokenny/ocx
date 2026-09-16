@@ -8,18 +8,9 @@ import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { Command } from "commander"
 import { OCX_SCHEMA_URL, REGISTRY_SCHEMA_LATEST_URL } from "../constants"
-import { atomicWrite } from "../profile/atomic"
-import { DEFAULT_OCX_CONFIG } from "../profile/manager"
-import {
-	getGlobalConfig,
-	getProfileAgents,
-	getProfileDir,
-	getProfileOcxConfig,
-	getProfileOpencodeConfig,
-	getProfilesDir,
-} from "../profile/paths"
-import { findOcxConfig, ocxConfigSchema } from "../schemas/config"
-import { ensureOpencodeConfig } from "../updaters/update-opencode-config"
+import { ProfileManager } from "../profile/manager"
+import { getGlobalConfig } from "../profile/paths"
+import { ocxConfigSchema } from "../schemas/config"
 import { ConflictError, NetworkError, ValidationError } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
@@ -42,6 +33,7 @@ interface InitOptions {
 	canary?: boolean
 	local?: string
 	global?: boolean
+	project?: boolean
 }
 
 export function registerInitCommand(program: Command): void {
@@ -52,6 +44,7 @@ export function registerInitCommand(program: Command): void {
 	addGlobalOption(cmd)
 
 	cmd
+		.option("--project", "Initialize OCX sources in this project")
 		.option("--registry <path>", "Scaffold a new OCX registry project at path")
 		.option("--namespace <name>", "Registry namespace (e.g., my-org)")
 		.option("--author <name>", "Author name for the registry")
@@ -59,6 +52,8 @@ export function registerInitCommand(program: Command): void {
 		.option("--local <path>", "Use local template directory instead of fetching")
 		.action(async (options: InitOptions) => {
 			try {
+				if ([options.registry, options.global, options.project].filter(Boolean).length !== 1)
+					throw new ValidationError("Choose --global, --project, or --registry <path>.")
 				if (options.registry) {
 					await runInitRegistry(options.registry, options)
 				} else if (options.global) {
@@ -73,172 +68,25 @@ export function registerInitCommand(program: Command): void {
 }
 
 async function runInit(options: InitOptions): Promise<void> {
-	const cwd = options.cwd ?? process.cwd()
-
-	// Check for existing config in either location
-	const { path: configPath, exists } = findOcxConfig(cwd)
-
-	// Check for existing config - error if exists (Law 1: Early Exit)
-	if (exists) {
-		throw new ConflictError(
-			`ocx.jsonc already exists at ${configPath}\n\n` +
-				`To reset, delete the config and run init again:\n` +
-				`  rm ${configPath} && ocx init`,
-		)
-	}
-
-	const spin = options.quiet ? null : createSpinner({ text: "Initializing OCX..." })
-	spin?.start()
-
-	try {
-		// Create minimal config - schema will apply defaults
-		const rawConfig = {
-			$schema: OCX_SCHEMA_URL,
-			registries: {},
-		}
-
-		// Validate with schema (applies defaults)
-		const config = ocxConfigSchema.parse(rawConfig)
-
-		// Ensure .opencode directory exists
-		await mkdir(dirname(configPath), { recursive: true })
-
-		// Write config file
-		const content = JSON.stringify(config, null, 2)
-		await writeFile(configPath, content, "utf-8")
-
-		// Ensure opencode.jsonc exists (upsert - creates if not present)
-		const opencodeResult = await ensureOpencodeConfig(cwd)
-
-		spin?.succeed("Initialized OCX configuration")
-
-		if (options.json) {
-			console.log(
-				JSON.stringify({
-					success: true,
-					path: configPath,
-					opencodePath: opencodeResult.path,
-					opencodeCreated: opencodeResult.created,
-				}),
-			)
-		} else if (!options.quiet) {
-			logger.info(`Created ${configPath}`)
-			if (opencodeResult.created) {
-				logger.info(`Created ${opencodeResult.path}`)
-			}
-			logger.info("")
-			logger.info("Next steps:")
-			logger.info("  1. Add a registry: ocx registry add <url>")
-			logger.info("  2. Install components: ocx add <component>")
-		}
-	} catch (error) {
-		spin?.fail("Failed to initialize")
-		throw error
-	}
+	const configPath = join(options.cwd ?? process.cwd(), ".opencode", "ocx.jsonc")
+	if (existsSync(configPath)) throw new ConflictError(`Config already exists: ${configPath}`)
+	await mkdir(dirname(configPath), { recursive: true })
+	await writeFile(
+		configPath,
+		`${JSON.stringify(ocxConfigSchema.parse({ $schema: OCX_SCHEMA_URL, registries: {} }), null, 2)}\n`,
+		{ flag: "wx" },
+	)
+	if (options.json) console.log(JSON.stringify({ success: true, path: configPath }))
+	else if (!options.quiet) console.log(`Created ${configPath}`)
 }
 
 async function runInitGlobal(options: InitOptions): Promise<void> {
-	const spin = options.quiet ? null : createSpinner({ text: "Initializing global profiles..." })
-	spin?.start()
-
-	try {
-		const created: string[] = []
-		const existed: string[] = []
-
-		// 1. Create global base config (create-if-missing)
-		const globalConfigPath = getGlobalConfig()
-		if (existsSync(globalConfigPath)) {
-			existed.push("globalConfig")
-		} else {
-			await mkdir(dirname(globalConfigPath), { recursive: true, mode: 0o700 })
-			await atomicWrite(globalConfigPath, {
-				$schema: OCX_SCHEMA_URL,
-				registries: {},
-			})
-			created.push("globalConfig")
-		}
-
-		// 2. Create profiles directory (create-if-missing)
-		const profilesDir = getProfilesDir()
-		if (!existsSync(profilesDir)) {
-			await mkdir(profilesDir, { recursive: true, mode: 0o700 })
-		}
-
-		// 3. Create default profile directory (create-if-missing)
-		const profileDir = getProfileDir("default")
-		if (!existsSync(profileDir)) {
-			await mkdir(profileDir, { recursive: true, mode: 0o700 })
-		}
-
-		// 4. Check/create each profile file individually
-		const ocxPath = getProfileOcxConfig("default")
-		if (existsSync(ocxPath)) {
-			existed.push("profileOcx")
-		} else {
-			await atomicWrite(ocxPath, DEFAULT_OCX_CONFIG)
-			created.push("profileOcx")
-		}
-
-		const opencodePath = getProfileOpencodeConfig("default")
-		if (existsSync(opencodePath)) {
-			existed.push("profileOpencode")
-		} else {
-			await atomicWrite(opencodePath, {})
-			created.push("profileOpencode")
-		}
-
-		const agentsPath = getProfileAgents("default")
-		if (existsSync(agentsPath)) {
-			existed.push("profileAgents")
-		} else {
-			const agentsContent = `# Profile Instructions
-
-<!-- Add your custom instructions for this profile here -->
-<!-- These will be included when running \`ocx opencode -p default\` -->
-`
-			await Bun.write(agentsPath, agentsContent, { mode: 0o600 })
-			created.push("profileAgents")
-		}
-
-		spin?.succeed("Initialized global profiles")
-
-		if (options.json) {
-			console.log(
-				JSON.stringify({
-					success: true,
-					files: {
-						globalConfig: globalConfigPath,
-						profileOcx: ocxPath,
-						profileOpencode: opencodePath,
-						profileAgents: agentsPath,
-					},
-					created,
-					existed,
-				}),
-			)
-		} else if (!options.quiet) {
-			if (created.length > 0) {
-				for (const key of created) {
-					if (key === "globalConfig") logger.info(`Created global config: ${globalConfigPath}`)
-					if (key === "profileOcx") logger.info(`Created profile config: ${ocxPath}`)
-					if (key === "profileOpencode")
-						logger.info(`Created profile opencode config: ${opencodePath}`)
-					if (key === "profileAgents") logger.info(`Created profile instructions: ${agentsPath}`)
-				}
-				logger.info("")
-				logger.info("Next steps:")
-				logger.info("  1. Edit your profile config: ocx config edit -p default")
-				logger.info("  2. Add registries: ocx registry add <url> --name <name> --global")
-				logger.info("  3. Launch OpenCode: ocx opencode")
-				logger.info("  4. Create more profiles: ocx profile add <name> --global")
-			} else {
-				logger.info("Global profiles already initialized (all files exist)")
-			}
-		}
-	} catch (error) {
-		spin?.fail("Failed to initialize")
-		throw error
-	}
+	await ProfileManager.create().initialize()
+	if (options.json) console.log(JSON.stringify({ success: true, path: getGlobalConfig() }))
+	else if (!options.quiet)
+		console.log(
+			`Profiles initialized. Launch with 'ocx oc --profile default'. Settings: ${getGlobalConfig()}`,
+		)
 }
 
 async function runInitRegistry(registryPath: string, options: InitOptions): Promise<void> {

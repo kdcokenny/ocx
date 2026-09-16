@@ -8,14 +8,11 @@ import {
 	type ComponentManifest,
 	createQualifiedComponent,
 	type NormalizedComponentManifest,
-	type NormalizedOpencodeConfig,
 	normalizeComponentManifest,
-	type OpencodeConfig,
 	parseQualifiedComponent,
 } from "../schemas/registry"
 import { NetworkError, NotFoundError, OCXError, ValidationError } from "../utils/errors"
 import { fetchComponent } from "./fetcher"
-import { mergeOpencodeConfig } from "./merge"
 
 /**
  * Parse a component reference into registry alias and component name.
@@ -58,12 +55,6 @@ export interface ResolvedDependencies {
 	components: ResolvedComponent[]
 	/** Install order (component names) */
 	installOrder: string[]
-	/** Aggregated npm dependencies from all components */
-	npmDependencies: string[]
-	/** Aggregated npm dev dependencies from all components */
-	npmDevDependencies: string[]
-	/** Merged opencode configuration from all components (deep merged) */
-	opencode: OpencodeConfig
 }
 
 /**
@@ -76,9 +67,6 @@ export async function resolveDependencies(
 ): Promise<ResolvedDependencies> {
 	const resolved = new Map<string, ResolvedComponent>()
 	const visiting = new Set<string>()
-	const npmDeps = new Set<string>()
-	const npmDevDeps = new Set<string>()
-	let opencode: NormalizedOpencodeConfig = {}
 
 	async function resolve(
 		componentNamespace: string,
@@ -111,7 +99,7 @@ export async function resolveDependencies(
 		// Fetch component from the specific registry
 		let component: ComponentManifest
 		try {
-			component = await fetchComponent(regConfig.url, componentName)
+			component = await fetchComponent(regConfig.url, componentName, regConfig)
 		} catch (err) {
 			// Re-throw network errors as-is (preserves exit code 69)
 			if (err instanceof NetworkError) {
@@ -152,27 +140,6 @@ export async function resolveDependencies(
 			qualifiedName,
 		})
 		visiting.delete(qualifiedName)
-
-		// Collect npm dependencies
-		if (component.npmDependencies) {
-			for (const dep of component.npmDependencies) {
-				npmDeps.add(dep)
-			}
-		}
-		if (component.npmDevDependencies) {
-			for (const dep of component.npmDevDependencies) {
-				npmDevDeps.add(dep)
-			}
-		}
-
-		// Deep merge opencode config (component takes precedence - ShadCN style)
-		// Use normalizedComponent to ensure MCP servers are converted from string URLs to full objects
-		if (normalizedComponent.opencode) {
-			opencode = mergeOpencodeConfig(
-				opencode,
-				normalizedComponent.opencode as NormalizedOpencodeConfig,
-			)
-		}
 	}
 
 	// Resolve all requested components
@@ -189,8 +156,5 @@ export async function resolveDependencies(
 	return {
 		components,
 		installOrder,
-		npmDependencies: Array.from(npmDeps),
-		npmDevDependencies: Array.from(npmDevDeps),
-		opencode,
 	}
 }

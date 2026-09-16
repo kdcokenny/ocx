@@ -1,29 +1,19 @@
-/**
- * Build Registry Library Function
- *
- * Pure function to build a registry from source.
- * No CLI concerns - just input/output.
- */
-
-import { mkdir } from "node:fs/promises"
-import { dirname, join } from "node:path"
-import { parse as parseJsonc } from "jsonc-parser"
-import { classifyRegistrySchemaIssue, normalizeFile, registrySchema } from "../schemas/registry"
+import { lstat, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { normalizeFile } from "../schemas/registry"
 import type { DryRunResult } from "../utils/dry-run"
+import { readManagedFile } from "../utils/file-transaction"
+import { logger } from "../utils/logger"
+import { runCompleteValidation } from "./validation-runner"
 
 export interface BuildRegistryOptions {
-	/** Source directory containing registry.jsonc (or registry.json) and files/ */
 	source: string
-	/** Output directory for built registry */
 	out: string
-	/** Dry-run mode: validate and show what would be built */
 	dryRun?: boolean
 }
 
 export interface BuildRegistryResult {
-	/** Number of components built */
 	componentsCount: number
-	/** Absolute path to output directory */
 	outputPath: string
 }
 
@@ -37,187 +27,102 @@ export class BuildRegistryError extends Error {
 	}
 }
 
-/**
- * Build a registry from source.
- *
- * @param options - Build options
- * @returns Build result with metadata or DryRunResult
- * @throws {BuildRegistryError} If validation fails or files are missing
- */
+/** Validate and stage the complete registry before replacing any published output. */
 export async function buildRegistry(
 	options: BuildRegistryOptions,
 ): Promise<BuildRegistryResult | DryRunResult> {
-	const { source: sourcePath, out: outPath } = options
-
-	// Read registry file from source (prefer .jsonc over .json)
-	const jsoncFile = Bun.file(join(sourcePath, "registry.jsonc"))
-	const jsonFile = Bun.file(join(sourcePath, "registry.json"))
-	const jsoncExists = await jsoncFile.exists()
-	const jsonExists = await jsonFile.exists()
-
-	if (!jsoncExists && !jsonExists) {
-		throw new BuildRegistryError("No registry.jsonc or registry.json found in source directory")
-	}
-
-	const registryFile = jsoncExists ? jsoncFile : jsonFile
-	const content = await registryFile.text()
-	const registryData = parseJsonc(content, [], { allowTrailingComma: true })
-	const schemaIssue = classifyRegistrySchemaIssue(registryData)
-	if (schemaIssue) {
-		throw new BuildRegistryError(`Registry schema compatibility failed (${schemaIssue.issue})`, [
-			schemaIssue.remediation,
-			...(schemaIssue.schemaUrl !== undefined ? [`Invalid $schema: ${schemaIssue.schemaUrl}`] : []),
-		])
-	}
-
-	// Validate registry schema
-	const parseResult = registrySchema.safeParse(registryData)
-	if (!parseResult.success) {
-		const errors = parseResult.error.issues.map(
-			(issue) => `${issue.path.join(".")}: ${issue.message}`,
-		)
-		throw new BuildRegistryError("Registry validation failed", errors)
-	}
-
-	const registry = parseResult.data
-	const validationErrors: string[] = []
-
-	// Dry-run: Calculate what would be built without creating files
-	if (options.dryRun) {
-		const actions = []
-
-		// Check for missing source files
-		for (const component of registry.components) {
-			// Would create packument file
-			actions.push({
-				action: "create" as const,
-				target: `file:components/${component.name}.json`,
-				details: { type: "packument" },
-			})
-
-			// Check source files exist
-			for (const rawFile of component.files) {
-				const file = normalizeFile(rawFile, component.type)
-				const sourceFilePath = join(sourcePath, "files", file.path)
-
-				if (!(await Bun.file(sourceFilePath).exists())) {
-					validationErrors.push(`${component.name}: Source file not found at ${sourceFilePath}`)
-					continue
-				}
-
-				// Would copy file
-				actions.push({
-					action: "create" as const,
-					target: `file:components/${component.name}/${file.path}`,
-					details: { source: sourceFilePath },
-				})
-			}
-		}
-
-		// Would create index.json
-		actions.push({
-			action: "create" as const,
-			target: "file:index.json",
-			details: { type: "registry index" },
-		})
-
-		// Would create .well-known/ocx.json
-		actions.push({
-			action: "create" as const,
-			target: "file:.well-known/ocx.json",
-			details: { type: "discovery file" },
-		})
-
-		// Calculate total files
-		const totalFiles = actions.filter((a) => a.action === "create").length
-
-		return {
-			dryRun: true,
-			command: "build",
-			wouldPerform: actions,
-			validation: {
-				passed: validationErrors.length === 0,
-				errors: validationErrors.length > 0 ? validationErrors : undefined,
-			},
-			summary: `Would build ${registry.components.length} components, ${totalFiles} files to ${outPath}`,
-		}
-	}
-
-	// Normal mode: Create output directory structure
-	const componentsDir = join(outPath, "components")
-	await mkdir(componentsDir, { recursive: true })
-
-	// V2: Generate packument and copy files for each component
-	// Use component-level versioning (default to 1.0.0)
-	const DEFAULT_COMPONENT_VERSION = "1.0.0"
-
+	const source = resolve(options.source)
+	const out = resolve(options.out)
+	const sourceFromOutput = relative(out, source)
+	if (
+		!sourceFromOutput ||
+		(sourceFromOutput !== ".." &&
+			!sourceFromOutput.startsWith(`..${sep}`) &&
+			!isAbsolute(sourceFromOutput))
+	)
+		throw new BuildRegistryError("Output must not contain the registry source directory")
+	const validation = await runCompleteValidation(source)
+	if (!validation.success || !validation.registry)
+		throw new BuildRegistryError("Registry validation failed", validation.errors)
+	const registry = validation.registry
+	const files = new Map<string, Buffer>()
+	const addJson = (path: string, value: unknown) =>
+		files.set(path, Buffer.from(JSON.stringify(value, null, 2)))
 	for (const component of registry.components) {
-		const packument = {
+		const version = component.version ?? registry.version
+		addJson(`components/${component.name}.json`, {
 			name: component.name,
-			versions: {
-				[DEFAULT_COMPONENT_VERSION]: component,
-			},
-			"dist-tags": {
-				latest: DEFAULT_COMPONENT_VERSION,
-			},
-		}
-
-		// Write manifest to components/[name].json
-		const packumentPath = join(componentsDir, `${component.name}.json`)
-		await Bun.write(packumentPath, JSON.stringify(packument, null, 2))
-
-		// Copy files (if any - bundles may have no files, only dependencies)
+			versions: { [version]: component },
+			"dist-tags": { latest: version },
+		})
 		for (const rawFile of component.files) {
 			const file = normalizeFile(rawFile, component.type)
-			const sourceFilePath = join(sourcePath, "files", file.path)
-			const destFilePath = join(componentsDir, component.name, file.path)
-			const destFileDir = dirname(destFilePath)
-
-			if (!(await Bun.file(sourceFilePath).exists())) {
-				validationErrors.push(`${component.name}: Source file not found at ${sourceFilePath}`)
-				continue
-			}
-
-			await mkdir(destFileDir, { recursive: true })
-			const sourceFile = Bun.file(sourceFilePath)
-			await Bun.write(destFilePath, sourceFile)
+			const bytes = await readManagedFile(source, `files/${file.path}`)
+			if (!bytes) throw new BuildRegistryError(`Source file disappeared: ${file.path}`)
+			files.set(`components/${component.name}/${file.path}`, bytes)
 		}
 	}
-
-	// Fail fast if source files were missing during copy
-	if (validationErrors.length > 0) {
-		throw new BuildRegistryError(
-			`Build failed with ${validationErrors.length} errors`,
-			validationErrors,
-		)
-	}
-
-	// V2: Generate index.json at the root (no registry version field)
-	const index = {
+	addJson("index.json", {
 		$schema: registry.$schema,
 		name: registry.name,
 		version: registry.version,
 		author: registry.author,
-		// Include version requirements for compatibility checking
 		...(registry.opencode && { opencode: registry.opencode }),
 		...(registry.ocx && { ocx: registry.ocx }),
-		components: registry.components.map((c) => ({
-			name: c.name,
-			type: c.type,
-			description: c.description,
+		components: registry.components.map(({ name, type, description }) => ({
+			name,
+			type,
+			description,
 		})),
+	})
+	addJson(".well-known/ocx.json", { registry: "/index.json" })
+	if (options.dryRun)
+		return {
+			dryRun: true,
+			command: "build",
+			wouldPerform: [...files.keys()].map((path) => ({ action: "create", target: `file:${path}` })),
+			validation: { passed: true },
+			summary: `Would build ${registry.components.length} components, ${files.size} files to ${out}`,
+		}
+	await mkdir(dirname(out), { recursive: true })
+	const stage = await mkdtemp(join(dirname(out), ".ocx-build-"))
+	const candidate = join(stage, "candidate")
+	const backup = join(stage, "previous")
+	let hadPrevious = false
+	let preserveBackup = false
+	try {
+		for (const [path, bytes] of files) {
+			const target = join(candidate, path)
+			await mkdir(dirname(target), { recursive: true })
+			await writeFile(target, bytes)
+		}
+		try {
+			const info = await lstat(out)
+			if (!info.isDirectory() || info.isSymbolicLink())
+				throw new BuildRegistryError("Output must be a real directory")
+			await rename(out, backup)
+			hadPrevious = true
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+		}
+		try {
+			await rename(candidate, out)
+		} catch (error) {
+			if (hadPrevious) {
+				try {
+					await rename(backup, out)
+				} catch (restoreError) {
+					preserveBackup = true
+					throw new AggregateError([error, restoreError], `Previous registry remains at ${backup}`)
+				}
+			}
+			throw error
+		}
+	} finally {
+		if (!preserveBackup)
+			await rm(stage, { recursive: true, force: true }).catch((error) =>
+				logger.warn(`Could not remove build staging directory ${stage}: ${error}`),
+			)
 	}
-
-	await Bun.write(join(outPath, "index.json"), JSON.stringify(index, null, 2))
-
-	// Generate .well-known/ocx.json for registry discovery
-	const wellKnownDir = join(outPath, ".well-known")
-	await mkdir(wellKnownDir, { recursive: true })
-	const discovery = { registry: "/index.json" }
-	await Bun.write(join(wellKnownDir, "ocx.json"), JSON.stringify(discovery, null, 2))
-
-	return {
-		componentsCount: registry.components.length,
-		outputPath: outPath,
-	}
+	return { componentsCount: registry.components.length, outputPath: out }
 }

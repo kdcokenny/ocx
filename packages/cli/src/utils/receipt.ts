@@ -5,10 +5,9 @@
  */
 
 import { createHash } from "node:crypto"
-import { existsSync } from "node:fs"
-import { join } from "node:path"
 import type { InstalledComponent } from "../schemas/config"
 import { createCanonicalId, parseCanonicalId } from "../schemas/config"
+import { readManagedFile } from "./file-transaction"
 
 /**
  * Hash file content using SHA-256.
@@ -65,15 +64,14 @@ export async function checkFileIntegrity(
 	const details: Array<{ path: string; status: "intact" | "modified" | "missing" }> = []
 
 	for (const fileEntry of entry.files) {
-		const filePath = join(installRoot, fileEntry.path)
+		const currentContent = await readManagedFile(installRoot, fileEntry.path)
 
-		if (!existsSync(filePath)) {
+		if (currentContent === null) {
 			missing.push(fileEntry.path)
 			details.push({ path: fileEntry.path, status: "missing" })
 			continue
 		}
 
-		const currentContent = await Bun.file(filePath).text()
 		const currentHash = hashContent(currentContent)
 
 		if (currentHash !== fileEntry.hash) {

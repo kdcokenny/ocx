@@ -1,8 +1,7 @@
 import fuzzysort from "fuzzysort"
 import kleur from "kleur"
 import type { ConfigProvider } from "../config/provider"
-import { LocalConfigProvider } from "../config/provider"
-import { ConfigResolver } from "../config/resolver"
+import { GlobalConfigProvider, resolveDestination } from "../config/provider"
 import { fetchRegistryIndex } from "../registry/fetcher"
 import { readReceipt } from "../schemas"
 import { outputJson } from "../utils/json-output"
@@ -14,8 +13,12 @@ export async function runSearchCommandAction(
 	query: string | undefined,
 	options: SearchOptions,
 ): Promise<void> {
+	const provider =
+		options.profile !== undefined || options.project || options.installed
+			? await resolveDestination(options)
+			: await GlobalConfigProvider.requireInitialized()
 	if (options.installed) {
-		const receipt = await readReceipt(options.cwd)
+		const receipt = await readReceipt(provider.cwd)
 		if (!receipt || Object.keys(receipt.installed).length === 0) {
 			if (options.json) {
 				outputJson({ success: true, data: { components: [] } })
@@ -44,18 +47,6 @@ export async function runSearchCommandAction(
 		}
 
 		return
-	}
-
-	let provider: ConfigProvider
-	if (options.profile) {
-		const resolver = await ConfigResolver.create(options.cwd, { profile: options.profile })
-		provider = {
-			cwd: resolver.getCwd(),
-			getRegistries: () => resolver.getRegistries(),
-			getComponentPath: () => resolver.getComponentPath(),
-		}
-	} else {
-		provider = await LocalConfigProvider.requireInitialized(options.cwd)
 	}
 
 	await runSearchCore(query, options, provider)
@@ -93,7 +84,7 @@ export async function runSearchCore(
 			if (options.verbose) {
 				logger.info(`Fetching index from ${registryName} (${registryConfig.url})...`)
 			}
-			const index = await fetchRegistryIndex(registryConfig.url)
+			const index = await fetchRegistryIndex(registryConfig.url, registryConfig)
 			if (options.verbose) {
 				logger.info(`Found ${index.components.length} components in ${registryName}`)
 			}
@@ -106,11 +97,8 @@ export async function runSearchCore(
 				})
 			}
 		} catch (error) {
-			if (options.verbose) {
-				logger.warn(
-					`Failed to fetch registry ${registryName}: ${error instanceof Error ? error.message : String(error)}`,
-				)
-			}
+			spinner.stop()
+			throw error
 		}
 	}
 

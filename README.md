@@ -1,121 +1,87 @@
-# OCX
+# OCX for OpenCode V2
 
-[![CI](https://github.com/kdcokenny/ocx/actions/workflows/ci.yml/badge.svg)](https://github.com/kdcokenny/ocx/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/ocx.svg)](https://www.npmjs.com/package/ocx)
-[![License](https://img.shields.io/github/license/kdcokenny/ocx.svg)](https://github.com/kdcokenny/ocx/blob/main/LICENSE)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kdcokenny/ocx)
+Portable named profiles and editable file registries for OpenCode **2.0.3 or newer within V2**.
 
-Your OpenCode config, anywhere.
+This branch develops **OCX 3**. OpenCode interprets the configuration and runs the agent; OCX selects a profile and manages files you own.
 
-## Why OCX?
+**Using OpenCode V1?** Keep `ocx@2.0.15`. Its registries and documentation are preserved. See [the legacy setup](legacy/README.md). OCX 3 uses separate profile directories and does not upgrade or replace OpenCode.
 
-- 📁 **Profiles** — Work in any repo with YOUR config. Control exactly what OpenCode sees.
-- 📦 **Registries** — Install profiles and components from curated registries.
-- 🔒 **Auditable** — SHA-verified, code you own.
+## Try the development preview
 
-![OCX Profiles Demo](./assets/profiles-demo.gif)
-
-*Demo uses [oh-my-openagent](https://ocx.kdco.dev/docs/guides/oh-my-opencode). See [more guides](https://ocx.kdco.dev/docs/guides/index).*
-
-## Installation
-
-OCX supports macOS (x64, Apple Silicon), Linux (x64, arm64), and Windows (x64).
-
-```bash
-# Recommended (macOS/Linux)
-curl -fsSL https://ocx.kdco.dev/install.sh | sh
-
-# Or via npm (any platform)
-npm install -g ocx
+```sh
+bun install --frozen-lockfile
+bun run --cwd packages/cli build
+bun packages/cli/dist/index.js profile add work
+bun packages/cli/dist/index.js oc --profile work
 ```
 
-The install script handles PATH configuration automatically or prints instructions if manual setup is needed.
+Install OpenCode V2 separately. If you retain both native binaries, set `OPENCODE_BIN` to the V2 executable or set `bin` in the profile's `ocx.jsonc`. The launcher checks the executable version.
 
-The npm package runs with Bun at runtime. Make sure `bun` is available on your `PATH` before using `npm install -g ocx`; Node.js alone is not sufficient. If you do not have Bun, use the standalone binaries from the install script or GitHub Releases when available.
+After an OCX 3 preview is published, `npm install -g ocx@next` installs that channel. The default npm/curl release remains OCX 2 for V1 users during the preview. This PR does not publish a release.
 
-## Quick Start
+## Profiles first
 
-Work in any repo without modifying it. Your config, their code.
+Profiles live at `$XDG_CONFIG_HOME/ocx/profiles/<name>` (normally `~/.config/ocx/profiles/<name>`). Edit their ordinary `opencode.jsonc`, `AGENTS.md`, `cli.json`, `agents/`, `commands/`, and `skills/` files directly.
 
-```bash
-# One-time setup
-ocx init --global
-
-# Install the KDCO workspace profile (OpenCode Free Models Only)
-ocx profile add ws --source tweak/p-1vp4xoqv --from https://tweakoc.com/r --global
-
-# Launch OpenCode with the profile
-ocx oc -p ws
+```sh
+ocx profile add work
+ocx profile add personal --clone work
+ocx profile list
+ocx profile use work
+ocx oc
 ```
 
-Need a custom profile? Open the KDCO Workspace harness in TweakOC: https://tweakoc.com/h/kdco-workspace
+Launch selection is `--profile`, then `OCX_PROFILE`, then the explicit default set by `profile use`. A repository cannot choose your profile.
 
-Profiles control what OpenCode sees through `exclude`/`include` patterns. Each profile has isolated registries for security. OpenCode config merges safely between profile and local settings.
+A profile's OCX metadata is small:
 
-> **Security Note:** An empty exclude list includes all project instruction files; the default profile template ships a secure exclude list. For trusted repos, edit your profile to loosen the template's exclude list. See [Lock Down Recipe](https://ocx.kdco.dev/docs/profiles/security#lock-down-recipe).
-
-**[Profile Deep Dive →](https://ocx.kdco.dev/docs/profiles/overview)**
-
-## Common Commands
-
-| Command | Description |
-|---------|-------------|
-| `ocx profile add <name> --source <registry/profile> --from <url> --global` | Install a profile from a registry |
-| `ocx profile add <name> --clone <existing> --global` | Clone an existing profile |
-| `ocx oc -p <name>` | Launch OpenCode with a profile |
-| `ocx profile list --global` | List your profiles |
-| `ocx config edit --global` | Edit your global config |
-
-**[Full CLI Reference →](https://ocx.kdco.dev/docs/cli/commands)**
-
-## Advanced Usage
-
-### Components
-
-Add individual components to projects (copied to `.opencode/`, not `node_modules`):
-
-```bash
-# One-time local setup
-ocx init
-
-# Add a registry with a name
-ocx registry add https://registry.kdco.dev --name kdco
-
-# Install components using name/component syntax
-ocx add kdco/workspace
+```json
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v3/profile.json",
+  "projectConfig": "ignore",
+  "registries": {}
+}
 ```
 
-See [Components & Registries](https://ocx.kdco.dev/docs/registries/create) for more.
+`ignore` disables native startup project configuration and definitions. `inherit` lets OpenCode load them normally. Native read-time discovery of nested `AGENTS.md` still applies in both modes, as it did in V1. Profiles share native credentials and session storage; they are not sandboxes.
 
-### Creating Registries
+## Files you own
 
-Scaffold and deploy your own registry:
+Registry components copy files into an explicit profile or a project's `.opencode/`. OCX records hashes, protects local edits, resolves dependencies, and supports previews, verification, update, and removal.
 
-```bash
-npx ocx init --registry my-registry
+```sh
+ocx registry add https://registry.kdco.dev/opencode-v2 --name kdco --global
+ocx profile add review --source kdco/minimal
+ocx verify --profile review
+
+ocx init --project
+ocx add kdco/code-review --from https://registry.kdco.dev/opencode-v2 --project
+ocx update --all --project --dry-run
 ```
 
-See [Creating Registries](https://ocx.kdco.dev/docs/registries/create) for details.
+The new catalog address becomes available when its worker is deployed. Its source is [the static catalog](workers/kdco-registry/catalog/registry.jsonc).
 
-## Philosophy
+Components cannot patch native configuration or install npm dependencies. Profile recipes can own complete config files. Configure third-party V2 plugins through OpenCode itself.
 
-OCX follows the **ShadCN model**: components are copied into your project (`.opencode/`), not hidden in `node_modules`. You own the code—customize freely.
+## Migration and retirement
 
-Like **Cargo**, OCX resolves dependencies and verifies integrity. Every component is SHA-256 verified.
+```sh
+ocx migrate --from ~/.config/opencode/profiles/work --profile work
+```
 
-*Your AI agent never runs code you haven't reviewed.*
+This previews a separate import. Review omissions and decisions before adding `--apply`; originals remain unchanged. V1 plugins and old per-file project filters need explicit migration decisions.
 
-## Documentation
+The maintained background-agents, notify, worktree, and workspace plugins are retired from the V2 product. Native V2 covers their broad use cases, but custom hooks, research archives, and planning conventions are not all equivalent. [Retirement details](docs/v2/retirement.mdx) explain what is lost and how legacy users continue.
 
-- **[Profiles](https://ocx.kdco.dev/docs/profiles/overview)** — Deep dive into profile configuration and isolation
-- **[CLI Reference](https://ocx.kdco.dev/docs/cli/commands)** — Complete command documentation
-- **[Creating Registries](https://ocx.kdco.dev/docs/registries/create)** — Build and distribute your own components
-- **[Guides](https://ocx.kdco.dev/docs/guides/index)** — Step-by-step tutorials
+[Profiles and discovery](docs/v2/profiles.mdx) · [CLI](docs/v2/cli.mdx) · [Registry protocol](docs/v2/registries.mdx) · [Migration](docs/v2/migration.mdx) · [Validation record](docs/maintainers/opencode-v2-validation.md)
 
-## Disclaimer
+## Development
 
-This project is not built by the OpenCode team and is not affiliated with [OpenCode](https://github.com/sst/opencode) in any way.
+```sh
+bun run build
+bun run check
+bun run --cwd packages/cli test
+OPENCODE_V2_BIN=/absolute/path/to/opencode-v2 bun run --cwd packages/cli test:native
+```
 
-## License
-
-MIT
+Native conformance uses a local mock model, temporary XDG directories, and the built OCX launcher. It needs no paid model requests. See [the implementation plan](docs/plans/opencode-v2-slimdown.md).

@@ -11,7 +11,24 @@
 	"navigation": {
 		"anchors": [
 			{
-				"anchor": "Documentation",
+				"anchor": "OpenCode V2",
+				"icon": "book-open",
+				"groups": [
+					{
+						"group": "OCX 3 Preview",
+						"pages": [
+							"v2/overview",
+							"v2/profiles",
+							"v2/cli",
+							"v2/registries",
+							"v2/migration",
+							"v2/retirement"
+						]
+					}
+				]
+			},
+			{
+				"anchor": "Legacy: OpenCode V1",
 				"icon": "book-open",
 				"groups": [
 					{
@@ -129,7 +146,7 @@
 		"primary": {
 			"type": "button",
 			"label": "Install",
-			"href": "/getting-started/installation"
+			"href": "/v2/overview"
 		}
 	},
 	"footer": {

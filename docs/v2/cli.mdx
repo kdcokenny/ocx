@@ -1,0 +1,44 @@
+---
+title: OCX 3 CLI
+description: Explicit profiles, sources, and installation destinations
+---
+
+| Command | Purpose |
+| --- | --- |
+| `profile add <name>` | Create an empty profile; optionally `--clone <name>` or `--source <alias/component> [--from <url>]`. |
+| `profile list`, `profile show [name]` | Inspect profiles. |
+| `profile move <name> <new-name>`, `profile remove <name>` | Rename or remove a profile. |
+| `profile use <name>`, `profile use --clear` | Set or clear the explicit default. |
+| `oc [-p <name>] [native arguments...]` | Launch OpenCode V2. Put the profile option before the native command. |
+| `init --project` | Create project OCX source metadata. |
+| `init --global` | Create a default profile and global metadata if absent. |
+| `registry add <url> --name <alias>`, `registry list`, `registry remove <alias>` | Manage sources; choose `--global`, `--profile <name>`, or `--project`. |
+| `config show`, `config edit` | Inspect or edit OCX metadata at one explicit scope. |
+| `search [query]` | Search global sources, or select `--profile` / `--project`. |
+| `search --installed` | List a destination's receipts; requires `--profile` or `--project`. |
+| `add <alias/component...>` | Install files into an explicit destination. `--from <url>` uses an ephemeral source. |
+| `update <alias/component...>` / `update --all` / `update --registry <alias>` | Update one selection in an explicit destination. |
+| `verify [alias/component...]` | Compare installed files to recorded hashes. |
+| `remove <alias/component...>` | Remove owned files and update receipts. |
+| `migrate --from <directory> --profile <new-name>` | Preview an import; see [migration](/v2/migration). |
+| `init --registry <directory>` | Scaffold a static registry. |
+| `validate [directory]`, `build [directory] --out <directory>` | Validate or publish registry files. |
+| `self update`, `self uninstall` | Manage OCX itself. Preview updates stay on npm's `next` channel and cannot cross major versions. |
+
+Component mutations support `--dry-run` and `--json`. Updating or removing changed files requires `--force`; first use it with `--dry-run`. Force does not bypass path checks or overwrite unrelated unmanaged files. All component mutations require exactly one of `--profile <name>` or `--project`.
+
+`config edit` invokes the executable in `VISUAL`, then `EDITOR`, then `vi`. Native configuration is edited directly or through OpenCode. `--global` sources are for browsing and profile creation, not a component installation destination.
+
+## Forwarded native commands
+
+OpenCode 2.0.3 supports private-server routing for the root terminal, `run`, `mini`, `api`, `models`, `stats`, `auth list/login/logout/switch`, and `session list/delete/export/import`. Native `serve`, `acp`, `debug paths`, `plugin add/remove`, and `mcp add` run directly against the selected configuration environment. For native MCP additions, use its `--global` option to target the profile instead of a project.
+
+`debug config/agents`, `plugin list/check/update`, `mcp list/auth/logout`, and user-wide service/pair/upgrade/uninstall commands are not forwarded through OCX. They lack the required private-server switch in the tested native release. Help and version requests are forwarded unchanged.
+
+```sh
+ocx oc --profile work run "Review the current diff"
+ocx oc --profile work api GET /api/health
+ocx oc --profile work debug paths
+```
+
+No automatic update check runs after ordinary OCX commands. Explicit updates check the preview channel. Self-uninstall targets the new OCX storage root and preserves native OpenCode and legacy OCX profile directories.

@@ -1,876 +1,203 @@
-/**
- * Registry & Component Schemas
- *
- * Zod schemas with fail-fast validation following the 5 Laws of Elegant Defense.
- * Uses Cargo-style union types: string for simple defaults, object for full control.
- */
-
-import { isAbsolute, normalize } from "node:path"
-import type { infer as ZodInfer } from "zod"
+import { isAbsolute, posix } from "node:path"
 import {
-	any,
 	array,
-	boolean,
-	number,
+	literal,
 	object,
 	record,
 	string,
-	tuple,
 	union,
+	type infer as ZodInfer,
 	enum as zEnum,
 } from "zod"
-import {
-	OCX_DOMAIN,
-	REGISTRY_SCHEMA_LATEST_MAJOR,
-	REGISTRY_SCHEMA_LATEST_URL,
-	REGISTRY_SCHEMA_UNVERSIONED_URL,
-} from "../constants"
-import type { RegistryCompatIssue } from "../utils/errors"
-import { ValidationError } from "../utils/errors"
+import { OCX_DOMAIN, REGISTRY_SCHEMA_LATEST_MAJOR, REGISTRY_SCHEMA_LATEST_URL } from "../constants"
+import { type RegistryCompatIssue, ValidationError } from "../utils/errors"
 import { PathValidationError, validatePath } from "../utils/path-security"
-import { OPENCODE_CONFIG_FIELD_KINDS } from "./opencode-config-fields.generated"
 
-// =============================================================================
-// NPM SPECIFIER SCHEMA
-// =============================================================================
-
-/**
- * npm specifier schema for "npm:package@version" syntax.
- * Validates the format at boundary (Law 2: Parse Don't Validate).
- *
- * Valid formats:
- * - npm:lodash
- * - npm:lodash@4.0.0
- * - npm:@scope/pkg
- * - npm:@scope/pkg@1.0.0
- */
-export const npmSpecifierSchema = string()
-	.refine((val) => val.startsWith("npm:"), {
-		message: 'npm specifier must start with "npm:" prefix',
-	})
+export const openCodeNameSchema = string()
+	.min(1)
+	.max(64)
+	.regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Use lowercase alphanumeric names with single hyphens")
+export const aliasSchema = openCodeNameSchema
+export const namespaceSchema = aliasSchema
+export const qualifiedComponentSchema = string()
+	.regex(
+		/^[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/,
+		'Use "alias/component" (for example "team/reviewer")',
+	)
 	.refine(
-		(val) => {
-			const remainder = val.slice(4)
-			// Must have something after npm:
-			if (!remainder) return false
-			// Cannot contain path traversal
-			if (remainder.includes("..") || remainder.includes("/./")) return false
-			return true
-		},
-		{
-			message: "Invalid npm specifier format",
-		},
+		(value) => value.split("/").every((part) => openCodeNameSchema.safeParse(part).success),
+		"Registry alias and component name must each be at most 64 characters",
 	)
 
-export type NpmSpecifier = ZodInfer<typeof npmSpecifierSchema>
-
-// =============================================================================
-// OPENCODE NAMING CONSTRAINTS (from OpenCode docs)
-// =============================================================================
-
-/**
- * OpenCode name schema following official constraints:
- * - 1-64 characters
- * - Lowercase alphanumeric with single hyphen separators
- * - Cannot start or end with hyphen
- * - Cannot contain consecutive hyphens
- *
- * Regex: ^[a-z0-9]+(-[a-z0-9]+)*$
- */
-export const openCodeNameSchema = string()
-	.min(1, "Name cannot be empty")
-	.max(64, "Name cannot exceed 64 characters")
-	.regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
-		message:
-			"Must be lowercase alphanumeric with single hyphen separators (e.g., 'my-component', 'my-plugin'). Cannot start/end with hyphen or have consecutive hyphens.",
-	})
-
-/**
- * Alias schema — validates a user-chosen registry alias token.
- * An alias is the left-hand side of an `alias/component` qualified reference
- * (e.g. "kdco" in "kdco/researcher"). Same naming rules as openCodeNameSchema.
- */
-export const aliasSchema = openCodeNameSchema
-
-/** @deprecated Use `aliasSchema` instead. Kept for backward compatibility. */
-export const namespaceSchema = aliasSchema
-
-/**
- * Qualified component reference: alias/component
- * Used in CLI commands and lockfile keys
- */
-export const qualifiedComponentSchema = string().regex(
-	/^[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/,
-	{
-		message:
-			'Must be in format "alias/component" (e.g., "kdco/researcher"). Both parts must be lowercase alphanumeric with hyphens.',
-	},
-)
-
-/**
- * Parse a qualified component reference into its alias and component tokens.
- *
- * The returned `namespace` field is the user-chosen registry **alias** token
- * from the `alias/component` syntax — it is NOT a registry index authority.
- * The alias is resolved to a concrete registry URL at install time via ocx.jsonc.
- *
- * @throws Error if format is invalid (Law 4: Fail Fast, Fail Loud).
- */
 export function parseQualifiedComponent(ref: string): { namespace: string; component: string } {
-	if (!ref.includes("/")) {
-		throw new Error(`Invalid component reference: "${ref}". Use format: alias/component`)
-	}
-	const parts = ref.split("/")
-	if (parts.length > 2) {
-		throw new Error(
-			`Invalid component reference: "${ref}". Too many "/" separators. Use format: alias/component`,
-		)
-	}
-	const [namespace, component] = parts
-	if (!namespace || !component) {
-		throw new Error(`Invalid component reference: "${ref}". Both alias and component are required.`)
-	}
+	const parsed = qualifiedComponentSchema.safeParse(ref)
+	if (!parsed.success)
+		throw new ValidationError(`Invalid component reference "${ref}". Use alias/component.`)
+	const [namespace, component] = parsed.data.split("/")
+	if (!namespace || !component) throw new ValidationError(`Invalid component reference "${ref}"`)
 	return { namespace, component }
 }
 
-/**
- * Create a qualified component reference from alias and component name.
- */
 export function createQualifiedComponent(namespace: string, component: string): string {
 	return `${namespace}/${component}`
 }
-
-/**
- * Dependency reference schema (Cargo-style):
- * - Bare string: "utils" -> same registry alias (implicit)
- * - Qualified: "acme/utils" -> cross-registry (explicit)
- */
-export const dependencyRefSchema = string().refine(
-	(dep) => {
-		// Either a bare component name or a qualified alias/component
-		const barePattern = /^[a-z0-9]+(-[a-z0-9]+)*$/
-		const qualifiedPattern = /^[a-z0-9]+(-[a-z0-9]+)*\/[a-z0-9]+(-[a-z0-9]+)*$/
-		return barePattern.test(dep) || qualifiedPattern.test(dep)
-	},
-	{
-		message:
-			'Dependency must be either a bare name (e.g., "utils") or qualified (e.g., "acme/utils")',
-	},
-)
-
-// =============================================================================
-// FILE TARGET SCHEMAS
-// =============================================================================
-
+export const dependencyRefSchema = union([openCodeNameSchema, qualifiedComponentSchema])
+// Types describe copied files; they never enable package installation or runtime hooks.
 export const componentTypeSchema = zEnum([
 	"agent",
 	"skill",
-	"plugin",
 	"command",
-	"tool",
 	"bundle",
 	"profile",
+	"plugin",
+	"tool",
 ])
-
 export type ComponentType = ZodInfer<typeof componentTypeSchema>
 
-/** Reserved targets (installer-owned files) */
-const RESERVED_TARGETS = new Set([".ocx", "ocx.lock"])
-
-/**
- * Paths that registry components cannot target.
- * These are either OCX-managed files or dangerous paths.
- */
-const BLOCKED_PATHS = [
-	// OCX-managed files
-	".ocx/", // Receipt, state (covers receipt.jsonc)
-	"ocx.jsonc", // OCX config
-	"package.json", // We generate this in .opencode/
-
-	// Dangerous paths
-	".git/", // Git internals
-	".env", // Secrets
-	"node_modules/", // Dependencies
-] as const
-
-/**
- * V2: Target paths are root-relative (no .opencode/ prefix).
- * Blocks protected paths that could compromise security or OCX functionality.
- * Validates path safety using schema-level checks.
- */
-export const targetPathSchema = string()
-	.min(1, "Target path cannot be empty")
-	.refine(
-		(path) => {
-			// No absolute paths
-			if (path.startsWith("/") || /^[a-zA-Z]:/.test(path)) return false
-			// No null bytes
-			if (path.includes("\0")) return false
-			return true
-		},
-		{
-			message: "Target path must be relative and safe (no absolute paths or null bytes)",
-		},
-	)
-	.refine(
-		(path) => {
-			// Check if path is blocked
-			return !BLOCKED_PATHS.some((blocked) => path === blocked || path.startsWith(blocked))
-		},
-		{
-			message: "Target path is protected and cannot be overwritten by registry components",
-		},
-	)
-
-// =============================================================================
-// MCP SERVER SCHEMA (Cargo-style: string URL or full object)
-// =============================================================================
-
-/**
- * OAuth configuration for MCP servers.
- * Supports advanced OAuth flows with custom client configuration.
- */
-export const oauthConfigSchema = object({
-	/** OAuth client ID */
-	clientId: string().optional(),
-	/** OAuth client secret, when required by the authorization server */
-	clientSecret: string().optional(),
-	/** Space-delimited OAuth scopes to request */
-	scope: string().optional(),
-	/** Port for the local OAuth callback server */
-	callbackPort: number().int().min(1).max(65535).optional(),
-	/** Full OAuth redirect URI (takes precedence over callbackPort) */
-	redirectUri: string().optional(),
-}).strict()
-
-export type OAuthConfig = ZodInfer<typeof oauthConfigSchema>
-
-const legacyOAuthConfigSchema = oauthConfigSchema.safeExtend({
-	/** @deprecated Registry v1 compatibility; v2 uses singular `scope` */
-	scopes: array(string()).optional(),
-	/** @deprecated Registry v1 compatibility */
-	authUrl: string().optional(),
-	/** @deprecated Registry v1 compatibility */
-	tokenUrl: string().optional(),
-})
-
-/**
- * Full MCP server configuration object
- */
-export const mcpServerObjectSchema = object({
-	type: zEnum(["remote", "local"]),
-	/** Server URL (relaxed validation - allows non-URL strings) */
-	url: string().optional(),
-	/**
-	 * Command to run for local servers.
-	 * Can be a single string (e.g., "npx foo") or array (e.g., ["npx", "foo"])
-	 */
-	command: union([string(), array(string())]).optional(),
-	environment: record(string(), string()).optional(),
-	headers: record(string(), string()).optional(),
-	/**
-	 * OAuth configuration.
-	 * - true: Enable OAuth with defaults
-	 * - object: Enable OAuth with custom configuration
-	 */
-	oauth: union([boolean(), oauthConfigSchema]).optional(),
-	enabled: boolean().default(true),
-}).refine(
-	(data) => {
-		if (data.type === "remote" && !data.url) {
-			return false
-		}
-		if (data.type === "local" && !data.command) {
-			return false
-		}
-		return true
-	},
-	{
-		message: "Remote MCP servers require 'url', local servers require 'command'",
-	},
-)
-
-export type McpServer = ZodInfer<typeof mcpServerObjectSchema>
-
-const legacyMcpServerObjectSchema = mcpServerObjectSchema.safeExtend({
-	oauth: union([boolean(), legacyOAuthConfigSchema]).optional(),
-})
-
-/**
- * Cargo-style MCP server reference:
- * - String: URL shorthand for remote server (e.g., "https://mcp.example.com")
- * - Object: Full configuration
- */
-export const mcpServerRefSchema = union([string(), mcpServerObjectSchema])
-
-export type McpServerRef = ZodInfer<typeof mcpServerRefSchema>
-
-const legacyMcpServerRefSchema = union([string(), legacyMcpServerObjectSchema])
-
-// =============================================================================
-// COMPONENT FILE SCHEMA (Cargo-style: string path or full object)
-// =============================================================================
-
-/**
- * Full file configuration object.
- * Target validation is deferred to normalizeFile() where component type is known.
- */
-export const componentFileObjectSchema = object({
-	/** Source path in registry */
-	path: string().min(1, "File path cannot be empty"),
-	/** Target path - validation deferred to normalizeFile() for type-aware checking */
-	target: string().min(1, "Target path cannot be empty"),
-})
-
-export type ComponentFileObject = ZodInfer<typeof componentFileObjectSchema>
-
-/**
- * Cargo-style file schema:
- * - String: Path shorthand, target auto-inferred (e.g., "plugins/foo.ts" -> "plugins/foo.ts")
- * - Object: Full configuration with explicit target
- */
-export const componentFileSchema = union([
-	string().min(1, "File path cannot be empty"),
-	componentFileObjectSchema,
+const PROFILE_CONFIG_FILES = new Set([
+	"ocx.jsonc",
+	"opencode.json",
+	"opencode.jsonc",
+	"cli.json",
+	"agents.md",
+])
+const PROTECTED_ROOTS = new Set([".ocx", ".git", ".opencode", "node_modules"])
+const PROTECTED_FILES = new Set([
+	"ocx.lock",
+	"package.json",
+	"package-lock.json",
+	"bun.lock",
+	"bun.lockb",
+	"pnpm-lock.yaml",
+	"yarn.lock",
 ])
 
-export type ComponentFile = ZodInfer<typeof componentFileSchema>
-
-// =============================================================================
-// OPENCODE CONFIG BLOCK SCHEMA
-// =============================================================================
-
-// -----------------------------------------------------------------------------
-// Provider Configuration
-// -----------------------------------------------------------------------------
-
-/**
- * Provider configuration for AI model providers.
- * Supports custom API endpoints, headers, and environment variables.
- */
-export const providerConfigSchema = object({
-	/** API base URL */
-	api: string().optional(),
-	/** Custom headers */
-	headers: record(string(), string()).optional(),
-	/** Environment variables for API keys */
-	env: record(string(), string()).optional(),
-	/** Whether provider is enabled */
-	enabled: boolean().optional(),
-}).passthrough()
-
-export type ProviderConfig = ZodInfer<typeof providerConfigSchema>
-
-// -----------------------------------------------------------------------------
-// LSP, Formatter, Command Configuration
-// -----------------------------------------------------------------------------
-
-/**
- * Language Server Protocol configuration.
- * Defines how to start and configure LSP servers.
- */
-export const lspConfigSchema = object({
-	/** Command to run (string or array of args) */
-	command: union([string(), array(string())]).optional(),
-	/** Whether LSP is enabled */
-	enabled: boolean().optional(),
-}).passthrough()
-
-export type LspConfig = ZodInfer<typeof lspConfigSchema>
-
-/**
- * Formatter configuration for code formatting.
- * Defines the command and file patterns to format.
- */
-export const formatterConfigSchema = object({
-	/** Command to run (string or array of args) */
-	command: union([string(), array(string())]).optional(),
-	/** Glob pattern for files to format */
-	glob: string().optional(),
-}).passthrough()
-
-export type FormatterConfig = ZodInfer<typeof formatterConfigSchema>
-
-/**
- * Custom command configuration.
- * Defines executable commands with descriptions.
- */
-export const commandConfigSchema = object({
-	/** Command description */
-	description: string().optional(),
-	/** The command to run */
-	run: string().optional(),
-}).passthrough()
-
-export type CommandConfig = ZodInfer<typeof commandConfigSchema>
-
-// -----------------------------------------------------------------------------
-// TUI, Server, Keybind, Watcher Configuration
-// -----------------------------------------------------------------------------
-
-/**
- * TUI (Terminal User Interface) configuration.
- */
-export const tuiConfigSchema = object({
-	/** Disable TUI features */
-	disabled: boolean().optional(),
-}).passthrough()
-
-export type TuiConfig = ZodInfer<typeof tuiConfigSchema>
-
-/**
- * Server configuration for OpenCode server mode.
- */
-export const serverConfigSchema = object({
-	/** Server host */
-	host: string().optional(),
-	/** Server port */
-	port: number().optional(),
-}).passthrough()
-
-export type ServerConfig = ZodInfer<typeof serverConfigSchema>
-
-/**
- * Keybind configuration - maps action names to key combinations.
- */
-export const keybindConfigSchema = record(string(), string())
-
-export type KeybindConfig = ZodInfer<typeof keybindConfigSchema>
-
-/**
- * File watcher configuration for automatic reloads.
- */
-export const watcherConfigSchema = object({
-	/** Patterns to include */
-	include: array(string()).optional(),
-	/** Patterns to exclude */
-	exclude: array(string()).optional(),
-}).passthrough()
-
-export type WatcherConfig = ZodInfer<typeof watcherConfigSchema>
-
-// -----------------------------------------------------------------------------
-// Agent Configuration
-// -----------------------------------------------------------------------------
-
-/**
- * Agent configuration options (matches opencode.json agent schema)
- */
-export const agentConfigSchema = object({
-	/** Per-agent model override */
-	model: string().optional(),
-
-	/** Agent description for self-documentation */
-	description: string().optional(),
-
-	/** Maximum iterations/steps for the agent (must be positive integer) */
-	steps: number().int().positive().optional(),
-
-	/** @deprecated Use `steps` instead (must be positive integer) */
-	maxSteps: number().int().positive().optional(),
-
-	/** Agent mode */
-	mode: zEnum(["primary", "subagent", "all"]).optional(),
-
-	/** Tool enable/disable patterns */
-	tools: record(string(), boolean()).optional(),
-
-	/** Sampling temperature (provider-specific limits) */
-	temperature: number().optional(),
-
-	/** Nucleus sampling parameter */
-	top_p: number().optional(),
-
-	/** Additional prompt text */
-	prompt: string().optional(),
-
-	/**
-	 * Permission matrix for agent operations.
-	 * Use `{ "*": "deny" }` for bash to enable read-only agent detection.
-	 */
-	permission: record(
-		string(),
-		union([zEnum(["ask", "allow", "deny"]), record(string(), zEnum(["ask", "allow", "deny"]))]),
-	).optional(),
-
-	/** UI color for the agent */
-	color: string().optional(),
-
-	/** Whether the agent is disabled */
-	disable: boolean().optional(),
-
-	/** Custom options for the agent */
-	options: record(string(), any()).optional(),
-})
-
-export type AgentConfig = ZodInfer<typeof agentConfigSchema>
-
-/**
- * Permission configuration schema (matches opencode.json permission schema)
- * Supports both simple values and per-path patterns
- */
-export const permissionConfigSchema = object({
-	/**
-	 * Bash command permissions.
-	 * - Use `"allow"` for full bash access
-	 * - Use `{ "*": "deny" }` to deny all bash (required for read-only agent detection)
-	 * - Use patterns like `{ "git *": "allow", "*": "deny" }` for partial access
-	 */
-	bash: union([
-		zEnum(["ask", "allow", "deny"]),
-		record(string(), zEnum(["ask", "allow", "deny"])),
-	]).optional(),
-	/** File edit permissions */
-	edit: union([
-		zEnum(["ask", "allow", "deny"]),
-		record(string(), zEnum(["ask", "allow", "deny"])),
-	]).optional(),
-	/** MCP server permissions */
-	mcp: record(string(), zEnum(["ask", "allow", "deny"])).optional(),
-}).catchall(
-	union([zEnum(["ask", "allow", "deny"]), record(string(), zEnum(["ask", "allow", "deny"]))]),
-)
-
-export type PermissionConfig = ZodInfer<typeof permissionConfigSchema>
-
-/**
- * Valid top-level opencode config field names, synced from opencode's published
- * JSON Schema (https://opencode.ai/config.json) into
- * `opencode-config-fields.generated.ts`. Refresh with
- * `bun run scripts/sync-opencode-schema.ts`. This is the authority for which
- * top-level keys `opencodeConfigSchema` accepts, and gives maintainers a
- * deterministic refresh path when opencode adds or removes fields.
- */
-const OPENCODE_CONFIG_FIELDS: ReadonlySet<string> = new Set(
-	Object.keys(OPENCODE_CONFIG_FIELD_KINDS),
-)
-
-/**
- * OpenCode plugin entry.
- *
- * OpenCode accepts either a plugin specifier or a tuple containing the
- * specifier and an options object.
- */
-export const opencodePluginSpecSchema = union([
-	string(),
-	tuple([string(), record(string(), any())]),
-])
-
-export type OpencodePluginSpec = ZodInfer<typeof opencodePluginSpecSchema>
-
-/**
- * OpenCode configuration block.
- *
- * ocx does NOT re-validate opencode's entire config — opencode does that at runtime
- * (its schema is `additionalProperties: false`). ocx only:
- *  - types precisely the fields it actually reads/merges/extends (below), and
- *  - accepts every OTHER valid opencode field via `.passthrough()` so a component
- *    can deliver it unchanged (that's how `enabled_providers`, `disabled_providers`,
- *    etc. now reach `opencode.jsonc`), while
- *  - rejecting any top-level key that is NOT in opencode's field set (`.superRefine`),
- *    matching opencode's own `additionalProperties: false`.
- *
- * The `mcp` string shorthand and other shorthands are ocx extensions layered here;
- * they are intentionally more lenient than opencode's schema.
- */
-export const opencodeConfigSchema = object({
-	/** JSON Schema URL for IDE support */
-	$schema: string().optional(),
-
-	/** Logging level */
-	logLevel: string().optional(),
-
-	/** Username for display */
-	username: string().optional(),
-
-	/** Default model to use */
-	model: string().optional(),
-
-	/** Small/fast model for simple tasks */
-	small_model: string().optional(),
-
-	/** Default agent to use */
-	default_agent: string().optional(),
-
-	/** MCP servers (matches opencode.json 'mcp' field) */
-	mcp: record(string(), mcpServerRefSchema).optional(),
-
-	/** Plugin specifiers, optionally paired with plugin-specific options */
-	plugin: array(opencodePluginSpecSchema).optional(),
-
-	/** Tool enable/disable patterns */
-	tools: record(string(), boolean()).optional(),
-
-	/** Per-agent configuration */
-	agent: record(string(), agentConfigSchema).optional(),
-
-	/** Global instructions to append */
-	instructions: array(string()).optional(),
-
-	/** Permission configuration */
-	permission: permissionConfigSchema.optional(),
-
-	/** Provider configurations */
-	provider: record(string(), providerConfigSchema).optional(),
-
-	/** LSP configurations */
-	lsp: record(string(), lspConfigSchema).optional(),
-
-	/** Formatter configurations */
-	formatter: record(string(), formatterConfigSchema).optional(),
-
-	/** Custom command configurations */
-	command: record(string(), commandConfigSchema).optional(),
-
-	/** Server configuration */
-	server: serverConfigSchema.optional(),
-
-	/** File watcher configuration */
-	watcher: watcherConfigSchema.optional(),
-
-	/** Share configuration (boolean or URL string) */
-	share: union([boolean(), string()]).optional(),
-})
-	// Carry through any other valid opencode field a component ships, unchanged.
-	.passthrough()
-	// Reject top-level keys that are not part of opencode's config schema.
-	.superRefine((value, ctx) => {
-		for (const key of Object.keys(value)) {
-			if (!OPENCODE_CONFIG_FIELDS.has(key)) {
-				ctx.addIssue({
-					code: "custom",
-					path: [key],
-					message:
-						`Unknown opencode config key "${key}" — not part of opencode's config schema. ` +
-						"If opencode added it recently, refresh ocx's field set with " +
-						"`bun run scripts/sync-opencode-schema.ts`.",
-				})
-			}
-		}
-	})
-
-export type OpencodeConfig = ZodInfer<typeof opencodeConfigSchema>
-
-const legacyOpencodeConfigSchema = opencodeConfigSchema.safeExtend({
-	mcp: record(string(), legacyMcpServerRefSchema).optional(),
-})
-
-// =============================================================================
-// COMPONENT MANIFEST SCHEMA
-// =============================================================================
-
-export const componentManifestSchema = object({
-	/** Component name (clean, no alias prefix) */
-	name: openCodeNameSchema,
-
-	/** Component type */
-	type: componentTypeSchema,
-
-	/** Human-readable description */
-	description: string().min(1).max(1024),
-
-	/**
-	 * Files to install (Cargo-style)
-	 * - String: "plugins/foo.ts" -> auto-infers target as "plugins/foo.ts"
-	 * - Object: { path: "...", target: "..." } for explicit control
-	 * - Optional: bundles (deps-only) may have no files
-	 */
-	files: array(componentFileSchema).default([]),
-
-	/**
-	 * Dependencies on other components (Cargo-style)
-	 * - Bare string: "utils" -> same registry alias (implicit)
-	 * - Qualified: "acme/utils" -> cross-registry (explicit)
-	 */
-	dependencies: array(dependencyRefSchema).default([]),
-
-	/** NPM dependencies to install (supports pkg@version syntax) */
-	npmDependencies: array(string()).optional(),
-
-	/** NPM dev dependencies to install (supports pkg@version syntax) */
-	npmDevDependencies: array(string()).optional(),
-
-	/**
-	 * OpenCode configuration to merge into opencode.json
-	 * Use this for: mcp servers, plugins, tools, agent config, instructions, permissions
-	 */
-	opencode: opencodeConfigSchema.optional(),
-})
-
-export type ComponentManifest = ZodInfer<typeof componentManifestSchema>
-
-export const legacyComponentManifestSchema = componentManifestSchema.extend({
-	opencode: legacyOpencodeConfigSchema.optional(),
-})
-
-// =============================================================================
-// NORMALIZER FUNCTIONS (Parse, Don't Validate - Law 2)
-// =============================================================================
-
-/**
- * Validates path doesn't contain traversal attacks.
- * Fails fast with descriptive error (Law 4: Fail Fast, Fail Loud).
- * Uses path.normalize for proper traversal detection.
- * @param filePath - The path to validate
- * @throws ValidationError if path contains traversal patterns
- */
 export function validateSafePath(filePath: string): void {
-	if (isAbsolute(filePath)) {
-		throw new ValidationError(`Invalid path: "${filePath}" - absolute paths not allowed`)
+	const unified = filePath.normalize("NFC").replace(/\\/g, "/")
+	if (
+		!unified ||
+		isAbsolute(filePath) ||
+		/^[a-zA-Z]:/.test(unified) ||
+		unified.startsWith("~") ||
+		unified.includes("\0")
+	) {
+		throw new ValidationError(`Invalid path "${filePath}": expected a relative file path`)
 	}
-	if (filePath.startsWith("~")) {
-		throw new ValidationError(`Invalid path: "${filePath}" - home directory paths not allowed`)
-	}
-	const normalized = normalize(filePath)
-	if (normalized.startsWith("..")) {
-		throw new ValidationError(`Invalid path: "${filePath}" - path traversal not allowed`)
+	if (
+		unified
+			.split("/")
+			.some(
+				(segment) =>
+					!segment ||
+					segment === "." ||
+					segment === ".." ||
+					/[. ]$|[<>:"|?*]/.test(segment) ||
+					Array.from(segment).some((character) => character.charCodeAt(0) < 32) ||
+					/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment),
+			)
+	) {
+		throw new ValidationError(
+			`Invalid path "${filePath}": empty and traversal segments are not allowed`,
+		)
 	}
 }
 
-/**
- * V2: Infer target path from source path (root-relative, no prefix).
- * The path is used as-is since targets are now root-relative.
- * e.g., "plugins/foo.ts" -> "plugins/foo.ts"
- */
+export function validateFileTarget(target: string, componentType?: ComponentType): void {
+	validateSafePath(target)
+	const normalized = posix.normalize(target.replace(/\\/g, "/"))
+	const root = normalized.split("/")[0]?.toLowerCase() ?? ""
+	if (
+		PROTECTED_ROOTS.has(root) ||
+		PROTECTED_FILES.has(normalized.toLowerCase()) ||
+		root === ".env" ||
+		root.startsWith(".env.")
+	) {
+		throw new ValidationError(`Target "${target}" is reserved and cannot be installed`)
+	}
+	if (PROFILE_CONFIG_FILES.has(normalized.toLowerCase()) && componentType !== "profile") {
+		throw new ValidationError(
+			`Only a profile may own "${target}". Components copy files; they do not patch configuration.`,
+		)
+	}
+	try {
+		validatePath("/ocx-validation-root", normalized)
+	} catch (error) {
+		if (error instanceof PathValidationError)
+			throw new ValidationError(`Invalid target "${target}": ${error.message}`)
+		throw error
+	}
+}
+
+const relativeFileSchema = string().superRefine((value, context) => {
+	try {
+		validateSafePath(value)
+	} catch (error) {
+		context.addIssue({
+			code: "custom",
+			message: error instanceof Error ? error.message : String(error),
+		})
+	}
+})
+export const targetPathSchema = relativeFileSchema
+export const componentFileObjectSchema = object({
+	path: relativeFileSchema,
+	target: relativeFileSchema,
+}).strict()
+export const componentFileSchema = union([relativeFileSchema, componentFileObjectSchema])
+export type ComponentFileObject = ZodInfer<typeof componentFileObjectSchema>
+export type ComponentFile = ZodInfer<typeof componentFileSchema>
 export function inferTargetPath(sourcePath: string): string {
 	return sourcePath
 }
 
-/**
- * V2: Validate a file target path.
- * Checks for reserved paths, blocked paths, and uses runtime containment validation.
- * Component type is inferred from target path (behavior-based, not explicit).
- * @param target - The target path to validate
- * @param componentType - Optional type hint for additional validation context
- * @throws ValidationError if target is invalid
- */
-export function validateFileTarget(target: string, componentType?: ComponentType): void {
-	// Check reserved targets
-	if (RESERVED_TARGETS.has(target)) {
-		throw new ValidationError(`Target "${target}" is reserved for installer use`)
-	}
-
-	// Validate path safety using battle-tested validation
-	try {
-		validatePath("/dummy/base", target) // Just validates the path structure
-	} catch (error) {
-		if (error instanceof PathValidationError) {
-			throw new ValidationError(`Invalid target "${target}": ${error.message}`)
-		}
-		throw error
-	}
-
-	// Check blocked paths (except for profiles, which install to their own directory)
-	const isProfile = componentType === "profile"
-	if (!isProfile) {
-		// Normalize the target path to evaluate the cleaned/resolved segments
-		// This prevents bypass via paths like "foo/../.git/config"
-		const normalized = normalize(target)
-
-		// After normalization, check if path lands in blocked prefixes
-		const isBlocked = BLOCKED_PATHS.some(
-			(blocked) => normalized === blocked || normalized.startsWith(blocked),
-		)
-		if (isBlocked) {
-			throw new ValidationError(
-				`Target path '${target}' is protected and cannot be overwritten by registry components`,
-			)
-		}
-	}
-}
-
-/**
- * V2: Normalize a file entry from string shorthand to full object.
- * All targets are root-relative (no .opencode/ prefix logic).
- * @param file - The file entry to normalize
- * @param componentType - Optional component type for validation context
- */
 export function normalizeFile(
 	file: ComponentFile,
 	componentType?: ComponentType,
 ): ComponentFileObject {
-	if (typeof file === "string") {
-		validateSafePath(file)
-		const target = inferTargetPath(file)
-		validateFileTarget(target, componentType)
-		return {
-			path: file,
-			target,
-		}
+	const entry = typeof file === "string" ? { path: file, target: file } : file
+	validateSafePath(entry.path)
+	validateFileTarget(entry.target, componentType)
+	return {
+		path: entry.path.normalize("NFC").replace(/\\/g, "/"),
+		target: entry.target.normalize("NFC").replace(/\\/g, "/"),
 	}
-
-	validateSafePath(file.path)
-	validateSafePath(file.target)
-	validateFileTarget(file.target, componentType)
-	return file
 }
 
-/**
- * Normalize an MCP server entry from URL shorthand to full object
- */
-export function normalizeMcpServer(server: McpServerRef): McpServer {
-	if (typeof server === "string") {
-		return {
-			type: "remote",
-			url: server,
-			enabled: true,
+const semverSchema = string().regex(
+	/^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$/,
+	"Expected a semantic version",
+)
+export const componentManifestSchema = object({
+	name: openCodeNameSchema,
+	type: componentTypeSchema,
+	description: string().min(1).max(1024),
+	version: semverSchema.optional(),
+	files: array(componentFileSchema).default([]),
+	dependencies: array(dependencyRefSchema).default([]),
+})
+	.strict()
+	.superRefine((component, context) => {
+		for (const [index, file] of component.files.entries()) {
+			try {
+				normalizeFile(file, component.type)
+			} catch (error) {
+				context.addIssue({
+					code: "custom",
+					path: ["files", index],
+					message: error instanceof Error ? error.message : String(error),
+				})
+			}
 		}
-	}
-	return server
-}
-
-/**
- * Normalized opencode config with MCP servers expanded
- */
-export interface NormalizedOpencodeConfig extends Omit<OpencodeConfig, "mcp"> {
-	mcp?: Record<string, McpServer>
-}
-
-/**
- * Normalized component manifest with all shorthands expanded
- */
-export interface NormalizedComponentManifest extends Omit<ComponentManifest, "files" | "opencode"> {
+	})
+export type ComponentManifest = ZodInfer<typeof componentManifestSchema>
+export interface NormalizedComponentManifest extends Omit<ComponentManifest, "files"> {
 	files: ComponentFileObject[]
-	opencode?: NormalizedOpencodeConfig
 }
-
-/**
- * Normalize all Cargo-style shorthands in a component manifest
- * Call this at the parse boundary to get fully-typed objects
- */
 export function normalizeComponentManifest(
 	manifest: ComponentManifest,
 ): NormalizedComponentManifest {
-	// Normalize MCP servers inside opencode block
-	let normalizedOpencode: NormalizedOpencodeConfig | undefined
-	if (manifest.opencode) {
-		// Destructure to exclude mcp from spread (Law 2: Parse, Don't Validate)
-		// Only include mcp if present - avoid setting undefined (which would overwrite during mergeDeep)
-		const { mcp, ...rest } = manifest.opencode
-		normalizedOpencode = {
-			...rest,
-			...(mcp && {
-				mcp: Object.fromEntries(
-					Object.entries(mcp).map(([name, server]) => [name, normalizeMcpServer(server)]),
-				),
-			}),
-		}
-	}
-
-	return {
-		...manifest,
-		files: manifest.files.map((file) => normalizeFile(file, manifest.type)),
-		opencode: normalizedOpencode,
-	}
+	return { ...manifest, files: manifest.files.map((file) => normalizeFile(file, manifest.type)) }
 }
-
-// =============================================================================
-// REGISTRY SCHEMA
-// =============================================================================
-
-const REGISTRY_SCHEMA_VERSIONED_URL_REGEX = new RegExp(
-	`^https://${OCX_DOMAIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/schemas/v([1-9]\\d*)/registry\\.json$`,
-)
 
 export interface RegistrySchemaUrlIssue {
 	issue: Exclude<RegistryCompatIssue, "invalid-format">
@@ -880,213 +207,80 @@ export interface RegistrySchemaUrlIssue {
 	detectedMajor?: number
 }
 
-/**
- * Classify registry schema URL compatibility.
- * Single source of truth for local manifests and remote index payloads.
- */
 export function classifyRegistrySchemaIssue(document: unknown): RegistrySchemaUrlIssue | null {
-	if (document === null || document === undefined || typeof document !== "object") {
-		return null
+	if (!document || typeof document !== "object") return null
+	const value = (document as Record<string, unknown>).$schema
+	if (value === REGISTRY_SCHEMA_LATEST_URL) return null
+	const schemaUrl = typeof value === "string" ? value : undefined
+	const prefix = `https://${OCX_DOMAIN}/schemas/v`
+	const version = schemaUrl?.startsWith(prefix)
+		? schemaUrl.slice(prefix.length).match(/^(\d+)\/registry\.json$/)?.[1]
+		: undefined
+	const detectedMajor = version ? Number(version) : undefined
+	return {
+		issue:
+			value === undefined
+				? "legacy-schema-v1"
+				: detectedMajor
+					? "unsupported-schema-version"
+					: "invalid-schema-url",
+		remediation: `OCX 3 requires the file-only registry schema ${REGISTRY_SCHEMA_LATEST_URL}. Use OCX 2 for legacy registries; changing the URL alone does not migrate config patches or npm dependencies.`,
+		...(schemaUrl !== undefined && { schemaUrl }),
+		supportedMajor: REGISTRY_SCHEMA_LATEST_MAJOR,
+		...(detectedMajor !== undefined && { detectedMajor }),
 	}
-
-	const documentRecord = document as Record<string, unknown>
-	const hasSchemaField = Object.hasOwn(documentRecord, "$schema")
-	if (!hasSchemaField) {
-		return {
-			issue: "legacy-schema-v1",
-			remediation:
-				`This registry uses legacy schema v1 (missing $schema). ` +
-				`Set "$schema" to "${REGISTRY_SCHEMA_LATEST_URL}".`,
-			supportedMajor: REGISTRY_SCHEMA_LATEST_MAJOR,
-		}
-	}
-
-	const schemaUrl = documentRecord.$schema
-
-	if (typeof schemaUrl !== "string") {
-		return {
-			issue: "invalid-schema-url",
-			remediation: `Registry $schema must be a canonical URL like "${REGISTRY_SCHEMA_LATEST_URL}".`,
-			schemaUrl: String(schemaUrl),
-			supportedMajor: REGISTRY_SCHEMA_LATEST_MAJOR,
-		}
-	}
-
-	if (!schemaUrl) {
-		return {
-			issue: "invalid-schema-url",
-			remediation: `Registry $schema must be a canonical URL like "${REGISTRY_SCHEMA_LATEST_URL}".`,
-			schemaUrl,
-			supportedMajor: REGISTRY_SCHEMA_LATEST_MAJOR,
-		}
-	}
-
-	if (schemaUrl === REGISTRY_SCHEMA_UNVERSIONED_URL) {
-		return {
-			issue: "legacy-schema-v1",
-			remediation:
-				`Schema URL "${REGISTRY_SCHEMA_UNVERSIONED_URL}" is legacy v1. ` +
-				`Use "${REGISTRY_SCHEMA_LATEST_URL}" instead.`,
-			schemaUrl,
-			supportedMajor: REGISTRY_SCHEMA_LATEST_MAJOR,
-		}
-	}
-
-	const versionMatch = schemaUrl.match(REGISTRY_SCHEMA_VERSIONED_URL_REGEX)
-	if (!versionMatch) {
-		return {
-			issue: "invalid-schema-url",
-			remediation: `Registry $schema must be a canonical URL like "${REGISTRY_SCHEMA_LATEST_URL}".`,
-			schemaUrl,
-			supportedMajor: REGISTRY_SCHEMA_LATEST_MAJOR,
-		}
-	}
-
-	const majorToken = versionMatch[1]
-	if (!majorToken) {
-		return {
-			issue: "invalid-schema-url",
-			remediation: `Registry $schema must be a canonical URL like "${REGISTRY_SCHEMA_LATEST_URL}".`,
-			schemaUrl,
-			supportedMajor: REGISTRY_SCHEMA_LATEST_MAJOR,
-		}
-	}
-
-	const major = Number.parseInt(majorToken, 10)
-	if (major !== REGISTRY_SCHEMA_LATEST_MAJOR) {
-		return {
-			issue: "unsupported-schema-version",
-			remediation:
-				`Schema major v${major} is unsupported. ` +
-				`Use "${REGISTRY_SCHEMA_LATEST_URL}" (v${REGISTRY_SCHEMA_LATEST_MAJOR}).`,
-			schemaUrl,
-			supportedMajor: REGISTRY_SCHEMA_LATEST_MAJOR,
-			detectedMajor: major,
-		}
-	}
-
-	return null
 }
 
-/**
- * Semver regex for version validation
- */
-const semverRegex = /^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$/
-
-/**
- * Registry manifest schema.
- *
- * `name`, `version`, and `author` are **required** metadata.
- * This is intentional — every published registry must be identifiable and
- * versioned so that OCX can resolve, cache, and diff registries reliably.
- * Omitting `name` or `version` is a validation error at parse time
- * (Law 4: Fail Fast, Fail Loud).
- */
 export const registrySchema = object({
-	/** JSON Schema URL for IDE support */
-	$schema: string().optional(),
-
-	/** Registry display name (required — identifies the registry to users and tooling) */
-	name: string().min(1, "Registry name cannot be empty"),
-
-	/** Registry version, semver (required — enables deterministic resolution and caching) */
-	version: string().regex(semverRegex, { message: "Version must be valid semver" }),
-
-	/** Registry author (required) */
-	author: string().min(1, "Author cannot be empty"),
-
-	/** Minimum OpenCode version required (semver, e.g., "1.0.0") */
-	opencode: string()
-		.regex(semverRegex, {
-			message: "OpenCode version must be valid semver",
-		})
-		.optional(),
-
-	/** Minimum OCX CLI version required (semver, e.g., "1.0.0") */
-	ocx: string()
-		.regex(semverRegex, {
-			message: "OCX version must be valid semver",
-		})
-		.optional(),
-
-	/** Components in this registry */
+	$schema: literal(REGISTRY_SCHEMA_LATEST_URL),
+	name: string().min(1),
+	version: semverSchema,
+	author: string().min(1),
+	opencode: semverSchema.optional(),
+	ocx: semverSchema.optional(),
 	components: array(componentManifestSchema),
-}).refine(
-	(data) => {
-		// All dependencies must either:
-		// 1. Be a bare name that exists in this registry
-		// 2. Be a qualified cross-registry reference (validated at install time)
-		const componentNames = new Set(data.components.map((c) => c.name))
-		for (const component of data.components) {
-			for (const dep of component.dependencies) {
-				// Only validate bare (same-registry) dependencies
-				if (!dep.includes("/") && !componentNames.has(dep)) {
-					return false
-				}
+})
+	.strict()
+	.superRefine((registry, context) => {
+		const issue = classifyRegistrySchemaIssue(registry)
+		if (issue) context.addIssue({ code: "custom", path: ["$schema"], message: issue.remediation })
+		const names = new Set<string>()
+		for (const [index, component] of registry.components.entries()) {
+			if (names.has(component.name))
+				context.addIssue({
+					code: "custom",
+					path: ["components", index, "name"],
+					message: "Duplicate component name",
+				})
+			names.add(component.name)
+		}
+		for (const [index, component] of registry.components.entries()) {
+			for (const dependency of component.dependencies) {
+				if (!dependency.includes("/") && !names.has(dependency))
+					context.addIssue({
+						code: "custom",
+						path: ["components", index, "dependencies"],
+						message: `Unknown component dependency "${dependency}"`,
+					})
 			}
 		}
-		return true
-	},
-	{
-		message:
-			"Bare dependencies must reference components that exist in the registry. Use qualified references (e.g., 'other-registry/component') for cross-registry dependencies.",
-	},
-)
-
+	})
 export type Registry = ZodInfer<typeof registrySchema>
-
-// =============================================================================
-// PACKUMENT SCHEMA (npm-style versioned component)
-// =============================================================================
-
 export const packumentSchema = object({
-	/** Component name */
 	name: openCodeNameSchema,
-
-	/** Latest version */
-	"dist-tags": object({
-		latest: string(),
-	}),
-
-	/** All versions */
+	"dist-tags": object({ latest: semverSchema }),
 	versions: record(string(), componentManifestSchema),
 })
-
 export type Packument = ZodInfer<typeof packumentSchema>
-
-// =============================================================================
-// REGISTRY INDEX SCHEMA
-// =============================================================================
-
 export const registryIndexSchema = object({
-	/** JSON Schema URL for IDE support */
-	$schema: string().optional(),
-
-	/** Registry author */
+	$schema: literal(REGISTRY_SCHEMA_LATEST_URL),
+	name: string().optional(),
+	version: semverSchema.optional(),
 	author: string(),
-
-	/** Minimum OpenCode version required */
-	opencode: string()
-		.regex(semverRegex, {
-			message: "OpenCode version must be valid semver",
-		})
-		.optional(),
-
-	/** Minimum OCX CLI version required */
-	ocx: string()
-		.regex(semverRegex, {
-			message: "OCX version must be valid semver",
-		})
-		.optional(),
-
-	/** Component summaries for search */
+	opencode: semverSchema.optional(),
+	ocx: semverSchema.optional(),
 	components: array(
-		object({
-			name: openCodeNameSchema,
-			type: componentTypeSchema,
-			description: string(),
-		}),
+		object({ name: openCodeNameSchema, type: componentTypeSchema, description: string() }),
 	),
 })
-
 export type RegistryIndex = ZodInfer<typeof registryIndexSchema>

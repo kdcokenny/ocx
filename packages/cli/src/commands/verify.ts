@@ -4,7 +4,7 @@
  */
 
 import type { Command } from "commander"
-import { LocalConfigProvider } from "../config/provider"
+import { resolveDestination } from "../config/provider"
 import { readReceipt } from "../schemas/config"
 import { resolveInstalledComponentRefs } from "../utils/component-ref-resolver"
 import { ConflictError, EXIT_CODES } from "../utils/errors"
@@ -15,6 +15,8 @@ import { addCommonOptions, addVerboseOption } from "../utils/shared-options"
 import { createSpinner } from "../utils/spinner"
 
 export interface VerifyOptions {
+	profile?: string
+	project?: boolean
 	cwd?: string
 	quiet?: boolean
 	verbose?: boolean
@@ -27,6 +29,7 @@ export function registerVerifyCommand(program: Command): void {
 		.description("Verify integrity of installed components")
 		.argument("[components...]", "Components to verify (optional, verifies all if omitted)")
 
+	cmd.option("--project", "Use project files").option("-p, --profile <name>", "Use profile files")
 	addCommonOptions(cmd)
 	addVerboseOption(cmd)
 
@@ -40,8 +43,7 @@ export function registerVerifyCommand(program: Command): void {
 }
 
 async function runVerify(componentNames: string[], options: VerifyOptions): Promise<void> {
-	const cwd = options.cwd ?? process.cwd()
-	const provider = await LocalConfigProvider.requireInitialized(cwd)
+	const provider = await resolveDestination(options)
 
 	// V1: Read receipt
 	const receipt = await readReceipt(provider.cwd)

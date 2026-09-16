@@ -16,7 +16,7 @@ import { existsSync, lstatSync, readdirSync, realpathSync, rmSync, unlinkSync } 
 import { homedir } from "node:os"
 import path from "node:path"
 import type { Command } from "commander"
-import { getGlobalConfig, getProfilesDir } from "../../profile/paths"
+import { getGlobalConfig, getGlobalOcxRoot, getProfilesDir } from "../../profile/paths"
 import {
 	detectInstallMethod,
 	getExecutablePath,
@@ -347,11 +347,10 @@ function getPackageManagerCommand(method: InstallMethod): string {
 
 /**
  * Get the OCX global config root directory.
- * @returns Path to ~/.config/opencode/
+ * @returns The OCX configuration root, respecting XDG_CONFIG_HOME.
  */
 function getGlobalConfigRoot(): string {
-	const base = process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config")
-	return path.join(base, "opencode")
+	return getGlobalOcxRoot()
 }
 
 /**
@@ -393,6 +392,19 @@ function buildConfigTargets(): UninstallTarget[] {
 			safetyStatus: classifyTargetSafety({ rootPath, absolutePath: globalConfig, kind }),
 		})
 	}
+
+	// Remove empty operation metadata, preserving any recovery journal or live lock.
+	const metadata = path.join(rootPath, ".ocx")
+	const metadataKind = getPathKind(metadata)
+	targets.push({
+		rootPath,
+		relativePath: ".ocx",
+		absolutePath: metadata,
+		displayPath: tildify(metadata),
+		kind: metadataKind,
+		deleteIfEmpty: true,
+		safetyStatus: classifyTargetSafety({ rootPath, absolutePath: metadata, kind: metadataKind }),
+	})
 
 	// Root directory (only delete if empty after other removals)
 	const rootKind = getPathKind(rootPath)

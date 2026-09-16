@@ -1,7 +1,6 @@
 export type { CheckFailure, CheckResult, VersionCheckResult, VersionProvider } from "./check"
 export { checkForUpdate, EXPLICIT_UPDATE_TIMEOUT_MS } from "./check"
 export { getDownloadBaseUrl, getDownloadUrl } from "./download"
-export { registerUpdateCheckHook } from "./hook"
-export { notifyUpdate, notifyUpdated, notifyUpToDate } from "./notify"
+export { notifyUpdated, notifyUpToDate } from "./notify"
 export type { VersionProvider as IVersionProvider } from "./types"
 export { BuildTimeVersionProvider, defaultVersionProvider } from "./version-provider"
