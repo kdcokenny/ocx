@@ -1,4 +1,4 @@
-import { mkdir, realpath, writeFile } from "node:fs/promises"
+import { lstat, mkdir, realpath, writeFile } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { normalizeFile } from "../schemas/registry"
 import type { DryRunResult } from "../utils/dry-run"
@@ -31,7 +31,18 @@ export class BuildRegistryError extends Error {
 export async function buildRegistry(
 	options: BuildRegistryOptions,
 ): Promise<BuildRegistryResult | DryRunResult> {
-	const source = await realpath(resolve(options.source))
+	const source = resolve(options.source)
+	try {
+		const info = await lstat(source)
+		if (!info.isDirectory() || info.isSymbolicLink())
+			throw new BuildRegistryError("Registry source must be a real directory")
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT")
+			throw new BuildRegistryError("Registry validation failed", [
+				`Source directory does not exist: ${source}`,
+			])
+		throw error
+	}
 	const out = resolve(options.out)
 	const canonical = async (path: string): Promise<string> => {
 		try {
@@ -46,9 +57,10 @@ export async function buildRegistry(
 		return !path || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path))
 	}
 	const canonicalOut = await canonical(out)
+	const canonicalSource = await realpath(source)
 	const sourceFiles = await canonical(join(source, "files"))
 	if (
-		contains(canonicalOut, source) ||
+		contains(canonicalOut, canonicalSource) ||
 		contains(canonicalOut, sourceFiles) ||
 		contains(sourceFiles, canonicalOut)
 	)

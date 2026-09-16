@@ -217,14 +217,14 @@ test("profile roots and individual profiles cannot escape through symlinks", asy
 	const external = join(fixture, "external")
 	await mkdir(external)
 	await mkdir(join(fixture, "config/ocx"), { recursive: true })
-	await symlink(external, join(fixture, "config/ocx/profiles"))
+	await symlink(external, join(fixture, "config/ocx/profiles"), "dir")
 	const add = await run(["profile", "add", "work"])
 	expect(add.code).not.toBe(0)
 	expect(add.stderr).toContain("real directory")
 	expect(await Bun.file(join(external, "work/ocx.jsonc")).exists()).toBe(false)
 	await rm(join(fixture, "config/ocx/profiles"))
 	await run(["profile", "add", "real"])
-	await symlink(profile("real"), profile("linked"))
+	await symlink(profile("real"), profile("linked"), "dir")
 	expect(JSON.parse((await run(["profile", "list", "--json"])).stdout).profiles).toEqual(["real"])
 	for (const args of [
 		["profile", "show", "linked"],

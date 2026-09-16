@@ -181,3 +181,51 @@ test("a profile renamed after destination resolution is not recreated by install
 	expect(await Bun.file(join(root, "ocx/profiles/work/ocx.jsonc")).exists()).toBe(false)
 	expect(await Bun.file(join(root, "ocx/profiles/renamed/ocx.jsonc")).exists()).toBe(true)
 })
+
+test.each([
+	"stage",
+	"previous",
+	"candidate",
+	"output",
+])("publication recovery rejects a replaced %s directory without touching external files", async (replaced) => {
+	const out = join(root, "dist")
+	const stage = join(root, ".dist.ocx-publish-interrupted")
+	const external = join(root, "external")
+	const journal = `${out}.ocx-publication.json`
+	await mkdir(join(external, "previous"), { recursive: true })
+	await writeFile(join(external, "previous/original"), "external original")
+	if (replaced === "stage") await symlink(external, stage, "dir")
+	else {
+		await mkdir(stage)
+		const path = replaced === "output" ? out : join(stage, replaced)
+		await symlink(external, path, "dir")
+	}
+	await writeFile(journal, JSON.stringify({ stage }))
+	await expect(
+		publishDirectory(out, async () => {
+			throw new Error("Must not populate while recovery is unsafe")
+		}),
+	).rejects.toThrow("real directory")
+	expect(await readFile(join(external, "previous/original"), "utf8")).toBe("external original")
+	expect(await Bun.file(journal).exists()).toBe(true)
+})
+
+test("publication recovery retains a journal whose stage is missing", async () => {
+	const out = join(root, "dist")
+	const journal = `${out}.ocx-publication.json`
+	await mkdir(out)
+	await writeFile(join(out, "original"), "preserved")
+	await writeFile(journal, JSON.stringify({ stage: join(root, ".dist.ocx-publish-missing") }))
+	await expect(publishDirectory(out, async () => {})).rejects.toThrow("stage is missing")
+	expect(await readFile(join(out, "original"), "utf8")).toBe("preserved")
+	expect(await Bun.file(journal).exists()).toBe(true)
+})
+
+test("publication recovery does not follow a symlinked journal", async () => {
+	const out = join(root, "dist")
+	const external = join(root, "external.json")
+	await writeFile(external, "external data")
+	await symlink(external, `${out}.ocx-publication.json`, "file")
+	await expect(publishDirectory(out, async () => {})).rejects.toThrow("regular file")
+	expect(await readFile(external, "utf8")).toBe("external data")
+})

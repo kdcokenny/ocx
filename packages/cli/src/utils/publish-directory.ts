@@ -14,6 +14,18 @@ async function exists(path: string): Promise<boolean> {
 	}
 }
 
+async function directoryExists(path: string): Promise<boolean> {
+	try {
+		const info = await lstat(path)
+		if (!info.isDirectory() || info.isSymbolicLink())
+			throw new ConflictError(`Publication path must be a real directory: ${path}`)
+		return true
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
+		throw error
+	}
+}
+
 /** Prepare a complete build, preserving the previous output across failures and process exits.
  * Re-running publication recovers its journal. Serve immutable deployments, not this build directory.
  */
@@ -32,6 +44,9 @@ export async function publishDirectory(
 		async () => {
 			const recover = async () => {
 				if (!(await exists(journal))) return
+				const journalInfo = await lstat(journal)
+				if (!journalInfo.isFile() || journalInfo.isSymbolicLink())
+					throw new ConflictError(`Publication journal must be a regular file: ${journal}`)
 				const record: unknown = JSON.parse(await readFile(journal, "utf8"))
 				if (
 					!record ||
@@ -43,10 +58,15 @@ export async function publishDirectory(
 				)
 					throw new ConflictError(`Invalid publication journal: ${journal}`)
 				const stage = record.stage
+				if (!(await directoryExists(stage)))
+					throw new ConflictError(`Publication stage is missing; recover ${journal} manually`)
 				const backup = join(stage, "previous")
-				if (await exists(backup)) {
-					if (!(await exists(out))) await rename(backup, out)
-					else if (await exists(join(stage, "candidate")))
+				const hasBackup = await directoryExists(backup)
+				const hasCandidate = await directoryExists(join(stage, "candidate"))
+				const hasOutput = await directoryExists(out)
+				if (hasBackup) {
+					if (!hasOutput) await rename(backup, out)
+					else if (hasCandidate)
 						throw new ConflictError(
 							`Output changed during interrupted publication; recover ${journal} manually`,
 						)
@@ -55,11 +75,7 @@ export async function publishDirectory(
 				await rm(journal)
 			}
 			await recover()
-			if (await exists(out)) {
-				const info = await lstat(out)
-				if (!info.isDirectory() || info.isSymbolicLink())
-					throw new ConflictError("Output must be a real directory")
-			}
+			await directoryExists(out)
 			const stage = await mkdtemp(join(parent, prefix))
 			const candidate = join(stage, "candidate")
 			let journaled = false

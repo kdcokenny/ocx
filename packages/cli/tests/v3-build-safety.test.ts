@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { REGISTRY_SCHEMA_LATEST_URL } from "../src/constants"
-import { buildRegistry } from "../src/lib/build-registry"
+import { BuildRegistryError, buildRegistry } from "../src/lib/build-registry"
 
 let root: string
 let source: string
@@ -78,6 +78,32 @@ test("output cannot overlap source files, including an ancestor symlink", async 
 test("the default dist directory may be inside the source without replacing source inputs", async () => {
 	await buildRegistry({ source, out: join(source, "dist") })
 	expect(await Bun.file(join(source, "dist/index.json")).exists()).toBe(true)
+	expect(
+		(await Bun.file(join(source, "dist/components/asset.json")).json())["dist-tags"].latest,
+	).toBe("1.2.3")
+	expect(await readFile(join(source, "dist/components/asset/skills/data.bin"))).toEqual(
+		Buffer.from([0, 255, 128]),
+	)
 	expect(await Bun.file(join(source, "registry.jsonc")).json()).toEqual(manifest)
 	expect(await readFile(join(source, "files/skills/data.bin"))).toEqual(Buffer.from([0, 255, 128]))
+})
+
+test("missing registry directories retain the structured build error contract", async () => {
+	try {
+		await buildRegistry({ source: join(root, "missing"), out })
+		throw new Error("Expected the build to fail")
+	} catch (error) {
+		expect(error).toBeInstanceOf(BuildRegistryError)
+		expect((error as BuildRegistryError).errors).toEqual([
+			`Source directory does not exist: ${join(root, "missing")}`,
+		])
+	}
+	expect(await readFile(join(out, "previous"), "utf8")).toBe("previous")
+})
+
+test("a symlinked registry root is rejected before canonicalization", async () => {
+	const linked = join(root, "source-link")
+	await symlink(source, linked, "dir")
+	await expect(buildRegistry({ source: linked, out })).rejects.toThrow("real directory")
+	expect(await readFile(join(out, "previous"), "utf8")).toBe("previous")
 })
