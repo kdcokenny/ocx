@@ -1,0 +1,187 @@
+---
+title: Create a registry
+description: Build, test, and publish a static catalog of editable OpenCode files
+---
+
+A registry is a directory of source files and a `registry.jsonc` manifest. OCX builds it into static JSON and assets that can be served by Cloudflare, Vercel, Netlify, or another static host.
+
+## Start from the template
+
+From an OCX V2 checkout, with the [preview CLI](/v2/installation) available:
+
+```sh
+ocx init --registry ./my-registry --namespace my-registry \
+  --author "Your team" --local ./examples/registry-starter
+cd my-registry
+bun install
+```
+
+After a matching OCX 3 release is available, `init --registry` can fetch its template without `--local`. The generated README and AGENTS guide contain the complete contributor instructions, hosting configuration, and examples for each component type.
+
+```text
+my-registry/
+├── registry.jsonc
+├── files/
+│   └── skills/hello-world/SKILL.md
+├── README.md
+├── AGENTS.md
+├── package.json
+├── wrangler.jsonc
+├── vercel.json
+└── netlify.toml
+```
+
+## Add a skill
+
+Create `files/skills/review/SKILL.md`:
+
+```markdown
+---
+name: review
+description: Review a change for concrete regressions and missing verification.
+---
+
+# Review a change
+
+Read the diff and its callers. Identify the trigger and user-visible
+consequence of each defect before reporting it. Include source locations,
+the checks you ran, and any remaining uncertainty.
+```
+
+Add a component entry to the existing `components` array in `registry.jsonc`:
+
+```json
+{
+  "name": "review",
+  "type": "skill",
+  "description": "Review code changes for correctness and regressions",
+  "files": ["skills/review/SKILL.md"],
+  "dependencies": []
+}
+```
+
+Keep supporting scripts, reference files, and templates beside `SKILL.md`, and list each one in `files`. Native [skill discovery and frontmatter](https://opencode.ai/v2/docs/skills) determine how OpenCode presents the installed definition.
+
+## Choose paths and component types
+
+File targets are relative to the destination configuration root: either a profile directory or a project's `.opencode/`. A string maps the same relative path from `files/` to that root. An object can change the target:
+
+```json
+{
+  "path": "reviewer.md",
+  "target": "agents/reviewer.md"
+}
+```
+
+Do not include an `.opencode/` prefix. OCX preserves directory names rather than rewriting singular/plural native discovery paths.
+
+| Type | Typical files | Purpose |
+| --- | --- | --- |
+| `skill` | `skills/<name>/SKILL.md` and supporting assets | Reusable instructions. |
+| `agent` | `agents/<name>.md` | Native agent definition. |
+| `command` | `commands/<name>.md` | Native command template. |
+| `bundle` | Usually no files | Group dependencies. |
+| `profile` | Complete root config files and instructions | Create a named setup. |
+| `plugin`, `tool` | Native-compatible source/support files | File distribution only; no OCX runtime or package installer. |
+
+Only a profile recipe may own root `ocx.jsonc`, `opencode.json(c)`, `cli.json`, or `AGENTS.md`. Ordinary components cannot patch native configuration. Put setup instructions beside the component or package a complete profile recipe when shared settings are essential.
+
+## Add dependencies
+
+Same-registry dependencies use a bare component name. Cross-registry dependencies use a configured alias:
+
+```json
+{
+  "name": "review-kit",
+  "type": "bundle",
+  "description": "Review skill and team reviewer",
+  "files": [],
+  "dependencies": ["review", "team/reviewer"]
+}
+```
+
+The installer resolves `team` in the destination's registry sources. Global sources do not cascade into a profile or project. Cycles and duplicate ownership are rejected; depend on the component that owns a file instead of copying the same target into two components.
+
+## Create a profile recipe
+
+Place complete files under `files/profiles/team/`, then map them to the profile root:
+
+```json
+{
+  "name": "team-profile",
+  "type": "profile",
+  "description": "Team configuration with review guidance",
+  "files": [
+    { "path": "profiles/team/ocx.jsonc", "target": "ocx.jsonc" },
+    { "path": "profiles/team/opencode.jsonc", "target": "opencode.jsonc" },
+    { "path": "profiles/team/AGENTS.md", "target": "AGENTS.md" }
+  ],
+  "dependencies": ["review"]
+}
+```
+
+Use the [profile metadata schema](/v2/configuration#profile-metadata) for `ocx.jsonc`, native settings for `opencode.jsonc`, and plain Markdown instructions for `AGENTS.md`. Do not include credentials, generated dependencies, or service state.
+
+## Validate and build
+
+```sh
+ocx validate .
+ocx build . --out dist --dry-run
+ocx build . --out dist --show-validation
+```
+
+Validation checks schema, files, paths, dependencies, cycles, and target collisions. A build stages complete output before replacing the previous directory. It does not validate the behavior of native plugins or the quality of agent instructions.
+
+During the unpublished preview, use the explicit built CLI above. The template's `bun run build` uses `bunx ocx@next` and needs that preview to exist on npm.
+
+## Test an installation
+
+From the registry directory, serve the built output:
+
+```sh
+bunx wrangler dev
+```
+
+In a second shell where OCX 3 is available, use the URL printed by Wrangler, normally `http://localhost:8787`:
+
+```sh
+mkdir registry-test
+cd registry-test
+ocx init --project
+ocx add team/review --from http://localhost:8787 --project --dry-run
+ocx add team/review --from http://localhost:8787 --project
+ocx verify --project
+```
+
+Read `.opencode/skills/review/SKILL.md`, then exercise it in OpenCode with project discovery enabled. If you added the profile recipe, test it separately:
+
+```sh
+ocx profile add registry-test --source team/team-profile --from http://localhost:8787
+ocx verify --profile registry-test
+ocx oc --profile registry-test
+```
+
+Edit a published file, rebuild, and preview an update to the test destination. Also test a local edit to confirm the resulting conflict is understandable. The [component reference](/v2/cli/components) explains these cases.
+
+## Deploy
+
+Publish the complete `dist/` directory, including `.well-known/`, through a static deployment:
+
+| Host | Template configuration | Command |
+| --- | --- | --- |
+| Cloudflare Workers | `wrangler.jsonc` | `bun run deploy` |
+| Vercel | `vercel.json` | Import the repository or use `bunx vercel --prod`. |
+| Netlify | `netlify.toml` | Import the repository or build, then `bunx netlify deploy --prod --dir dist`. |
+| Other | Build command and output directory | `ocx build . --out dist`, then upload the output. |
+
+The template scripts assume the published OCX 3 preview. Before publication, configure the host to build with the tested source CLI. For reproducible production builds, pin the OCX version you validated.
+
+Serve JSON and assets at their exact generated paths. Disable HTML fallback behavior for missing registry files. For a subpath such as `/opencode-v2`, update discovery metadata to point at `/opencode-v2/index.json` and test that base URL.
+
+Repeat a fresh install, dependency fetch, and verification against the deployment URL. Publishing a valid index alone is not enough if component assets are missing.
+
+## Maintain compatibility
+
+Use a component `version` to version it independently, or bump the registry `version` shared by components without overrides. The default builder emits the latest revision only; it is not a historical version archive. Receipts track the actual installed content.
+
+Keep legacy protocol-2 registries at separate URLs. Changing only the schema URL cannot migrate V1 config patches, runtime plugins, or npm dependency fields. See [protocol 3](/v2/registry-protocol) and [migration](/v2/migration).

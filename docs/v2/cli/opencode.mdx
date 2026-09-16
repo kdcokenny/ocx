@@ -1,0 +1,54 @@
+---
+title: OpenCode launcher
+description: Launch native V2 commands with the selected profile and a private server
+---
+
+```sh
+ocx oc --profile work
+ocx oc --profile work run "Review the current diff"
+ocx oc --profile work api GET /api/health
+ocx oc --profile work debug paths
+```
+
+The alias is `ocx opencode`. Put `-p, --profile <name>` **before** the native command or arguments. Other arguments are passed to OpenCode subject to the routing rules below.
+
+## Profile and executable selection
+
+Profile selection is `--profile`, then `OCX_PROFILE`, then the global default set with `ocx profile use`. Missing or unknown selections fail with an actionable error; the current project never chooses a profile.
+
+The executable comes from profile `bin`, then `OPENCODE_BIN`, then `opencode` on PATH. OCX checks that it identifies itself as OpenCode 2.0.3 or newer within V2. Help and version requests are forwarded, but still use the selected profile and supported executable.
+
+OCX keeps the working directory, forwards terminal input/output, and returns the native process's exit status. Interrupt and termination signals are forwarded to the launched process. It does not maintain a background daemon pool.
+
+## Why a private server
+
+Native OpenCode normally connects local clients to a shared service. OCX launches applicable commands with a private native server so the selected profile determines that session's configuration. See [OpenCode's service documentation](https://opencode.ai/v2/docs/cli#background-service).
+
+Do not pass `--server` or disable standalone behavior through OCX. User-wide service administration belongs to the native command directly.
+
+## Supported routing
+
+These routes are tested against OpenCode 2.0.3:
+
+| Mode | Commands |
+| --- | --- |
+| Private native server | Root terminal, `run`, `mini`, `api`, `models`, `stats` |
+| Private native server | `auth list/login/logout/switch`; `session list/delete/export/import` |
+| Direct native command with profile environment | `serve`, `acp`, `debug paths`, `plugin add/remove`, `mcp add` |
+
+`serve` runs a foreground profile server. ACP uses native standalone behavior. For `mcp add`, use the native `--global` option when you want to target the selected profile rather than the project.
+
+In the tested release, these commands lack the routing needed for the profile launcher and are refused:
+
+- `debug config` and `debug agents`.
+- `plugin list`, `plugin check`, and `plugin update`.
+- `mcp list`, `mcp auth`, and `mcp logout`.
+- User-wide service, pair, upgrade, and uninstall commands.
+
+Use `ocx oc --profile work api ...` for supported profile API operations, or the native CLI directly for user-wide operations. Running a refused command directly does not make it profile-specific.
+
+## Configuration and data
+
+OCX points `OPENCODE_CONFIG_DIR` at the profile and sets native project discovery from `projectConfig`. OpenCode reads the files itself. Provider credentials, session history, and other native data storage remain shared; a private server is not a separate account or filesystem sandbox.
+
+See [profiles](/v2/profiles) for instruction discovery, [configuration](/v2/configuration) for environment precedence, and [troubleshooting](/v2/troubleshooting) for version and routing errors.

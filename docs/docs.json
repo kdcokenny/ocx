@@ -15,15 +15,33 @@
 				"icon": "book-open",
 				"groups": [
 					{
-						"group": "OCX 3 Preview",
+						"group": "Getting started",
+						"pages": ["v2/overview", "v2/installation", "v2/quick-start"]
+					},
+					{
+						"group": "Profiles and configuration",
+						"pages": ["v2/profiles", "v2/configuration"]
+					},
+					{
+						"group": "CLI reference",
 						"pages": [
-							"v2/overview",
-							"v2/profiles",
 							"v2/cli",
-							"v2/registries",
-							"v2/migration",
-							"v2/retirement"
+							"v2/cli/profiles",
+							"v2/cli/opencode",
+							"v2/cli/components",
+							"v2/cli/registries",
+							"v2/cli/configuration",
+							"v2/cli/authoring",
+							"v2/cli/self"
 						]
+					},
+					{
+						"group": "Registries",
+						"pages": ["v2/registries", "v2/registry-authoring", "v2/registry-protocol"]
+					},
+					{
+						"group": "Migration and support",
+						"pages": ["v2/migration", "v2/retirement", "v2/security", "v2/troubleshooting"]
 					}
 				]
 			},
@@ -61,6 +79,7 @@
 							"cli/verify",
 							"cli/registry",
 							"cli/build",
+							"cli/validate",
 							"cli/self",
 							"cli/profile",
 							"cli/config",
@@ -146,7 +165,7 @@
 		"primary": {
 			"type": "button",
 			"label": "Install",
-			"href": "/v2/overview"
+			"href": "/v2/installation"
 		}
 	},
 	"footer": {

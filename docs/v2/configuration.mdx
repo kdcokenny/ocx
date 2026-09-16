@@ -1,0 +1,127 @@
+---
+title: Configuration
+description: OCX metadata, native files, scopes, and selection rules
+---
+
+OCX stores its own metadata in `ocx.jsonc`. OpenCode settings belong in native files such as `opencode.jsonc` and `cli.json`. OCX does not merge or translate those native settings at launch.
+
+## Locations
+
+For an absolute `XDG_CONFIG_HOME`, replace `~/.config` below with its value. A relative value falls back to the home configuration directory.
+
+| File | Purpose |
+| --- | --- |
+| `~/.config/ocx/ocx.jsonc` | Default profile and global registry sources. |
+| `~/.config/ocx/profiles/<name>/ocx.jsonc` | Profile's binary, project policy, and registry sources. |
+| `<project>/.opencode/ocx.jsonc` | Registry sources for that project's installed files. |
+| `<destination>/.ocx/receipt.jsonc` | Generated ownership and integrity record. |
+
+A project destination is the directory you run the command in, or `--cwd <directory>`, with `.opencode/` appended. OCX does not search upward for a different project's metadata.
+
+## Global metadata
+
+Initialize with `ocx init --global`, or set a default with `ocx profile use`:
+
+```jsonc
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v3/ocx.json",
+  "defaultProfile": "work",
+  "registries": {
+    "team": { "url": "https://registry.example.com/opencode-v2" }
+  },
+  "lockRegistries": false
+}
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `defaultProfile` | Unset | Explicit fallback profile for launches and `profile show`. |
+| `registries` | `{}` | Sources for unscoped `search` and `profile add --source`. |
+| `lockRegistries` | `false` | Refuse registry add/remove operations in this scope. |
+| `$schema` | Optional | Editor schema hint. |
+
+`lockRegistries` is a management policy, not a security boundary against someone who can edit the file. Profile metadata has its own smaller schema and does not accept this field.
+
+## Profile metadata
+
+```jsonc
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v3/profile.json",
+  "projectConfig": "ignore",
+  "bin": "/absolute/path/to/opencode-v2",
+  "registries": {
+    "team": { "url": "https://registry.example.com/opencode-v2" }
+  }
+}
+```
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `projectConfig` | `"ignore"` | Native startup discovery: `ignore` or `inherit`. |
+| `bin` | Unset | Executable override, before `OPENCODE_BIN` and `opencode` on PATH. |
+| `registries` | `{}` | Sources for component commands targeting this profile. |
+| `$schema` | Optional | Editor schema hint. |
+
+A profile's sources are independent of global sources and other profiles. Native config supports its own schema and fields; do not put models, providers, or plugins in `ocx.jsonc`.
+
+## Project metadata
+
+Initialize from a repository with `ocx init --project`:
+
+```jsonc
+{
+  "$schema": "https://ocx.kdco.dev/schemas/v3/ocx.json",
+  "registries": {
+    "team": { "url": "https://registry.example.com/opencode-v2" }
+  },
+  "lockRegistries": false
+}
+```
+
+Project metadata uses the global metadata schema, but `defaultProfile` has no selection effect there. Only the global file can set the launch default. Project registry sources do not become profile sources, even when the profile inherits native project configuration.
+
+## Registry authentication
+
+Add request headers by editing the relevant scope's metadata:
+
+```jsonc
+{
+  "registries": {
+    "private": {
+      "url": "https://registry.example.com/opencode-v2",
+      "headers": {
+        "Authorization": "Bearer ${TEAM_REGISTRY_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+OCX expands `${ENV_VAR}` for registry requests. An unset variable fails the request instead of sending an unresolved value. Resolved secrets are not written into receipts. Avoid putting literal credentials in shared metadata or registry URLs.
+
+OpenCode's `{env:...}` and `{file:...}` references are a separate native feature; OCX does not expand them.
+
+## Inspect and edit
+
+```sh
+ocx config show --global
+ocx config show --profile work --json
+ocx config edit --profile work
+ocx config edit --project
+```
+
+Choose exactly one scope. `config show` reports OCX metadata, not a merged native configuration. `config edit` opens `ocx.jsonc` using `VISUAL`, then `EDITOR`, then `vi`; arguments such as `code --wait` are supported. Edit native files directly with your editor.
+
+OCX metadata accepts JSONC comments and trailing commas. Unknown OCX fields are rejected; keeping OpenCode and OCX settings in separate files prevents confusing one contract with the other.
+
+## Selection and environment
+
+| Decision | Order |
+| --- | --- |
+| Profile for launch | `--profile` → `OCX_PROFILE` → global `defaultProfile` |
+| Native executable | Profile `bin` → `OPENCODE_BIN` → `opencode` on PATH |
+| Installation destination | Explicit `--profile <name>` or `--project`; no default |
+
+At launch OCX sets `OPENCODE_CONFIG_DIR` to the profile and the native project-discovery switch from `projectConfig`. It clears inherited inline/alternate config overrides and old OCX bridge variables so they do not silently select a different setup. Other native environment settings retain their native behavior.
+
+See [profile discovery](/v2/profiles#the-two-project-modes) for nested `AGENTS.md` behavior and [launch options](/v2/cli/opencode) for private-server routing.

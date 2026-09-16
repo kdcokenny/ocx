@@ -34,7 +34,7 @@ bun run --cwd packages/cli build
 alias ocx="bun \"$PWD/packages/cli/dist/index.js\""
 ```
 
-The alias uses this checkout's CLI for the current shell. See [preview setup](docs/v2/overview.mdx) for OpenCode installation and binary selection.
+The alias uses this checkout's CLI for the current shell. See [preview setup](docs/v2/installation.mdx) for OpenCode installation and binary selection.
 
 </details>
 

@@ -1,0 +1,97 @@
+---
+title: Installation
+description: Set up the OCX 3 preview alongside the right OpenCode executable
+---
+
+OCX 3 supports **OpenCode 2.0.3 or newer within major version 2**. Install OpenCode separately using its [official V2 documentation](https://opencode.ai/v2/docs). OCX checks the selected executable before launching it.
+
+## Build the development preview
+
+The source checkout and npm CLI require [Bun](https://bun.sh). From a checkout of the OCX V2 branch:
+
+```sh
+bun install --frozen-lockfile
+bun run --cwd packages/cli build
+bun packages/cli/dist/index.js --version
+```
+
+Use the built entry point directly, or define a convenience command for the current shell.
+
+<Tabs>
+  <Tab title="Bash / Zsh">
+    ```sh
+    alias ocx="bun \"$PWD/packages/cli/dist/index.js\""
+    ocx --version
+    ```
+
+    Define the alias while your working directory is the OCX checkout. It continues to refer to that build when you change directories. Open a new shell to return to your usual command, or run `unalias ocx`.
+  </Tab>
+  <Tab title="PowerShell">
+    ```powershell
+    $ocxPreviewEntry = Join-Path (Get-Location) 'packages/cli/dist/index.js'
+    function ocx { & bun $ocxPreviewEntry @args }
+    ocx --version
+    ```
+
+    Keep the function in the same shell session. Run `Remove-Item Function:ocx` to remove it.
+  </Tab>
+</Tabs>
+
+The examples throughout this manual use `ocx` to mean this preview command. Shell aliases are not inherited by package scripts; scripts that call `bunx ocx@next` need the published preview or an explicit local entry point.
+
+## Published preview channel
+
+After the preview has been published, install it with either package manager:
+
+```sh
+bun add --global ocx@next
+# Or, with Bun still available as the CLI runtime:
+npm install --global ocx@next
+```
+
+Check `ocx --version` before using the examples. During the preview, the default release remains OCX 2.0.15 for OpenCode V1; an unqualified install is not the V2 setup.
+
+`ocx self update` follows the preview channel for prerelease builds and refuses to cross major versions. See [self management](/v2/cli/self) for supported installation methods and uninstall behavior.
+
+## Select the OpenCode binary
+
+OCX resolves the executable in this order:
+
+1. The selected profile's `bin` field in `ocx.jsonc`.
+2. The `OPENCODE_BIN` environment variable.
+3. `opencode` on `PATH`.
+
+For a separately installed V2 executable, a shell session can use:
+
+```sh
+export OPENCODE_BIN=/absolute/path/to/opencode-v2
+"$OPENCODE_BIN" --version
+ocx profile add work
+ocx oc --profile work --version
+```
+
+In PowerShell, set `$env:OPENCODE_BIN = 'C:\path\to\opencode.exe'`. The value is an executable path or command name, not a shell command with arguments. Prefer absolute paths; relative paths resolve from the working directory where you launch OCX.
+
+## Keep an existing V1 setup
+
+The frozen legacy client is:
+
+```sh
+bun add --global ocx@2.0.15
+```
+
+A global package install replaces the `ocx` command supplied by a previous global install. A source-preview alias lets you test OCX 3 without replacing that binary.
+
+Keep an OpenCode V1 executable as well as your old profile files if you need rollback. OpenCode V1 and V2 normally use the same command name. OCX 3 stores profiles under `ocx/profiles/`; legacy profiles remain under `opencode/profiles/` in the configuration directory. Use the [migration guide](/v2/migration) to import into a separate profile.
+
+## Check the setup
+
+Once you have created the `work` profile (as above or in the quick start), check:
+
+```sh
+ocx --version
+ocx profile list
+ocx oc --profile work debug paths
+```
+
+The last command should report the selected profile as the native configuration path. If a version or binary check fails, see [troubleshooting](/v2/troubleshooting). Continue with the [quick start](/v2/quick-start).

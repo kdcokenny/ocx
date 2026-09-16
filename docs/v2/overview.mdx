@@ -1,30 +1,61 @@
 ---
 title: OCX for OpenCode V2
-description: Portable profiles and editable file registries
+description: Your OpenCode config, anywhere — portable profiles and editable components
 ---
 
-OCX 3 manages named profiles and files for OpenCode V2. OpenCode owns configuration interpretation, agent execution, sessions, credentials, plugins, MCP, background work, worktrees, notifications, and compaction.
+OCX gives you named OpenCode setups you can use across projects, and a way to share the files that make them useful.
+
+- **Switch profiles.** Keep separate configurations for work, personal projects, and review.
+- **Own your files.** Install agents, skills, commands, and profile recipes from a registry, then edit them directly.
+- **Review updates.** Preview file changes, protect local edits, and verify installations against recorded hashes.
 
 <Note>
-This is the development preview. OCX 3 requires OpenCode 2.0.3 or a newer V2 release. The default OCX release remains 2.0.15 for OpenCode V1 during preview. Existing documentation outside this V2 section describes that legacy line.
+**OCX 3 is the OpenCode V2 preview.** It requires OpenCode 2.0.3 or newer within major version 2. The frozen OCX 2.0.15 line supports OpenCode V1. The legacy documentation remains available in the navigation.
 </Note>
 
-Choose the version for your OpenCode installation:
+## Get started
 
-- **OpenCode V1:** install the frozen client with `npm install -g ocx@2.0.15`; follow the [legacy installation guide](/getting-started/installation).
-- **OpenCode V2:** use the development preview below, or `ocx@next` after preview publication.
-
-Build from a checkout without replacing your installed CLI:
+After [setting up the preview](/v2/installation), create a profile and launch:
 
 ```sh
-bun install --frozen-lockfile
-bun run --cwd packages/cli build
-bun packages/cli/dist/index.js profile add work
-bun packages/cli/dist/index.js oc --profile work
+ocx profile add work
+ocx profile use work
+ocx oc
 ```
 
-After preview publication, `npm install -g ocx@next` selects OCX 3. Install OpenCode V2 independently; its executable must identify itself as V2. Use `OPENCODE_BIN` or a profile's `bin` setting when retaining separate V1 and V2 binaries.
+The profile is an ordinary directory under `~/.config/ocx/profiles/`, or `$XDG_CONFIG_HOME/ocx/profiles/`. Add your native OpenCode configuration, instructions, agents, and skills there. OCX selects the directory; OpenCode loads its contents.
 
-Profiles are ordinary directories. Components are editable files with ownership receipts. OCX performs no launch-time config merge and installs no runtime plugin.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/v2/installation">
+    Set up the development preview and select your OpenCode V2 executable.
+  </Card>
+  <Card title="Quick start" icon="bolt" href="/v2/quick-start">
+    Create, customize, and switch between your first profiles.
+  </Card>
+  <Card title="File registries" icon="box" href="/v2/registries">
+    Install editable components and manage their updates.
+  </Card>
+  <Card title="Moving from V1" icon="arrow-right-arrow-left" href="/v2/migration">
+    Preview an import while keeping your existing setup intact.
+  </Card>
+</CardGroup>
 
-Continue with [profiles](/v2/profiles), [registry installation](/v2/registries), or [legacy import](/v2/migration).
+## What OCX manages
+
+| OCX | OpenCode |
+| --- | --- |
+| Profile creation, cloning, naming, and selection | Native configuration and terminal preferences |
+| Registry sources, file installation, and ownership receipts | Agents, tools, plugins, MCP, and permissions |
+| Update previews, edit protection, and removal | Sessions, credentials, background work, and compaction |
+| Static registry authoring and legacy import | Native runtime and service behavior |
+
+There is no OCX runtime plugin or launch-time configuration overlay. Profiles share OpenCode's native credential and session storage; they are configuration choices, not separate accounts. See [profile behavior](/v2/profiles) for project discovery and instruction loading.
+
+## Explore the reference
+
+- [Configuration](/v2/configuration) explains each OCX file, source scope, and selection rule.
+- [CLI reference](/v2/cli) covers commands, options, examples, and exit codes.
+- [Create a registry](/v2/registry-authoring) walks through publishing your own components.
+- [Troubleshooting](/v2/troubleshooting) covers version checks, file conflicts, and recovery.
+
+OCX is an independent project and is not affiliated with the OpenCode team.

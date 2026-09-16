@@ -1,0 +1,62 @@
+---
+title: Sources and search
+description: Configure scoped registry aliases and browse available or installed components
+---
+
+## Add a registry
+
+```sh
+ocx registry add https://registry.example.com/opencode-v2 --name team --global
+ocx registry add https://registry.example.com/opencode-v2 --name team --profile work
+ocx registry add https://registry.example.com/opencode-v2 --name team --project --dry-run
+```
+
+Choose exactly one scope:
+
+| Scope | Used by |
+| --- | --- |
+| `--global` | Unscoped `search` and `profile add --source`. |
+| `--profile <name>` | Component commands and search for that profile. |
+| `--project` | Component commands and search for that project's `.opencode/`. |
+
+Aliases use lowercase letters/digits separated by single hyphens, up to 64 characters. The URL must use `https:`, `http:`, or `file:` and serve a protocol-3 registry. Adding a source fetches and validates its index, even during a dry-run.
+
+The same alias and URL are an idempotent operation that preserves configured authentication headers. Reusing an alias with another URL, or registering one URL under another alias in the same scope, is a conflict. Remove the old entry before adding the replacement.
+
+For a private registry that requires authentication even to read its index, add the URL and header placeholders through `config edit` first. Then test with `search`. See [authentication](/v2/configuration#registry-authentication).
+
+## List and remove sources
+
+```sh
+ocx registry list --global
+ocx registry ls --profile work --json
+ocx registry remove team --project
+# Alias: ocx registry rm team --project
+```
+
+Removing a source changes metadata, not installed files. Receipts retain their original registry URLs. Changing an alias's URL is not a way to silently move installed components to a new publisher; an installation whose source differs from its receipt is refused.
+
+Registry commands accept `--cwd <directory>`, `--json`, and `-q, --quiet` as well as their required scope. Only `registry add` supports `--dry-run`. Global/project metadata with `lockRegistries: true` refuses source mutations.
+
+## Search available components
+
+```sh
+ocx search
+ocx search review --profile work
+ocx search review --project --limit 50 --json
+```
+
+Without a scope, search reads global sources. `--profile` and `--project` select their own source sets; sources do not cascade between scopes. Search matches names and descriptions, and returns at most 20 results unless you set a positive `--limit`.
+
+Search needs no OpenCode runtime. Registry errors are reported instead of silently presenting incomplete results.
+
+## List installed components
+
+```sh
+ocx search --installed --profile work
+ocx list --installed --project --json
+```
+
+`list` is an alias for `search`. Installed mode reads the selected destination's receipt and requires an explicit profile or project. It lists all installed entries; the search query and result limit apply to catalog search, not this receipt listing. It does not refresh or verify files.
+
+Search supports `--installed`, `-p, --profile`, `--project`, `--limit`, `--cwd`, `--json`, `-q, --quiet`, and `-v, --verbose`. JSON results use `data.components`.

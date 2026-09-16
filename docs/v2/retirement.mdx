@@ -25,3 +25,20 @@ Use OCX `2.0.15` with OpenCode V1. Existing registry URLs and schema URLs remain
 Facade retirement follows this order: publish V1-only notices, disable source synchronization, then archive the four repositories. Archiving preserves read access and history. The validation record tracks delivery status; a source PR alone does not mean public deployments or archiving have occurred.
 
 Third-party V2 plugins remain supported through native OpenCode configuration. OCX's retirement does not restrict them.
+
+## Keep useful instructions
+
+Retiring a runtime plugin does not make its written guidance worthless. All removed agent bodies, command templates, skill guides, and profile notes are preserved as readable Markdown under `legacy/docs/` in this repository. You can also browse [the frozen source](https://github.com/kdcokenny/ocx/tree/e79df6f/workers). The full legacy website manual remains in the navigation.
+
+When adapting an old definition, separate its useful task instructions from calls to plugin-specific tools. For example, review criteria can remain useful while `delegation_read` or `plan_save` instructions need to be removed or rewritten for the native workflow. The V2 catalog's code-review skill retains a full review method without requiring those retired tools.
+
+## Migration checklist
+
+- Check native background work, notification preferences, and worktree workflows against the behavior you actually use.
+- Remove retired package entries and local runtime plugin files from the new setup; renaming their config key does not port their implementations.
+- Review agents and commands that depend on custom delegation, planning, or worktree tool names.
+- Keep valuable skills and supporting files together when copying them.
+- Use the [import report](/v2/migration) to see omissions before creating the new profile.
+- Retain V1 files and a V1 executable until the replacement workflow is verified.
+
+The [native migration guide](https://opencode.ai/v2/docs/migrate-v1) covers OpenCode's own config compatibility, terminal settings, plugin API, and server/client API changes. OCX's migration has a narrower role: profile storage, file ownership, and explicit import decisions.

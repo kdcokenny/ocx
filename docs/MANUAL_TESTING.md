@@ -2901,8 +2901,8 @@ For maintainability when commands change.
 
 | Section | Source Document | Reference |
 |---------|----------------|-------|
-| Section 2 | [README.md](../README.md) | 34-53 |
-| Section 3 | [README.md](../README.md) | 79-96 |
+| Section 2 | [README.md](https://github.com/kdcokenny/ocx/blob/e79df6f/README.md) | 34-53 |
+| Section 3 | [README.md](https://github.com/kdcokenny/ocx/blob/e79df6f/README.md) | 79-96 |
 | Section 4 | [CLI Commands](./cli/commands.mdx) | init section |
 | Section 5 | [CLI Commands](./cli/commands.mdx) | add section |
 | Section 5A | [Remove Command](./cli/remove.mdx), [CLI Commands](./cli/commands.mdx) | remove section |
@@ -2916,7 +2916,7 @@ For maintainability when commands change.
 | Section 12A | Issue #142 | Profile overlay mode with include/exclude semantics |
 | Section 13 | [Profiles Overview](./profiles/overview.mdx), [Profiles Security](./profiles/security.mdx) | Full docs |
 | Section 14 | [CLI Commands](./cli/commands.mdx) | Error tables |
-| Section 15 | [README.md](../README.md), [CLI Commands](./cli/commands.mdx) | migration + command docs |
+| Section 15 | [README.md](https://github.com/kdcokenny/ocx/blob/e79df6f/README.md), [CLI Commands](./cli/commands.mdx) | migration + command docs |
 
 ### 17.3 Version Tracking
 

@@ -1,0 +1,45 @@
+---
+title: Setup and configuration commands
+description: Initialize metadata and inspect or edit one OCX scope
+---
+
+## Initialize
+
+```sh
+ocx init --global
+ocx init --project
+ocx init --project --cwd /path/to/repository
+```
+
+`--global` creates the global OCX metadata and a `default` profile when absent. If global metadata already exists, it is preserved, including an existing default selection. This command does not import legacy OCX profiles.
+
+`--project` creates `.opencode/ocx.jsonc` in the current directory or `--cwd`. Existing project metadata is an error; it is not overwritten. Native OpenCode config and definitions remain under the same `.opencode/` directory when you add them.
+
+Choose exactly one initialization mode: `--global` (`-g`), `--project`, or `--registry <path>`. Registry scaffolding is covered in [authoring commands](/v2/cli/authoring).
+
+Init also accepts `--cwd`, `--json`, `-q, --quiet`, and `-v, --verbose`. It does not have a dry-run option. For a named profile with no global initialization step, use `ocx profile add <name>`.
+
+## Show metadata
+
+```sh
+ocx config show --global
+ocx config show --profile work
+ocx config show --project --cwd /path/to/repository --json
+```
+
+Choose exactly one of `--global`, `--profile <name>` (`-p`), or `--project`. Human output shows the metadata path and parsed configuration. JSON output returns `path` and `config`.
+
+This command shows OCX metadata, including schema defaults. It does not merge native OpenCode config or show resolved model/provider settings.
+
+## Edit metadata
+
+```sh
+ocx config edit --profile work
+ocx config edit --project
+```
+
+The same scope options, `--cwd`, and `--json` are available. The target metadata file must already exist. OCX invokes `VISUAL`, then `EDITOR`, then `vi`, holding the scope's mutation lock until the editor exits. Editor arguments and quoted executable paths are supported; the setting is not evaluated as a shell script.
+
+For example, use `EDITOR='code --wait'` in a POSIX shell so OCX waits for the edit to finish. With `--json`, the result goes to stdout and the editor's output goes to stderr. An editor failure returns an error.
+
+Edit native `opencode.json(c)`, `cli.json`, `AGENTS.md`, and definitions directly. See the [configuration reference](/v2/configuration) for the accepted OCX fields.

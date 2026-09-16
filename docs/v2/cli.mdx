@@ -1,44 +1,72 @@
 ---
-title: OCX 3 CLI
-description: Explicit profiles, sources, and installation destinations
+title: CLI reference
+description: Commands, destination rules, output formats, and exit codes
 ---
 
-| Command | Purpose |
-| --- | --- |
-| `profile add <name>` | Create an empty profile; optionally `--clone <name>` or `--source <alias/component> [--from <url>]`. |
-| `profile list`, `profile show [name]` | Inspect profiles. |
-| `profile move <name> <new-name>`, `profile remove <name>` | Rename or remove a profile. |
-| `profile use <name>`, `profile use --clear` | Set or clear the explicit default. |
-| `oc [-p <name>] [native arguments...]` | Launch OpenCode V2. Put the profile option before the native command. |
-| `init --project` | Create project OCX source metadata. |
-| `init --global` | Create a default profile and global metadata if absent. |
-| `registry add <url> --name <alias>`, `registry list`, `registry remove <alias>` | Manage sources; choose `--global`, `--profile <name>`, or `--project`. |
-| `config show`, `config edit` | Inspect or edit OCX metadata at one explicit scope. |
-| `search [query]` | Search global sources, or select `--profile` / `--project`. |
-| `search --installed` | List a destination's receipts; requires `--profile` or `--project`. |
-| `add <alias/component...>` | Install files into an explicit destination. `--from <url>` uses an ephemeral source. |
-| `update <alias/component...>` / `update --all` / `update --registry <alias>` | Update one selection in an explicit destination. |
-| `verify [alias/component...]` | Compare installed files to recorded hashes. |
-| `remove <alias/component...>` | Remove owned files and update receipts. |
-| `migrate --from <directory> --profile <new-name>` | Preview an import; see [migration](/v2/migration). |
-| `init --registry <directory>` | Scaffold a static registry. |
-| `validate [directory]`, `build [directory] --out <directory>` | Validate or publish registry files. |
-| `self update`, `self uninstall` | Manage OCX itself. Preview updates stay on npm's `next` channel and cannot cross major versions. |
+Use `ocx --help` or `ocx <command> --help` for the installed version's options. This reference describes OCX 3 for OpenCode V2. `ocx oc --help` forwards to OpenCode's help.
 
-Component mutations support `--dry-run` and `--json`. Updating or removing changed files requires `--force`; first use it with `--dry-run`. Force does not bypass path checks or overwrite unrelated unmanaged files. All component mutations require exactly one of `--profile <name>` or `--project`.
+## Commands
 
-`config edit` invokes the executable in `VISUAL`, then `EDITOR`, then `vi`. Native configuration is edited directly or through OpenCode. `--global` sources are for browsing and profile creation, not a component installation destination.
+| Command | Purpose | Reference |
+| --- | --- | --- |
+| `profile add/list/show/use/move/remove` | Create and manage named setups. | [Profiles](/v2/cli/profiles) |
+| `oc [native arguments...]` | Launch OpenCode using a selected profile. | [OpenCode launcher](/v2/cli/opencode) |
+| `init --global`, `init --project` | Initialize OCX metadata. | [Setup and configuration](/v2/cli/configuration) |
+| `config show/edit` | Inspect or edit OCX metadata at one scope. | [Setup and configuration](/v2/cli/configuration) |
+| `registry add/list/remove` | Manage registry sources. | [Sources and search](/v2/cli/registries) |
+| `search [query]`, `search --installed` | Browse sources or installed components. | [Sources and search](/v2/cli/registries) |
+| `add`, `update`, `remove`, `verify` | Manage owned files in a profile or project. | [Components](/v2/cli/components) |
+| `init --registry`, `validate`, `build` | Author a static file registry. | [Registry authoring commands](/v2/cli/authoring) |
+| `migrate` | Preview or apply an import into a new profile. | [Migration](/v2/migration) |
+| `self update/uninstall` | Manage the OCX installation. | [Self management](/v2/cli/self) |
 
-## Forwarded native commands
+## Choose a destination
 
-OpenCode 2.0.3 supports private-server routing for the root terminal, `run`, `mini`, `api`, `models`, `stats`, `auth list/login/logout/switch`, and `session list/delete/export/import`. Native `serve`, `acp`, `debug paths`, `plugin add/remove`, and `mcp add` run directly against the selected configuration environment. For native MCP additions, use its `--global` option to target the profile instead of a project.
-
-`debug config/agents`, `plugin list/check/update`, `mcp list/auth/logout`, and user-wide service/pair/upgrade/uninstall commands are not forwarded through OCX. They lack the required private-server switch in the tested native release. Help and version requests are forwarded unchanged.
+File operations always require exactly one destination:
 
 ```sh
-ocx oc --profile work run "Review the current diff"
-ocx oc --profile work api GET /api/health
-ocx oc --profile work debug paths
+ocx add team/review --profile work
+ocx add team/review --project
 ```
 
-No automatic update check runs after ordinary OCX commands. Explicit updates check the preview channel. Self-uninstall targets the new OCX storage root and preserves native OpenCode and legacy OCX profile directories.
+The first targets the named profile. The second targets `.opencode/` in the current directory, or the directory supplied by `--cwd`. Initialize a project with `ocx init --project` first.
+
+`OCX_PROFILE` and `profile use` select launches; they never silently select a file-mutation destination. `--global` selects source metadata for browsing and profile creation, not a directory for installing components.
+
+## Common options
+
+Options are command-specific; the detailed pages list the supported set.
+
+| Option | Meaning |
+| --- | --- |
+| `-p, --profile <name>` | Select a profile where supported. |
+| `--project` | Select the current project's `.opencode/`. |
+| `--cwd <path>` | Resolve project or authoring paths from another directory. |
+| `--dry-run` | Prepare and report an operation without applying its changes. |
+| `--json` | Write structured output for automation. |
+| `-q, --quiet` | Suppress normal progress output where supported. |
+| `-v, --verbose` | Include available diagnostic detail where supported. |
+
+A dry-run can still fetch registry files and detect errors. It is a preview, not a reservation: rerunning an operation checks the then-current files and upstream content.
+
+## JSON and automation
+
+Successful JSON shapes depend on the command. For example, search returns `data.components`, profile listing returns `profiles` and `defaultProfile`, and verification returns `verified` and `errors`. Do not assume every success has the same envelope.
+
+Handled failures with `--json` include `success: false`, an `error` with a code and message, and an `exitCode`. Argument-parser failures can still be ordinary CLI errors. Check the process exit code as well as the JSON content.
+
+For dry-run reports, inspect `validation.passed` and any warnings; a preview may successfully describe an operation that would be refused. The [importer](/v2/migration) likewise reports unresolved decisions without applying them.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Command completed; inspect preview warnings when applicable. |
+| `1` | General or argument/operation validation failure. |
+| `6` | Conflict, including modified/missing files found by `verify`. |
+| `65` | Integrity mismatch, including an update blocked by edited or missing owned files. |
+| `66` | Profile, component, or file not found. |
+| `69` | Network or registry response failure. |
+| `78` | Configuration, schema, or registry compatibility failure. |
+
+`oc` returns the native child's exit status, including signal exits. Self-uninstall also distinguishes safety refusals and package-manager follow-up; see [its reference](/v2/cli/self).

@@ -1,3 +1,8 @@
+---
+name: hello-world
+description: Give a brief, friendly greeting suited to the user's context.
+---
+
 # Hello World
 
 A simple example skill demonstrating the OCX skill format.

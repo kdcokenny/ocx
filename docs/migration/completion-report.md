@@ -96,7 +96,7 @@ One internal documentation page remains unmigrated:
 
 | File | Purpose |
 |------|---------|
-| [`mint.json`](../mint.json) | Mintlify configuration, navigation structure, and 11 legacy redirects |
+| [`mint.json` (now `docs.json`)](https://github.com/kdcokenny/ocx/blob/main/docs/docs.json) | Mintlify configuration, navigation structure, and 11 legacy redirects |
 
 ---
 
@@ -180,4 +180,4 @@ The OCX documentation migration meets all quality gates for public launch. Phase
 
 - [`source-target-map.md`](./source-target-map.md) — Complete migration mapping
 - [`mintlify-baseline.md`](./mintlify-baseline.md) — Quality gates and deployment procedures
-- [`../mint.json`](../mint.json) — Mintlify configuration and redirects
+- [Current `docs.json`](https://github.com/kdcokenny/ocx/blob/main/docs/docs.json) — Mintlify configuration and redirects

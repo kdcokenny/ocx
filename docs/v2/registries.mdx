@@ -20,6 +20,8 @@ Profile recipes own complete root config files. Other components own individual 
 
 ## Author a registry
 
+Follow the [complete authoring tutorial](/v2/registry-authoring) for scaffolding, component examples, local installation tests, and deployment. The [protocol reference](/v2/registry-protocol) specifies every manifest field and endpoint.
+
 ```json
 {
   "$schema": "https://ocx.kdco.dev/schemas/v3/registry.json",
@@ -53,6 +55,17 @@ A build emits `index.json`, `.well-known/ocx.json`, component packuments at `com
 The optional registry `opencode` and `ocx` versions describe the author's intended minimum versions. They are metadata, not an additional runtime compatibility check. OCX enforces protocol 3 and checks OpenCode's supported major/minimum when launching.
 
 ## Sources and ownership
+
+Choose the source scope to match the operation:
+
+```sh
+ocx registry add https://registry.kdco.dev/opencode-v2 --name kdco --profile work
+ocx registry list --profile work
+ocx search review --profile work
+ocx add kdco/code-review --profile work --dry-run
+```
+
+Use a local or PR preview URL before the new public catalog is deployed. Global sources are used for browsing and profile creation; profile and project sources are independent. See [source commands](/v2/cli/registries) for every option and authentication setup.
 
 Aliases are chosen by the user. Registry authentication headers can be configured in `ocx.jsonc`, including `${ENV_VAR}` placeholders. Values are resolved for requests without writing the resolved secret into metadata or receipts. Adding the same alias and URL again preserves its existing headers. An ephemeral `--from` source is retained in receipts for updates but is not added to configured sources.
 

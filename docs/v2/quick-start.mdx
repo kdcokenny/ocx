@@ -1,0 +1,98 @@
+---
+title: Quick start
+description: Create a portable setup, add instructions, and install your first component
+---
+
+Complete the [preview installation](/v2/installation) first. These commands use OCX 3 and an OpenCode V2 executable.
+
+## 1. Create a profile
+
+```sh
+ocx profile add work
+ocx profile use work
+ocx profile show work
+```
+
+`profile add` creates native configuration and OCX metadata in `~/.config/ocx/profiles/work/`, or beneath your absolute `XDG_CONFIG_HOME`. `profile use` selects it for future launches. It does not select a destination for file-installation commands.
+
+## 2. Make it yours
+
+Open the profile directory in your editor. Edit `opencode.jsonc` to add your native model, provider, agent, or MCP settings. OCX leaves the native configuration format to OpenCode.
+
+Add an `AGENTS.md` with your usual working instructions, for example:
+
+```markdown
+# Working agreement
+
+Read the project's contribution instructions before editing. Follow existing
+conventions and use the project's documented checks. Explain what changed,
+what you verified, and anything that remains uncertain.
+```
+
+Put reusable definitions in `agents/`, `commands/`, and `skills/`. The [profile guide](/v2/profiles) shows the complete layout and explains project discovery.
+
+## 3. Launch from a project
+
+Change to the repository you want to work in, then run:
+
+```sh
+ocx oc
+```
+
+Configure provider credentials through OpenCode's native flow if needed. Profiles share those credentials and native session storage.
+
+For a one-off selection or a second setup:
+
+```sh
+ocx profile add personal --clone work
+ocx oc --profile personal
+```
+
+Cloning makes an independent copy. Editing `personal` does not change `work`.
+
+## 4. Install a component
+
+The KDCO V2 catalog contains a code-review skill. **Once the new worker is deployed**, install it into your profile:
+
+```sh
+ocx registry add https://registry.kdco.dev/opencode-v2 --name kdco --profile work
+ocx search review --profile work
+ocx add kdco/code-review --profile work --dry-run
+ocx add kdco/code-review --profile work
+ocx verify --profile work
+```
+
+During development, use the local catalog instead. From the OCX checkout:
+
+```sh
+bun run --cwd workers/kdco-registry build
+ocx registry add "file://$PWD/workers/kdco-registry/dist/opencode-v2" \
+  --name kdco --profile work
+```
+
+Then run the search, add, and verify commands above. Use either source for the alias; if switching between them, remove the existing source with `ocx registry remove kdco --profile work` first. If components are already installed from the old URL, use a fresh profile for the other source; changing an alias does not change recorded ownership. A local source must remain available for future updates.
+
+Open `skills/code-review/SKILL.md` in the profile to read or customize it. OCX records ownership and original file hashes in `.ocx/receipt.jsonc`.
+
+## 5. Review future updates
+
+```sh
+ocx update --all --profile work --dry-run
+ocx update --all --profile work
+```
+
+If both you and the publisher changed the same file, OCX stops so you can decide what to keep. [File ownership and updates](/v2/registries#sources-and-ownership) explains local edits, forced repairs, and removal.
+
+## Share files with a project
+
+To commit installed definitions with a repository, choose a project destination instead:
+
+```sh
+ocx init --project
+ocx add kdco/code-review --from https://registry.kdco.dev/opencode-v2 --project
+ocx verify --project
+```
+
+Use a local or preview URL before public deployment. Files are installed beneath that project's `.opencode/`. A profile defaults to ignoring project configuration at startup; set its `projectConfig` to `inherit` if you want OpenCode to discover these project definitions when launching that profile.
+
+Continue with [profile configuration](/v2/configuration), the [command reference](/v2/cli), or [publishing a registry](/v2/registry-authoring).

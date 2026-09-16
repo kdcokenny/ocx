@@ -1,0 +1,91 @@
+---
+title: Component commands
+description: Install, update, verify, and remove files with explicit ownership
+---
+
+Every command on this page requires exactly one of `--profile <name>` or `--project`. Project operations use the current directory or `--cwd <path>` and require `ocx init --project` first.
+
+## Add
+
+```sh
+ocx add team/review --profile work --dry-run
+ocx add team/review team/reviewer --profile work
+ocx add team/review --from https://registry.example.com/opencode-v2 --project
+```
+
+Components use `alias/component` references. OCX resolves dependencies, checks every target, and installs files with an ownership receipt. `--from` uses an ephemeral source for the requested alias without adding it to metadata; the receipt retains the origin for later updates. For a profile recipe, prefer `profile add --source` to create a new destination.
+
+Re-adding unchanged content is safe. If an installed component changed upstream, `add` asks you to use `update`. It does not offer `--force` to replace existing unmanaged files.
+
+## Update
+
+Choose exactly one selection:
+
+```sh
+ocx update team/review --profile work --dry-run
+ocx update --all --profile work --dry-run
+ocx update --registry team --project --dry-run
+```
+
+Omit `--dry-run` after reviewing the result. Updates consider complete owned file sets and dependencies: they can add newly published files and remove obsolete upstream files as well as replace contents.
+
+| Local state | Upstream state | Default behavior |
+| --- | --- | --- |
+| Unmodified | Changed | Update to new bytes. |
+| Edited | Unchanged | Keep the local edit. |
+| Edited | Changed | Stop for a decision. |
+| Missing owned file | Still published | Stop; forced repair is required. |
+| Unmodified | File removed | Remove the obsolete file. |
+| Edited | File removed | Stop before deleting the edit. |
+
+To intentionally replace or delete edited owned files, first inspect:
+
+```sh
+ocx update team/review --profile work --force --dry-run
+```
+
+Then repeat without `--dry-run` only when the proposed replacement is what you want. `--force` does not bypass path checks, allow an ownership collision, or overwrite an unrelated unmanaged file. Save edits elsewhere or in version control when you want to reapply them.
+
+## Verify
+
+```sh
+ocx verify --profile work
+ocx verify team/review --project --json
+```
+
+With no component names, `verify` checks every installed component. It compares current bytes with the recorded per-file SHA-256 baselines and reports modified or missing files. It does not fetch the latest registry contents or modify anything.
+
+A local customization is expected to fail baseline verification; that is useful information, not proof that the file is malicious. Exit code `6` indicates differences, including in JSON mode. No installed components is a successful empty result.
+
+JSON output contains `success`, `verified`, and `errors`; entries identify canonical IDs and changed or missing paths.
+
+## Remove
+
+```sh
+ocx remove team/review --project --dry-run
+ocx remove team/review --project
+# Alias: ocx rm team/review --project
+```
+
+Removal deletes owned files and updates the receipt. It refuses locally edited files unless you explicitly pass `--force` (`-f`). Preview that choice before applying it:
+
+```sh
+ocx remove team/review --project --force --dry-run
+```
+
+A dependency still required by another installed component cannot be removed by itself. Select the dependent components and dependency together. Unreferenced dependencies are not automatically garbage-collected; remove them explicitly when no longer needed.
+
+## Options
+
+All four commands accept `-p, --profile`, `--project`, `--cwd`, `--json`, `-q, --quiet`, and `-v, --verbose`.
+
+| Additional option | Add | Update | Remove | Verify |
+| --- | --- | --- | --- | --- |
+| `--dry-run` | Yes | Yes | Yes | No |
+| `--from <url>` | Yes | No | No | No |
+| `--force` | No | Yes | Yes (`-f` too) | No |
+| `--all` / `--registry <alias>` | No | Yes | No | No |
+
+Use qualified references to avoid ambiguity. For update, remove, and verify, `alias/component` is a shorthand for a canonical receipt ID; the exact canonical ID is accepted too. Bare component names are not accepted. Installation always requires `alias/component`.
+
+See [receipts and ownership](/v2/registries#sources-and-ownership), [verification limits](/v2/security), and [recovery](/v2/troubleshooting) for details.
