@@ -230,6 +230,8 @@ async function prepareInstallation(
 		const currentHash = current === null ? null : hashContent(current)
 		const old = previous.get(file.owner)?.entry
 		const baseline = old?.files.find((item) => item.path === path)
+		if (!baseline && current !== null)
+			throw new ConflictError(`Unmanaged file would be overwritten: ${path}`)
 		if (current?.equals(file.content)) continue
 		if (baseline && currentHash !== baseline.hash && !options.force) {
 			// A normal update preserves local edits when the upstream file is unchanged.
@@ -243,8 +245,6 @@ async function prepareInstallation(
 				`Owned file ${path} was edited or removed locally. Use --force --dry-run to preview replacing it.`,
 			)
 		}
-		if (!baseline && current !== null)
-			throw new ConflictError(`Unmanaged file would be overwritten: ${path}`)
 		changes.push({ path, content: file.content, beforeHash: currentHash })
 	}
 	for (const { entry } of previous.values()) {

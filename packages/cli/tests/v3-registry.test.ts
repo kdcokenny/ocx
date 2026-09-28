@@ -98,6 +98,52 @@ test("dry runs check conflicts and leave no receipt or files", async () => {
 	).rejects.toThrow("Unmanaged")
 })
 
+test.each([
+	"add",
+	"update",
+] as const)("%s cannot claim an identical unmanaged file, including with force or dry-run", async (mode) => {
+	const ownedPath = "skills/guide/owned.md"
+	const unmanagedPath = "skills/guide/unmanaged.bin"
+	const bytes = Buffer.from([0, 255, 128, 13, 10])
+	if (mode === "update") {
+		await publish([{ name: "guide", files: { [ownedPath]: "original" } }])
+		await installComponents(["team/guide"], provider, { mode: "add" })
+	}
+	await mkdir(join(root, "skills/guide"), { recursive: true })
+	await writeFile(join(root, unmanagedPath), bytes)
+	const receipt = await readReceipt(root)
+	await publish([{ name: "guide", files: { [ownedPath]: "upstream", [unmanagedPath]: bytes } }])
+	for (const force of [false, true]) {
+		for (const dryRun of [false, true]) {
+			await expect(
+				installComponents(["team/guide"], provider, { mode, force, dryRun }),
+			).rejects.toThrow(`Unmanaged file would be overwritten: ${unmanagedPath}`)
+			expect(await readReceipt(root)).toEqual(receipt)
+			expect(await readFile(join(root, unmanagedPath))).toEqual(bytes)
+			if (mode === "update") expect(await readFile(join(root, ownedPath), "utf8")).toBe("original")
+			else expect(await Bun.file(join(root, ownedPath)).exists()).toBe(false)
+		}
+	}
+	if (mode === "update") await removeComponents(["team/guide"], provider, {})
+	else
+		await expect(removeComponents(["team/guide"], provider, {})).rejects.toThrow(
+			"No components installed",
+		)
+	expect(await readFile(join(root, unmanagedPath))).toEqual(bytes)
+})
+
+test("identical files already owned by the component remain no-op installs and updates", async () => {
+	await publish([{ name: "guide", files: { "skills/guide/SKILL.md": "original" } }])
+	await installComponents(["team/guide"], provider, { mode: "add" })
+	const receipt = await readFile(join(root, ".ocx/receipt.jsonc"))
+	for (const mode of ["add", "update"] as const) {
+		const result = await installComponents(["team/guide"], provider, { mode })
+		expect(result.changes).toEqual([])
+		expect(await readFile(join(root, ".ocx/receipt.jsonc"))).toEqual(receipt)
+	}
+	expect(await readFile(join(root, "skills/guide/SKILL.md"), "utf8")).toBe("original")
+})
+
 test("updates remove obsolete upstream files and retain unchanged local edits", async () => {
 	await publish([
 		{ name: "guide", files: { "skills/guide/old.md": "old", "skills/guide/custom.md": "base" } },
